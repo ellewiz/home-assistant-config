@@ -1,0 +1,146 @@
+# ============================================================
+# Oura Ring Trend Sensors
+# Things HA can uniquely calculate that Oura doesn't provide:
+# - 30-day personal HRV baseline
+# - HRV delta vs that baseline (above/below your normal)
+# - Sleep debt vs 8hr target
+# - Combined restorative sleep % (Deep + REM)
+# - Bedroom temperature snapshot at bedtime
+# - 7-day average bedroom temp at bedtime
+# ============================================================
+
+# ===== Statistics sensors =====
+sensor:
+  # 30-day rolling mean HRV — your personal baseline
+  - platform: statistics
+    name: "Oura HRV 30-Day Baseline"
+    entity_id: sensor.oura_ring_average_sleep_hrv
+    state_characteristic: mean
+    max_age:
+      days: 30
+    precision: 1
+
+  # 7-day rolling mean of bedroom temp when you go to bed
+  # (fed by the "Oura: Capture bedroom temp at bedtime" automation)
+  - platform: statistics
+    name: "Bedroom Temp at Bedtime 7-Day Avg"
+    entity_id: input_number.bedroom_temp_at_bedtime
+    state_characteristic: mean
+    max_age:
+      days: 7
+    precision: 1
+
+# ===== Template sensors =====
+template:
+  - sensor:
+      # --- HRV delta vs your 30-day baseline ---
+      # Positive = above your normal (recovery), Negative = below (stress/fatigue)
+      - name: "HRV vs Baseline"
+        unique_id: oura_hrv_vs_baseline
+        icon: mdi:heart-pulse
+        unit_of_measurement: "ms"
+        state_class: measurement
+        state: >
+          {% set hrv = states('sensor.oura_ring_average_sleep_hrv') | float(-999) %}
+          {% set base = states('sensor.oura_hrv_30_day_baseline') | float(-999) %}
+          {% if hrv == -999 or base == -999 %}
+            {{ 0 }}
+          {% else %}
+            {{ (hrv - base) | round(1) }}
+          {% endif %}
+        availability: >
+          {{ states('sensor.oura_ring_average_sleep_hrv') not in ['unknown','unavailable','']
+             and states('sensor.oura_hrv_30_day_baseline') not in ['unknown','unavailable',''] }}
+        attributes:
+          today_hrv: "{{ states('sensor.oura_ring_average_sleep_hrv') | float(0) | round(1) }}"
+          baseline_hrv: "{{ states('sensor.oura_hrv_30_day_baseline') | float(0) | round(1) }}"
+          interpretation: >
+            {% set d = states('sensor.oura_hrv_vs_baseline') | float(0) %}
+            {% if d >= 5 %}above baseline — great recovery
+            {% elif d >= 0 %}near baseline — normal
+            {% elif d >= -5 %}slightly below baseline
+            {% else %}well below baseline — rest up
+            {% endif %}
+
+      # --- Sleep debt vs 8-hour target ---
+      # Positive = you owe sleep, negative = you banked extra
+      - name: "Sleep Debt Today"
+        unique_id: oura_sleep_debt_today
+        icon: mdi:sleep-off
+        unit_of_measurement: "h"
+        state_class: measurement
+        state: >
+          {% set slept = states('sensor.oura_ring_total_sleep_duration') | float(0) %}
+          {{ (8 - slept) | round(2) }}
+        availability: >
+          {{ states('sensor.oura_ring_total_sleep_duration') not in ['unknown','unavailable',''] }}
+        attributes:
+          target_hours: 8
+          actual_hours: "{{ states('sensor.oura_ring_total_sleep_duration') | float(0) | round(2) }}"
+          status: >
+            {% set debt = states('sensor.oura_sleep_debt_today') | float(0) %}
+            {% if debt <= 0 %}fully rested
+            {% elif debt <= 0.5 %}slight deficit
+            {% elif debt <= 1.5 %}moderate deficit
+            {% else %}significant deficit
+            {% endif %}
+
+      # --- Total pollen index (trees + grass + weeds combined) ---
+      # Useful for correlating with sleep quality and HRV over allergy season.
+      # Trees = spring, Grass = early summer, Weeds = late summer/fall.
+      - name: "Total Pollen Index"
+        unique_id: total_pollen_index
+        icon: mdi:flower-pollen
+        unit_of_measurement: "idx"
+        state_class: measurement
+        state: >
+          {% set t = states('sensor.kleenex_pollen_radar_ewing_trees') | int(0) %}
+          {% set g = states('sensor.kleenex_pollen_radar_ewing_grass') | int(0) %}
+          {% set w = states('sensor.kleenex_pollen_radar_ewing_weeds') | int(0) %}
+          {{ t + g + w }}
+        attributes:
+          trees: "{{ states('sensor.kleenex_pollen_radar_ewing_trees') | int(0) }}"
+          grass: "{{ states('sensor.kleenex_pollen_radar_ewing_grass') | int(0) }}"
+          weeds: "{{ states('sensor.kleenex_pollen_radar_ewing_weeds') | int(0) }}"
+          trees_level: "{{ states('sensor.kleenex_pollen_radar_ewing_trees_level') }}"
+          grass_level: "{{ states('sensor.kleenex_pollen_radar_ewing_grass_level') }}"
+          weeds_level: "{{ states('sensor.kleenex_pollen_radar_ewing_weeds_level') }}"
+          dominant: >
+            {% set t = states('sensor.kleenex_pollen_radar_ewing_trees') | int(0) %}
+            {% set g = states('sensor.kleenex_pollen_radar_ewing_grass') | int(0) %}
+            {% set w = states('sensor.kleenex_pollen_radar_ewing_weeds') | int(0) %}
+            {% if t >= g and t >= w %}trees
+            {% elif g >= w %}grass
+            {% else %}weeds{% endif %}
+          level: >
+            {% set total = states('sensor.total_pollen_index') | int(0) %}
+            {% if total >= 100 %}high
+            {% elif total >= 50 %}moderate
+            {% elif total >= 1 %}low
+            {% else %}none{% endif %}
+
+      # --- Restorative sleep (Deep + REM combined) ---
+      # Oura shows these separately; this is the total restorative fraction
+      # Healthy target: ≥40%. <30% is a warning sign.
+      - name: "Restorative Sleep"
+        unique_id: oura_restorative_sleep_pct
+        icon: mdi:brain
+        unit_of_measurement: "%"
+        state_class: measurement
+        state: >
+          {% set deep = states('sensor.oura_ring_deep_sleep_percentage') | float(0) %}
+          {% set rem = states('sensor.oura_ring_rem_sleep_percentage') | float(0) %}
+          {{ (deep + rem) | round(1) }}
+        availability: >
+          {{ states('sensor.oura_ring_deep_sleep_percentage') not in ['unknown','unavailable','']
+             and states('sensor.oura_ring_rem_sleep_percentage') not in ['unknown','unavailable',''] }}
+        attributes:
+          deep_pct: "{{ states('sensor.oura_ring_deep_sleep_percentage') | float(0) }}"
+          rem_pct: "{{ states('sensor.oura_ring_rem_sleep_percentage') | float(0) }}"
+          interpretation: >
+            {% set r = states('sensor.oura_restorative_sleep') | float(0) %}
+            {% if r >= 45 %}excellent
+            {% elif r >= 40 %}good
+            {% elif r >= 30 %}below average
+            {% else %}poor — check for disruptions
+            {% endif %}

@@ -1,0 +1,118 @@
+# Modern template integration
+# File: template.yaml
+
+- sensor:
+    - name: "Commute Leave By"
+      unique_id: commute_leave_by_hass
+      icon: mdi:car-clock
+      state: >
+        {% set arrival = states('input_datetime.commute_target_arrival') %}
+        {% set waze = states('sensor.waze_travel_time') | float(0) %}
+        {% if has_value('input_datetime.commute_target_arrival') and waze > 0 %}
+          {% set leave_dt = today_at(arrival) - timedelta(minutes=waze) %}
+          {{ leave_dt.strftime('%H:%M') }}
+        {% else %}unavailable{% endif %}
+      availability: >
+        {{ has_value('input_datetime.commute_target_arrival')
+           and has_value('sensor.waze_travel_time') }}
+
+    - name: "Sunrise"
+      unique_id: sunrise_formatted_hass
+      icon: mdi:weather-sunset-up
+      state: >
+        {% set ts = state_attr('sun.sun', 'next_rising') %}
+        {% if ts %}
+          {{ as_timestamp(ts) | timestamp_custom('%-I:%M %p') }}
+        {% else %}unavailable{% endif %}
+      availability: >
+        {{ state_attr('sun.sun', 'next_rising') is not none }}
+
+    - name: "Sunset"
+      unique_id: sunset_formatted_hass
+      icon: mdi:weather-sunset-down
+      state: >
+        {% set ts = state_attr('sun.sun', 'next_setting') %}
+        {% if ts %}
+          {{ as_timestamp(ts) | timestamp_custom('%-I:%M %p') }}
+        {% else %}unavailable{% endif %}
+      availability: >
+        {{ state_attr('sun.sun', 'next_setting') is not none }}
+
+    # Mirror of input_number.bedroom_temp_at_bedtime as a measurement sensor.
+    # input_number helpers get no long-term statistics, so the bedtime snapshot
+    # was only retrievable from ~10 days of raw history. This sensor carries
+    # state_class: measurement so HA accrues permanent daily statistics, giving
+    # the monthly environment-sleep report full-month bedtime-temp coverage via
+    # the recorder API (no need to read the SMB-locked home-assistant_v2.db).
+    - name: "Bedroom Temp at Bedtime (recorded)"
+      unique_id: bedroom_temp_at_bedtime_recorded
+      unit_of_measurement: "°F"
+      device_class: temperature
+      state_class: measurement
+      icon: mdi:bed-clock
+      state: >
+        {% set v = states('input_number.bedroom_temp_at_bedtime') %}
+        {% if v | is_number %}{{ v | float }}{% else %}unavailable{% endif %}
+      availability: >
+        {{ has_value('input_number.bedroom_temp_at_bedtime') }}
+
+    # --- Medication dose counters (durable long-term statistics) ---
+    # The counter.med_*_doses helpers accumulate doses logged from the SONOFF
+    # Orb med button (automation.meds_log_dose_from_button). Counters carry no
+    # state_class, so they get NO long-term statistics — only ~10 days of raw
+    # history, useless for the monthly crossfactor report. These mirrors expose
+    # each counter as a total_increasing sensor so the recorder keeps permanent
+    # statistics. The crossfactor report reads each sensor's daily delta as a
+    # separate per-med correlation factor against Oura sleep/recovery. Same
+    # trick as "Bedroom Temp at Bedtime (recorded)" above. Never reset the
+    # counters or the daily delta breaks.
+    - name: "Med Adderall Doses (recorded)"
+      unique_id: med_adderall_doses_recorded
+      state_class: total_increasing
+      unit_of_measurement: "doses"
+      icon: mdi:pill
+      state: "{{ states('counter.med_adderall_doses') | int(0) }}"
+      availability: "{{ has_value('counter.med_adderall_doses') }}"
+
+    - name: "Med Lexapro Doses (recorded)"
+      unique_id: med_lexapro_doses_recorded
+      state_class: total_increasing
+      unit_of_measurement: "doses"
+      icon: mdi:pill
+      state: "{{ states('counter.med_lexapro_doses') | int(0) }}"
+      availability: "{{ has_value('counter.med_lexapro_doses') }}"
+
+    - name: "Med Guanfacine Doses (recorded)"
+      unique_id: med_guanfacine_doses_recorded
+      state_class: total_increasing
+      unit_of_measurement: "doses"
+      icon: mdi:pill
+      state: "{{ states('counter.med_guanfacine_doses') | int(0) }}"
+      availability: "{{ has_value('counter.med_guanfacine_doses') }}"
+
+    - name: "Med Zepbound Doses (recorded)"
+      unique_id: med_zepbound_doses_recorded
+      state_class: total_increasing
+      unit_of_measurement: "doses"
+      icon: mdi:needle
+      state: "{{ states('counter.med_zepbound_doses') | int(0) }}"
+      availability: "{{ has_value('counter.med_zepbound_doses') }}"
+
+    # - name: "Temperature diff"
+    #   unique_id: temp_diff_sensor
+    #   unit_of_measurement: "°F"
+    #   state: >
+    #     {% set a = states('sensor.living_room_temperature') %}
+    #     {% set b = states('sensor.kttn_temperature') %}
+    #     {% if a|is_number and b|is_number %}
+    #       {{ (a|float - b|float) | round(2) }}
+    #     {% else %}unavailable{% endif %}
+    #   availability: >
+    #     {{ has_value('sensor.living_room_temperature')
+    #        and has_value('sensor.kttn_temperature') }}
+
+- binary_sensor:
+    - default_entity_id: binary_sensor.golden_hour
+      name: Golden Hour
+      state: >-
+        {{ state_attr('sun.sun', 'elevation') <= 4 and state_attr('sun.sun', 'elevation') >= -6 }}

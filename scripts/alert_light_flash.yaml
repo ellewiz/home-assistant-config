@@ -1,0 +1,54 @@
+alert_light_flash:
+  alias: Alert — Light Flash
+  description: >
+    Brief attention flash on a light (default green double-pulse) that snapshots
+    the light's current state with scene.create and restores it afterward, so it
+    never leaves the lights changed. Fire-and-forget safe (mode: restart,
+    max_exceeded: silent). Built 2026-06-08 so the morning commute announcer can
+    be SEEN over a running hair dryer without raising TTS volume loud enough to
+    startle Johnny. The bedroom has no Adaptive Lighting, so no manual-control
+    reset is needed here (unlike the living room).
+  mode: restart
+  max_exceeded: silent
+  fields:
+    targets:
+      description: Light entity_id(s) to flash
+      selector: { entity: { domain: light, multiple: true } }
+    rgb_color:
+      description: "Flash color as [r, g, b]. Default green."
+      default: [0, 255, 0]
+    pulses:
+      description: Number of on/off pulses
+      default: 2
+      selector: { number: { min: 1, max: 5, step: 1 } }
+  sequence:
+    - variables:
+        _targets: "{{ targets }}"
+        _rgb: "{{ rgb_color | default([0, 255, 0]) }}"
+        _pulses: "{{ pulses | default(2) | int }}"
+
+    # Snapshot current light state so we return to exactly how it was
+    - action: scene.create
+      data:
+        scene_id: alert_light_flash_snapshot
+        snapshot_entities: "{{ _targets }}"
+
+    - repeat:
+        count: "{{ _pulses }}"
+        sequence:
+          - action: light.turn_on
+            target: { entity_id: "{{ _targets }}" }
+            data:
+              rgb_color: "{{ _rgb }}"
+              brightness_pct: 100
+              transition: 0
+          - delay: "00:00:00.5"
+          - action: light.turn_off
+            target: { entity_id: "{{ _targets }}" }
+            data: { transition: 0 }
+          - delay: "00:00:00.4"
+
+    # Restore prior state
+    - action: scene.turn_on
+      target: { entity_id: scene.alert_light_flash_snapshot }
+      data: { transition: 0 }

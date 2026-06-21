@@ -1,0 +1,16 @@
+# Dead-man's switch for HA Core.
+#
+# WHY: When Core crashes (see the 2026-06-01 SIGBUS outage), every notify
+# service dies with it, so HA cannot alert you that it's down. This pushes an
+# outbound heartbeat to Healthchecks.io instead; if the pings stop for ~15 min
+# (check Period 10m + Grace 5m), Healthchecks alerts Lara from outside the box.
+#
+# The matching automation is "Alert: Core Heartbeat (dead-man's switch)" in
+# automations.yaml — it calls rest_command.core_heartbeat every 5 minutes.
+# Ping URL lives in secrets.yaml as healthchecks_core_heartbeat_url.
+
+rest_command:
+  core_heartbeat:
+    url: !secret healthchecks_core_heartbeat_url
+    method: GET
+    timeout: 10

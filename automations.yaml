@@ -1,0 +1,2509 @@
+- id: oura_capture_bedroom_temp_bedtime
+  alias: 'Oura: Capture bedroom temp at bedtime'
+  description: 'When in_bed turns on, snapshot the Hue bedroom sensor temperature
+    into input_number.bedroom_temp_at_bedtime for sleep-environment correlation tracking.
+
+    '
+  triggers:
+  - trigger: state
+    entity_id: input_boolean.in_bed
+    to: 'on'
+  actions:
+  - action: input_number.set_value
+    target:
+      entity_id: input_number.bedroom_temp_at_bedtime
+    data:
+      value: '{{ states(''sensor.hue_motion_sensor_2_temperature'') | float(65) }}'
+  mode: single
+- id: 20260416_workday_tomorrow_refresh
+  alias: Refresh Workday Tomorrow
+  description: Checks if tomorrow is a workday and updates input_boolean.workday_tomorrow
+  triggers:
+  - trigger: time
+    at: 00:05:00
+  - trigger: homeassistant
+    event: start
+  actions:
+  - action: workday.check_date
+    target:
+      entity_id: binary_sensor.workday
+    data:
+      check_date: '{{ (now() + timedelta(days=1)).strftime(''%Y-%m-%d'') }}'
+    response_variable: result
+  - action: input_boolean.turn_{{ 'on' if result['binary_sensor.workday']['workday']
+      else 'off' }}
+    target:
+      entity_id: input_boolean.workday_tomorrow
+  mode: single
+- id: '1635902622080'
+  alias: Turn off the lights when I leave home
+  triggers:
+  - entity_id: person.lara_wiz
+    zone: zone.home
+    event: leave
+    platform: zone
+  conditions:
+  - condition: or
+    conditions:
+    - condition: state
+      entity_id: group.morning
+      state: 'on'
+    - condition: numeric_state
+      entity_id: sensor.hue_motion_sensor_4_illuminance
+      above: input_number.living_room_lux_on
+  actions:
+  - target:
+      area_id:
+      - bedroom
+      - kitchen
+      - living_room
+      - office
+    action: light.turn_off
+  - choose:
+    - conditions:
+      - condition: or
+        conditions:
+        - condition: state
+          state: playing
+          entity_id: media_player.bedroom_frame
+        - condition: state
+          state: playing
+          entity_id: media_player.bedroom
+      sequence:
+      - action: media_player.media_stop
+        metadata: {}
+        data: {}
+        target:
+          entity_id:
+          - media_player.bedroom_frame
+          - media_player.bedroom
+  mode: single
+- id: '1636163018564'
+  alias: Night sound on living room TV
+  description: ''
+  triggers:
+  - event: sunset
+    offset: '0'
+    platform: sun
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - action: switch.turn_on
+    data: {}
+    target:
+      entity_id: switch.living_room_arc_night_sound
+  mode: single
+- id: '1637113982141'
+  alias: Update in_bed when motion is detected
+  description: ''
+  triggers:
+  - entity_id: binary_sensor.hue_motion_sensor_2_motion
+    from: 'off'
+    to: 'on'
+    id: motion
+    platform: state
+  conditions:
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'on'
+  - condition: state
+    entity_id: group.morning
+    state: 'on'
+  actions:
+  - choose:
+    - conditions:
+      - condition: trigger
+        id: motion
+      sequence:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.in_bed
+      - action: scene.turn_on
+        metadata: {}
+        target:
+          entity_id: scene.bedroom_energize
+        data:
+          transition: 3
+      - if:
+        - condition: state
+          entity_id: media_player.bedroom
+          state: playing
+        then:
+        - action: media_player.media_stop
+          target:
+            entity_id: media_player.bedroom
+      - delay:
+          seconds: 4
+      - if:
+        - condition: numeric_state
+          entity_id: sensor.hue_motion_sensor_2_light_level
+          below: input_number.bedroom_lux_on_threshold
+        - condition: not
+          conditions:
+          - condition: state
+            entity_id: timer.bedroom_light_timer
+            state: active
+        then:
+        - action: scene.turn_on
+          data:
+            transition: 5
+          target:
+            entity_id: scene.bedroom_energize
+  mode: restart
+- id: '1639287271338'
+  alias: Bedroom — Motion Lights (v2, Nightlight After 10pm)
+  description: 'v2: Turns on bedroom lights on motion when dark (lux below bedroom_lux_on_threshold).
+    Between 22:00 and 05:30 uses a dim red nightlight (10%, won''t disrupt sleep)
+    instead of the full Natural Light scene; 05:30 hands off to early-morning/wake
+    logic. Turn-OFF logic moved to companion automation ''Bedroom — Lights Off (Motion
+    Clear / Bright / In Bed)'' so it works regardless of how the lights were turned
+    on — the old in-run wait_for_trigger missed lights turned on by the in_bed wake
+    automation, buttons, or the Hue app (root cause of the 16h lights-on incident
+    on 2026-06-04). No Nightlight scene exists in HA; if one is created later, swap
+    the red light.turn_on for it.'
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.hue_motion_sensor_2_motion
+    from: 'off'
+    to: 'on'
+  conditions:
+  - condition: numeric_state
+    entity_id: sensor.hue_motion_sensor_2_light_level
+    below: input_number.bedroom_lux_on_threshold
+  actions:
+  - choose:
+    - alias: Late night (22:00–05:30) — dim red nightlight
+      conditions:
+      - condition: time
+        after: '22:00:00'
+        before: 05:30:00
+      sequence:
+      - action: light.turn_on
+        target:
+          entity_id: light.bedroom_lights
+        data:
+          rgb_color:
+          - 255
+          - 0
+          - 0
+          brightness_pct: 10
+          transition: 2
+    default:
+    - alias: Daytime/evening — normal Natural Light scene
+      action: scene.turn_on
+      target:
+        entity_id: scene.bedroom_natural_light_2
+      data:
+        transition: 2
+  mode: single
+  max_exceeded: silent
+- id: '1639369237740'
+  alias: Button for in_bed
+  description: ''
+  triggers:
+  - id: big_button
+    trigger: device
+    device_id: 14e49a0ea09ad5dc8298be74d0220471
+    domain: hue
+    type: initial_press
+    subtype: 1
+    unique_id: 66cb9dde-8988-41c4-bc65-970c93b63b7f
+  conditions:
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  actions:
+  - alias: Run bedtime routine
+    action: script.turn_on
+    target:
+      entity_id: script.shut_down_bedtime
+    data: {}
+  mode: single
+- id: 00c0953ffc534fd6b809c869a7357122
+  alias: Set HA theme for day and night
+  triggers:
+  - event: start
+    trigger: homeassistant
+  - entity_id: sun.sun
+    to: above_horizon
+    trigger: state
+  - entity_id: sun.sun
+    to: below_horizon
+    trigger: state
+  actions:
+  - data:
+      name: default
+      mode: '{% if states(''sun.sun'') == ''above_horizon'' %}light{% else %}dark{%
+        endif %}'
+    action: frontend.set_theme
+- id: '1643492505340'
+  alias: Fridge off alert
+  description: ''
+  triggers:
+  - trigger: device
+    type: turned_off
+    device_id: 443747a331167a9a797d22898f753c32
+    entity_id: switch.fibaro_wall_plug_for_fridge
+    domain: switch
+  conditions: []
+  actions:
+  - action: notify.mobile_app_iphone
+    data:
+      message: Refrigerator power is off, check it out quick!
+  mode: single
+- id: '1650934687175'
+  alias: Good night Johnny
+  description: ''
+  triggers:
+  - device_id: c8bb0b9a688e58d28beaf2e26ee12b21
+    domain: zha
+    type: remote_button_short_press
+    subtype: remote_button_short_press
+    platform: device
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.late_night_together
+    state: 'on'
+  actions:
+  - action: media_player.play_media
+    metadata: {}
+    data:
+      media:
+        media_content_id: FV:2/47
+        media_content_type: favorite_item_id
+        metadata:
+          title: 'Soothing Music for Dogs: Pet Therapy'
+          thumbnail: https://is4-ssl.mzstatic.com/image/thumb/Music115/v4/2c/93/50/2c93509a-6242-e380-9d58-1942b78b8c32/8033772784580.jpg/400x400bb.jpeg
+          media_class: album
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: favorites
+            media_content_id: ''
+          - media_content_type: favorites_folder
+            media_content_id: object.container.album.musicAlbum
+          browse_entity_id: media_player.sonos_move
+    target:
+      entity_id: media_player.sonos_move
+  mode: single
+  trace:
+    stored_traces: 25
+- id: '1652834572854'
+  alias: Night sound off living room TV
+  description: ''
+  triggers:
+  - trigger: sun
+    event: sunrise
+    offset: '0'
+  conditions: []
+  actions:
+  - action: switch.turn_off
+    data: {}
+    target:
+      entity_id: switch.living_room_arc_night_sound
+  mode: single
+- id: '1654570339244'
+  alias: Bedroom temp too hot
+  description: ''
+  triggers:
+  - trigger: numeric_state
+    entity_id:
+    - sensor.temp_in_bedroom
+    above: 75
+  conditions:
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  - condition: not
+    conditions:
+    - condition: zone
+      entity_id: person.lara_wiz
+      zone: zone.work
+  actions:
+  - action: notify.mobile_app_iphone
+    data:
+      title: Bedroom too hot
+      message: Turn down heat in bedroom
+  mode: single
+- id: '1667009276306'
+  alias: Button to turn off bedroom lights
+  description: Switch off lights with tap button
+  triggers:
+  - device_id: 14e49a0ea09ad5dc8298be74d0220471
+    domain: hue
+    type: initial_press
+    subtype: 2
+    unique_id: c07a9f85-8ace-4f5c-bfc0-4176d2fc7a64
+    platform: device
+  conditions: []
+  actions:
+  - data: {}
+    action: light.turn_off
+    target:
+      area_id: bedroom
+  - action: script.sonos_say
+    metadata: {}
+    data:
+      restore: true
+      ungroup: true
+      player: media_player.bedroom_frame
+      message: Turning off the lights… Good night!
+  mode: single
+- id: '1691671531217'
+  alias: Bedroom too hot when Lara comes home
+  description: ''
+  triggers:
+  - entity_id:
+    - person.lara_wiz
+    to: home
+    trigger: state
+  conditions:
+  - condition: numeric_state
+    entity_id: sensor.temp_in_bedroom
+    above: 78
+  actions:
+  - data:
+      message: Temp in bedroom is over 78°F!
+    action: notify.mobile_app_iphone
+  mode: single
+- id: '1718503009309'
+  alias: TV off weekends and time off
+  description: ''
+  triggers:
+  - at: '23:00:00'
+    trigger: time
+  conditions:
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  - condition: zone
+    entity_id: person.lara_wiz
+    zone: zone.home
+  - condition: state
+    entity_id: input_boolean.workday_tomorrow
+    state: 'off'
+  actions:
+  - action: script.turn_on
+    target:
+      entity_id: script.graceful_tv_exit
+    data: {}
+  - action: automation.turn_on
+    metadata: {}
+    data: {}
+    target:
+      entity_id:
+      - automation.tv_off_weekends_and_time_off
+      - automation.tv_event_reminder
+      - automation.tv_off_regular_night
+      - automation.living_room_ambient_manager
+  - action: switch.turn_on
+    metadata: {}
+    target:
+      entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+    data: {}
+  mode: single
+- id: '1752022762751'
+  alias: Kitchen lights
+  description: ''
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.hue_motion_sensor_1_motion
+    from: 'off'
+    to: 'on'
+  conditions: []
+  actions:
+  - choose:
+    - conditions:
+      - condition: state
+        entity_id: binary_sensor.early_morning
+        state: 'on'
+      - condition: state
+        entity_id: binary_sensor.workday
+        state: 'on'
+      sequence:
+      - action: light.turn_on
+        metadata: {}
+        target:
+          entity_id: light.undercabinet_lights
+        data:
+          color_temp_kelvin: 6500
+          brightness: 255
+    - conditions:
+      - condition: state
+        entity_id: binary_sensor.late_night_together
+        state: 'on'
+      sequence:
+      - action: light.turn_on
+        metadata: {}
+        target:
+          entity_id: light.undercabinet_lights
+        data:
+          color_temp_kelvin: 2000
+          brightness_pct: 30
+    default:
+    - action: light.turn_on
+      metadata: {}
+      target:
+        device_id: 632f7cfcd5589673ab347ecaf2d55101
+      data:
+        brightness_pct: 75
+        color_temp_kelvin: 5610
+  - wait_for_trigger:
+    - trigger: state
+      entity_id: binary_sensor.hue_motion_sensor_1_motion
+      to: 'off'
+      for:
+        minutes: 3
+    continue_on_timeout: false
+  - action: light.turn_off
+    target:
+      area_id: kitchen
+    data:
+      transition: 3
+  mode: restart
+- id: '1755038589514'
+  alias: Weekly low-battery report
+  description: Notify if any battery sensor is at or below 20%
+  triggers:
+  - trigger: time
+    at: 09:00:00
+  conditions:
+  - condition: time
+    weekday:
+    - sun
+  actions:
+  - variables:
+      lows: "{% set sensors = states.sensor\n   | selectattr('attributes.device_class','defined')\n
+        \  | selectattr('attributes.device_class','equalto','battery')\n   | list
+        %}\n{% set out = [] %} {% for s in sensors %}\n  {% set v = s.state | float(default=9999)
+        %}\n  {% if v <= 20 %}\n    {% set _ = out.append(s.entity_id) %}\n  {% endif
+        %}\n{% endfor %} {{ out }}"
+  - choose:
+    - conditions: '{{ lows | length > 0 }}'
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          title: Low batteries (≤20%)
+          message: '{{ lows | sort | join('', '') }}'
+    default:
+    - action: logbook.log
+      data:
+        name: Battery check
+        message: All good (no sensors ≤ 20%).
+  mode: single
+- id: backup_on_core_update_available
+  alias: Backup — When core update available
+  description: ''
+  triggers:
+  - entity_id: update.home_assistant_core_update
+    to: 'on'
+    trigger: state
+  actions:
+  - action: backup.create_automatic
+  mode: single
+- id: '1756154971761'
+  alias: Low Battery Notification
+  description: ''
+  use_blueprint:
+    path: ellewiz/low_battery.yaml
+    input:
+      notify_device: e09c6dfb1aa561536feed2bbdcadfbc9
+- id: '1758078170419'
+  alias: TV Event Reminder
+  description: Announce 15 minutes before an event on the watch party calendar starts
+  triggers:
+  - entity_id: calendar.tv
+    event: start
+    offset: -0:15:0
+    platform: calendar
+  conditions:
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  - condition: state
+    entity_id: person.lara_wiz
+    state: home
+  actions:
+  - variables:
+      event_title: '{{ trigger.calendar_event.summary }}'
+      msg: '"{{ event_title }}" will begin in 15 minutes.'
+  - action: scene.turn_on
+    data:
+      transition: 10
+    target:
+      entity_id: scene.living_room_movies_2
+  - action: script.sonos_broadcast
+    data:
+      restore: true
+      ungroup: true
+      players:
+      - media_player.living_room_arc
+      - media_player.bedroom_frame
+      message: '{{ msg }}'
+      volume: 0.69
+  - action: automation.turn_off
+    target:
+      entity_id:
+      - automation.living_room_ambient_manager
+      - automation.tv_off_regular_night
+      - automation.tv_off_weekends_and_time_off
+      - automation.living_room_lights_on_morning
+    data:
+      stop_actions: true
+  - if:
+    - condition: device
+      device_id: 0a28965692f7fead801299fd184f7f4e
+      domain: media_player
+      entity_id: b3ed2dece24ac28191b7c48a42d83134
+      type: is_playing
+    then:
+    - action: media_player.media_pause
+      metadata: {}
+      data: {}
+      target:
+        entity_id: media_player.living_room_4k_2
+  mode: single
+- id: '1758078528885'
+  alias: TV Event Over
+  description: Shut down TV when the TV event ends, then re-enable nightly automations
+  triggers:
+  - trigger: calendar
+    entity_id: calendar.tv
+    event: end
+  actions:
+  - action: script.sonos_say
+    data:
+      restore: true
+      ungroup: true
+      player: media_player.living_room_arc
+      message: Show's over. Good night!
+      volume: 0.65
+  - action: script.graceful_tv_exit
+  - action: automation.turn_on
+    target:
+      entity_id:
+      - automation.living_room_ambient_manager
+      - automation.tv_off_regular_night
+      - automation.tv_off_weekends_and_time_off
+      - automation.living_room_lights_on_morning
+  - if:
+    - condition: state
+      entity_id: input_boolean.workday_tomorrow
+      state: 'on'
+    then:
+    - action: switch.turn_on
+      target:
+        entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+  mode: single
+- id: '1758080771334'
+  alias: Johnny did a runner
+  description: ''
+  triggers:
+  - device_id: a21a864f6f38a47a687299e25164bde0
+    domain: device_tracker
+    entity_id: 2a32586b5b10e1e8ba2a43acdc640276
+    type: leaves
+    zone: zone.home
+    platform: device
+  conditions: []
+  actions:
+  - choose:
+    - conditions:
+      - condition: not
+        conditions:
+        - condition: state
+          entity_id: person.lara_wiz
+          state: home
+      sequence:
+      - action: notify.mobile_app_iphone
+        metadata: {}
+        data:
+          message: Johnny has left the house!
+          title: Alert!
+    default:
+    - action: script.sonos_broadcast
+      metadata: {}
+      data:
+        restore: true
+        ungroup: true
+        players:
+        - media_player.bedroom_frame
+        - media_player.dining_room
+        - media_player.living_room_arc
+        - media_player.sonos_move
+        - media_player.bathroom
+        message: Johnny has left the area!
+        volume: 0.87
+  mode: single
+- id: '1758081142295'
+  alias: TV off regular night
+  description: ''
+  triggers:
+  - at: '20:30:00'
+    platform: time
+  conditions:
+  - condition: state
+    entity_id: input_boolean.workday_tomorrow
+    state: 'on'
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  - condition: state
+    entity_id: calendar.tv
+    state:
+    - 'off'
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - action: script.sonos_say
+    data:
+      restore: true
+      ungroup: true
+      player: media_player.living_room_arc
+      message: Begin winding down. Shutdown in 30 minutes
+      volume: 0.62
+  - delay:
+      minutes: 30
+  - action: script.graceful_tv_exit
+  - action: switch.turn_on
+    metadata: {}
+    target:
+      entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+    data: {}
+  mode: single
+- id: '1758763117719'
+  alias: Living Room — Ambient Manager (Lux On/Off)
+  description: 'Turn living room ambient on when dark; off when bright (with hysteresis).
+    2026-06-12: rebuilt to stop a confirmed flapping loop (light.living_room_lights
+    cycled on/off 6x in ~80 min on a cloudy afternoon, empty room). Three changes:
+    (1) triggers now read sensor.living_room_illuminance_smoothed — a 10-min median
+    (package living_room_lux_smoothing.yaml) — instead of the raw, jittery Hue lux
+    that swung 19-43 every few minutes; (2) band widened to lux_on 18 / lux_off 45
+    so the lamps'' own ~15-20 lx contribution can no longer cross the off threshold
+    and self-trigger; (3) the lux_above_off branch now also requires the group to
+    have been ON for >25 min before it may auto-off, breaking any residual oscillation.
+    Off branches still require motion off so it never turns the lights off on top
+    of someone in the room. On-branch is intentionally NOT presence/vacation-gated:
+    lights coming on while away is wanted (occupied look). Root cause is the lux sensor
+    seeing the lamps it controls; a relocated/dedicated sensor would let the band
+    tighten again later.'
+  triggers:
+  - id: lux_below_on
+    entity_id: sensor.living_room_illuminance_smoothed
+    below: input_number.living_room_lux_on
+    for: 00:01:00
+    platform: numeric_state
+  - id: lux_above_off
+    entity_id: sensor.living_room_illuminance_smoothed
+    above: input_number.living_room_lux_off
+    for: 00:05:00
+    platform: numeric_state
+  - id: early_morning_ended
+    entity_id: binary_sensor.early_morning
+    to: 'off'
+    platform: state
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.early_morning
+    state: 'off'
+  actions:
+  - choose:
+    - conditions:
+      - condition: trigger
+        id: lux_below_on
+      sequence:
+      - action: light.turn_on
+        target:
+          entity_id: light.living_room_lights
+        data:
+          transition: 5
+    - conditions:
+      - condition: trigger
+        id: lux_above_off
+      - condition: state
+        entity_id: binary_sensor.hue_motion_sensor_4_motion
+        state: 'off'
+      - condition: template
+        alias: Min on-time — don't auto-off within 25 min of turning on (anti-flap)
+        value_template: '{% set e = states.light.living_room_lights %}
+
+          {{ e is not none and (now() - e.last_changed).total_seconds() > 1500 }}'
+      sequence:
+      - action: light.turn_off
+        target:
+          entity_id: light.living_room_lights
+        data:
+          transition: 1
+    - conditions:
+      - condition: trigger
+        id: early_morning_ended
+      - condition: numeric_state
+        entity_id: sensor.living_room_illuminance_smoothed
+        above: input_number.living_room_lux_off
+      - condition: state
+        entity_id: binary_sensor.hue_motion_sensor_4_motion
+        state: 'off'
+      sequence:
+      - action: light.turn_off
+        target:
+          entity_id: light.living_room_lights
+        data:
+          transition: 1
+  mode: single
+- id: '1760293166291'
+  alias: Office — Johnny's Light (v2, Occupancy Hold)
+  description: 'v2 of "Shut off Johnny''s light". v1 waited for motion-clear with
+    no debounce, so short motion blips strobed the office lamp (226+ toggles in 12
+    days, mostly 7–20s on-cycles in nightly bursts). v2 holds the light until the
+    office has been quiet for 10 minutes, with a 2h failsafe. Rewritten to entity
+    targets instead of device_id. Not gated on calendar.vacation on purpose: Johnny
+    may be home with a sitter.'
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.hue_office_motion_sensor_motion
+    from: 'off'
+    to: 'on'
+    for: 00:00:03
+  conditions:
+  - condition: numeric_state
+    entity_id: sensor.hue_office_motion_sensor_light_level
+    below: 8
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  actions:
+  - alias: Phase 1 — Warm light on for Johnny
+    action: light.turn_on
+    target:
+      entity_id: light.light
+    data:
+      color_temp_kelvin: 2775
+      transition: 3
+  - alias: Phase 2 — Hold until office quiet for 10 minutes
+    wait_for_trigger:
+    - trigger: state
+      entity_id: binary_sensor.hue_office_motion_sensor_motion
+      to: 'off'
+      for: 00:10:00
+    timeout: 02:00:00
+    continue_on_timeout: true
+  - alias: Phase 3 — Lights out
+    action: light.turn_off
+    target:
+      area_id: office
+    data:
+      transition: 5
+  mode: restart
+  max_exceeded: silent
+- id: '1763032936247'
+  alias: Living Room — Morning Lights (v2, Lux-Gated)
+  description: v2 of "Living room lights on - Morning". v1 had no lux condition, so
+    after the Ambient Manager's early_morning_ended branch turned the lights off at
+    8:00 (room bright by lux), the next motion re-lit them — observed 9/9 days May
+    28–Jun 5 2026. Sleep-mode clear stays unconditional so Adaptive Lighting never
+    gets stuck dim; the relight is gated on the room actually being dark. Lux sensor
+    unavailable is treated as dark (fail-bright for a wake-up light).
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.hue_motion_sensor_4_motion
+    from: 'off'
+    to: 'on'
+  conditions:
+  - condition: state
+    entity_id: group.morning
+    state: 'on'
+  actions:
+  - alias: Always clear Adaptive Lighting sleep mode on first morning motion
+    action: switch.turn_off
+    target:
+      entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+  - alias: Relight only if the room is actually dark
+    choose:
+    - conditions:
+      - condition: or
+        conditions:
+        - condition: numeric_state
+          entity_id: sensor.hue_motion_sensor_4_illuminance
+          below: input_number.living_room_lux_on
+        - condition: template
+          value_template: '{{ states(''sensor.hue_motion_sensor_4_illuminance'') in
+            [''unknown'', ''unavailable''] }}'
+      sequence:
+      - action: light.turn_on
+        target:
+          entity_id: light.living_room_lights
+        data:
+          transition: 5
+  mode: restart
+- id: '1763519365290'
+  alias: Sonos Wake Alarm
+  description: '20 min before wake event: plays Lofi Sleep playlist with subliminal-start
+    volume ramp (3%->20%). At wake time: classic alarm escalates every ~12s until
+    in_bed turns off. Alarm sound: /config/www/alarm-clock.mp3'
+  triggers:
+  - platform: calendar
+    entity_id: calendar.master_calendar
+    event: start
+    offset: -0:20:00
+    id: wake_up_time
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.early_morning
+    state: 'on'
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - choose:
+    - conditions:
+      - condition: state
+        entity_id: input_boolean.in_bed
+        state: 'on'
+      - condition: state
+        entity_id: binary_sensor.workday
+        state: 'on'
+      - condition: template
+        value_template: '{% set s = trigger.calendar_event.summary | lower | trim
+          %} {{ ''wake up'' in s }}
+
+          '
+      sequence:
+      - alias: Phase 1 — Set initial low volume
+        action: media_player.volume_set
+        target:
+          entity_id: media_player.bedroom
+        data:
+          volume_level: 0.03
+      - alias: Phase 1 — Play Lofi Sleep playlist shuffled
+        action: music_assistant.play_media
+        target:
+          entity_id: media_player.bedroom
+        data:
+          media_id: library://playlist/53
+          media_type: playlist
+          enqueue: replace
+          radio_mode: false
+        continue_on_error: true
+      - wait_for_trigger:
+        - trigger: state
+          entity_id: media_player.bedroom
+          to: playing
+        timeout: 00:00:15
+        continue_on_timeout: true
+      - action: media_player.shuffle_set
+        target:
+          entity_id: media_player.bedroom
+        data:
+          shuffle: true
+        continue_on_error: true
+      - delay: 00:02:00
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.bedroom
+        data:
+          volume_level: 0.04
+      - delay: 00:02:00
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.bedroom
+        data:
+          volume_level: 0.05
+      - delay: 00:02:00
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.bedroom
+        data:
+          volume_level: 0.07
+      - delay: 00:02:00
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.bedroom
+        data:
+          volume_level: 0.09
+      - delay: 00:02:00
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.bedroom
+        data:
+          volume_level: 0.11
+      - delay: 00:02:00
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.bedroom
+        data:
+          volume_level: 0.13
+      - delay: 00:02:00
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.bedroom
+        data:
+          volume_level: 0.15
+      - delay: 00:02:00
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.bedroom
+        data:
+          volume_level: 0.18
+      - delay: 00:02:00
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.bedroom
+        data:
+          volume_level: 0.2
+      - delay: 00:02:00
+      - alias: Phase 2 — Skip if already out of bed
+        condition: state
+        entity_id: input_boolean.in_bed
+        state: 'on'
+      - alias: Phase 2 — Alarm escalation loop
+        repeat:
+          until:
+          - condition: state
+            entity_id: input_boolean.in_bed
+            state: 'off'
+          sequence:
+          - action: music_assistant.play_announcement
+            target:
+              entity_id: media_player.bedroom
+            data:
+              url: http://homeassistant.local:8123/local/alarm-clock.mp3
+              announce_volume: '{{ [42 + (repeat.index - 1) * 8, 100] | min | int
+                }}'
+              use_pre_announce: false
+            continue_on_error: true
+          - delay: 00:00:12
+      - alias: Phase 3 — Gentle light fade-in once up
+        action: light.turn_on
+        target:
+          entity_id: light.bedroom
+        data:
+          transition: 300
+    - conditions:
+      - condition: state
+        entity_id: input_boolean.in_bed
+        state: 'off'
+      sequence:
+      - action: persistent_notification.create
+        data:
+          title: Alarm Skipped
+          message: Skipped — you were not in bed.
+    - conditions:
+      - condition: state
+        entity_id: binary_sensor.workday
+        state: 'off'
+      sequence:
+      - action: persistent_notification.create
+        data:
+          title: Alarm Skipped
+          message: Skipped — not a workday.
+    - conditions:
+      - condition: template
+        value_template: '{% set s = trigger.calendar_event.summary | lower | trim
+          %} {{ not (''wake up'' in s) }}
+
+          '
+      sequence:
+      - action: persistent_notification.create
+        data:
+          title: Alarm Skipped
+          message: Skipped — calendar event didn't include "Wake up".
+  mode: single
+- id: '1764645467296'
+  alias: Heat the car
+  description: ''
+  triggers:
+  - entity_id: calendar.master_calendar
+    event: end
+    offset: -0:13:0
+    platform: calendar
+  conditions:
+  - condition: template
+    value_template: "{{ \n  'office' in (trigger.calendar_event.description | default('')
+      | lower)\n}}\n"
+  - condition: state
+    entity_id: binary_sensor.workday
+    state:
+    - 'on'
+  - condition: state
+    entity_id: person.lara_wiz
+    state:
+    - home
+  - condition: numeric_state
+    entity_id: sensor.kttn_temperature
+    below: 45
+  actions:
+  - action: script.sonos_broadcast
+    metadata: {}
+    data:
+      restore: true
+      ungroup: true
+      players:
+      - media_player.bedroom
+      - media_player.living_room_arc
+      - media_player.minipod_2
+      - media_player.bathroom
+      message: It's time to warm up the car!
+      volume: 0.7
+  mode: single
+- id: '1765403683258'
+  alias: Living Room — Movie Lamp Dimmer (v2)
+  description: 'Dim the end-table lamp when the Apple TV is in use after sunset. v2
+    (2026-06-07): added Frndly support. Frndly publishes no now-playing metadata to
+    tvOS, so while it plays the ATV entity sits at state ''idle'' with app_id ''''
+    (verified live; all other apps — Tubi, Infuse, HBO Max, Shudder, WNBA, VidHub
+    — report normally). Fingerprint for ''ATV in use by an HA-blind app'': TCL TV
+    on + TV source ''Apple TV'' + ATV idle with empty app_id. The ATV home screen
+    matches the same fingerprint and is indistinguishable, so browsing the home screen
+    after sunset also dims — accepted tradeoff (hybrid design, chosen over session-based).
+    The app_id attribute trigger covers entering Frndly/home screen without a state-value
+    change (e.g. exit Tubi menu → home → Frndly). Companion automation ''Living Room
+    — Movie Lamp Restore (v2)'' skips restoring while the fingerprint holds, so the
+    lamp won''t pop bright mid-Frndly.'
+  triggers:
+  - entity_id:
+    - media_player.living_room_4k_2
+    to:
+    - playing
+    - buffering
+    - paused
+    id: atv_active
+    platform: state
+  - entity_id:
+    - media_player.living_room_4k_2
+    to: idle
+    id: atv_blind
+    platform: state
+  - entity_id:
+    - media_player.living_room_4k_2
+    attribute: app_id
+    to: ''
+    id: atv_blind_attr
+    platform: state
+  - event: sunset
+    offset: 00:01:00
+    id: sunset
+    platform: sun
+  conditions:
+  - condition: sun
+    after: sunset
+  - condition: state
+    entity_id: light.next_to_couch
+    state: 'on'
+  actions:
+  - choose:
+    - alias: ATV actively playing (any app HA can see)
+      conditions:
+      - condition: trigger
+        id: atv_active
+      sequence:
+      - action: light.turn_on
+        target:
+          entity_id: light.next_to_couch
+        data:
+          brightness_pct: 20
+          transition: 2
+    - alias: Blind-app fingerprint (Frndly / home screen)
+      conditions:
+      - condition: trigger
+        id:
+        - atv_blind
+        - atv_blind_attr
+      - condition: state
+        entity_id: media_player.living_room_4k_2
+        state: idle
+      - condition: state
+        entity_id: media_player.55_tcl_roku_tv
+        state: 'on'
+      - condition: state
+        entity_id: media_player.55_tcl_roku_tv
+        attribute: source
+        state: Apple TV
+      - condition: template
+        value_template: '{{ (state_attr(''media_player.living_room_4k_2'', ''app_id'')
+          or '''') == '''' }}'
+      sequence:
+      - action: light.turn_on
+        target:
+          entity_id: light.next_to_couch
+        data:
+          brightness_pct: 20
+          transition: 2
+    - alias: Sunset while already watching
+      conditions:
+      - condition: trigger
+        id: sunset
+      - condition: or
+        conditions:
+        - condition: state
+          entity_id: media_player.living_room_4k_2
+          state:
+          - playing
+          - buffering
+          - paused
+        - condition: and
+          conditions:
+          - condition: state
+            entity_id: media_player.living_room_4k_2
+            state: idle
+          - condition: state
+            entity_id: media_player.55_tcl_roku_tv
+            state: 'on'
+          - condition: state
+            entity_id: media_player.55_tcl_roku_tv
+            attribute: source
+            state: Apple TV
+          - condition: template
+            value_template: '{{ (state_attr(''media_player.living_room_4k_2'', ''app_id'')
+              or '''') == '''' }}'
+      sequence:
+      - action: light.turn_on
+        target:
+          entity_id: light.next_to_couch
+        data:
+          brightness_pct: 20
+          transition: 2
+  mode: restart
+  trace:
+    stored_traces: 25
+- id: '1765403998807'
+  alias: Living Room — Movie Lamp Restore (v2)
+  description: 'When the Apple TV stops after sunset, hand the end-table lamp back
+    to Adaptive Lighting. v1 history: used adaptive_lighting.apply, which pushed adapted
+    values once but left manual_control set (autoreset is 0), so the lamp froze for
+    the rest of the night. set_manual_control: false clears the flag and AL re-adapts
+    immediately and keeps adapting. v2 (2026-06-07): ''idle'' no longer always restores,
+    because Frndly is invisible to the ATV integration (entity sits idle with app_id
+    '''' while Frndly plays — verified live). On idle we restore only when the new
+    state still carries an app_id (sitting in a visible app''s menu, movie over) or
+    the TCL TV is off / not on the Apple TV input. ATV ''off'' always restores. Counterpart
+    of ''Living Room — Movie Lamp Dimmer (v2)'', which dims on the same blind-app
+    fingerprint.'
+  triggers:
+  - entity_id:
+    - media_player.living_room_4k_2
+    to: idle
+    id: atv_idle
+    platform: state
+  - entity_id:
+    - media_player.living_room_4k_2
+    to: 'off'
+    id: atv_off
+    platform: state
+  conditions:
+  - condition: sun
+    after: sunset
+  actions:
+  - choose:
+    - alias: ATV off — always restore
+      conditions:
+      - condition: trigger
+        id: atv_off
+      sequence:
+      - alias: Hand the lamp back to Adaptive Lighting (clears manual_control)
+        action: adaptive_lighting.set_manual_control
+        data:
+          entity_id: switch.adaptive_lighting_living_room_lights
+          lights:
+          - light.next_to_couch
+          manual_control: false
+    - alias: Idle outside the Frndly/home-screen blind spot
+      conditions:
+      - condition: trigger
+        id: atv_idle
+      - condition: template
+        value_template: '{{ (trigger.to_state.attributes.get(''app_id'') or '''')
+          != '''' or states(''media_player.55_tcl_roku_tv'') != ''on'' or (state_attr(''media_player.55_tcl_roku_tv'',
+          ''source'') or '''') != ''Apple TV'' }}'
+      sequence:
+      - alias: Hand the lamp back to Adaptive Lighting (clears manual_control)
+        action: adaptive_lighting.set_manual_control
+        data:
+          entity_id: switch.adaptive_lighting_living_room_lights
+          lights:
+          - light.next_to_couch
+          manual_control: false
+  mode: single
+  trace:
+    stored_traces: 25
+- id: '1777031240153'
+  alias: Pollen Spike Alert
+  description: Sends an iPhone notification when pollen conditions worsen. Uses a
+    daily tier tracker (input_number.pollen_alert_level_reached, 0-3) so alerts only
+    fire when crossing into a HIGHER tier than already reached today — prevents re-alerts
+    from unavailable/unknown blips and prevents lower re-alerts after a peak. Level
+    sensors filter out unavailable/unknown transitions at the trigger level, and the
+    levels map uses 'moderate' (not 'medium') to match actual sensor states.
+  triggers:
+  - platform: state
+    entity_id:
+    - sensor.kleenex_pollen_radar_ewing_trees_level
+    - sensor.kleenex_pollen_radar_ewing_grass_level
+    - sensor.kleenex_pollen_radar_ewing_weeds_level
+    id: level_rose
+    not_from:
+    - unknown
+    - unavailable
+    not_to:
+    - unknown
+    - unavailable
+  - platform: numeric_state
+    entity_id: sensor.total_pollen_index
+    above: 75
+    id: index_moderate
+  - platform: numeric_state
+    entity_id: sensor.total_pollen_index
+    above: 150
+    id: index_high
+  - platform: numeric_state
+    entity_id: sensor.total_pollen_index
+    above: 200
+    id: index_very_high
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - choose:
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.total_pollen_index
+        above: 200
+      - condition: numeric_state
+        entity_id: input_number.pollen_alert_level_reached
+        below: 3
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          title: "\U0001F6A8 Pollen Very High"
+          message: Total pollen index just crossed 200 (currently {{ states('sensor.total_pollen_index')
+            }} idx). High allergy risk — medication strongly recommended.
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.pollen_alert_level_reached
+        data:
+          value: 3
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.total_pollen_index
+        above: 150
+      - condition: numeric_state
+        entity_id: input_number.pollen_alert_level_reached
+        below: 2
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          title: ⚠️ Pollen High
+          message: Total pollen index just crossed 150 (currently {{ states('sensor.total_pollen_index')
+            }} idx). You likely need allergy medication today.
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.pollen_alert_level_reached
+        data:
+          value: 2
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.total_pollen_index
+        above: 75
+      - condition: numeric_state
+        entity_id: input_number.pollen_alert_level_reached
+        below: 1
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          title: "\U0001F33F Pollen Moderate"
+          message: Total pollen index just crossed 75 (currently {{ states('sensor.total_pollen_index')
+            }} idx). Sensitive individuals may want to take medication.
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.pollen_alert_level_reached
+        data:
+          value: 1
+    - conditions:
+      - condition: template
+        value_template: '{% set levels = {''none'': 0, ''low'': 1, ''moderate'': 2,
+          ''high'': 3, ''very high'': 4, ''very_high'': 4} %}
+
+          {% set old = trigger.from_state.state | lower %}
+
+          {% set new = trigger.to_state.state | lower %}
+
+          {{ trigger.id == ''level_rose'' and old not in [''unknown'', ''unavailable'']
+          and new not in [''unknown'', ''unavailable''] and levels.get(new, 0) > levels.get(old,
+          0) }}'
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          title: "\U0001F33F Pollen Rising"
+          message: '{% set type_map = {''sensor.kleenex_pollen_radar_ewing_trees_level'':
+            ''Trees'', ''sensor.kleenex_pollen_radar_ewing_grass_level'': ''Grass'',
+            ''sensor.kleenex_pollen_radar_ewing_weeds_level'': ''Weeds''} %}{{ type_map.get(trigger.entity_id,
+            ''Pollen'') }} just jumped to {{ trigger.to_state.state | title }} (was
+            {{ trigger.from_state.state | title }}). Consider taking your allergy
+            medication.'
+  mode: single
+  max_exceeded: silent
+- id: '1777633648574'
+  alias: Power Outage / Restoration Alert
+  description: 'v1: Detects whole-home power loss via Hue Bridge unavailable for 2+
+    min (filters normal brief drops). Detects power restoration when fridge Fibaro
+    returns from unavailable. When voltage sensor is added, rewrite to v2 with brownout/sag
+    detection.'
+  triggers:
+  - platform: state
+    entity_id: sensor.bedroom_power
+    to: unavailable
+    id: hue_unavailable
+    for: 00:02:00
+  - platform: state
+    entity_id: sensor.fibaro_wall_plug_for_fridge_electric_consumption_w
+    from: unavailable
+    id: fridge_surge
+  conditions: []
+  actions:
+  - choose:
+    - conditions:
+      - condition: trigger
+        id: hue_unavailable
+      sequence:
+      - data:
+          title: ⚡ Power Outage Detected
+          message: Power appears to be out. Hue Bridge went offline at {{ now().strftime('%I:%M
+            %p') }}.
+        action: notify.notify
+    - conditions:
+      - condition: trigger
+        id: fridge_surge
+      sequence:
+      - data:
+          title: "\U0001F50C Power Restored — Fridge Surge"
+          message: Power restored. Fridge spiked to {{ states('sensor.fibaro_wall_plug_for_fridge_electric_consumption_w')
+            }}W (normal max ~89W). It may run hard for 60–90 min to recover temp.
+        action: notify.notify
+  mode: single
+- id: '1777680078909'
+  alias: 'Alert: HA Unexpected Restart'
+  description: Sends a phone notification whenever Home Assistant starts up, so unexpected
+    crashes are immediately visible.
+  triggers:
+  - trigger: homeassistant
+    event: start
+  actions:
+  - action: notify.mobile_app_iphone
+    data:
+      title: ⚠️ Home Assistant restarted
+      message: HA came back up at {{ now().strftime('%-I:%M %p') }} on {{ now().strftime('%A,
+        %B %-d') }}. Check logs if this was unexpected.
+  mode: single
+- id: '1777933269637'
+  alias: 'Commute: Set target arrival from calendar'
+  description: 'When in_bed turns on and workday_tomorrow is on, read calendar.master_calendar
+    for tomorrow''s ''Wake up'' event. Office (description/location contains ''office'')
+    + late shift (summary/description contains ''late shift'') -> commute_target_arrival
+    09:20. Office regular -> 07:50. No-op if no office wake-up event (helper keeps
+    last value). 2026-06-09: source switched from calendar.workday_calendar to master_calendar;
+    workday_calendar only held bare all-day ''Workday'' entries with no office/late-shift
+    detail, so detection always failed and target_arrival sat stale at 07:50 -- on
+    late-shift days the announcer started after the stale 7:20 leave_by had already
+    passed and never announced.'
+  triggers:
+  - platform: state
+    entity_id: input_boolean.in_bed
+    to: 'on'
+  conditions:
+  - condition: state
+    entity_id: input_boolean.workday_tomorrow
+    state: 'on'
+  actions:
+  - action: calendar.get_events
+    target:
+      entity_id: calendar.master_calendar
+    data:
+      start_date_time: '{{ (now() + timedelta(days=1)).strftime(''%Y-%m-%d'') }}T00:00:00'
+      end_date_time: '{{ (now() + timedelta(days=1)).strftime(''%Y-%m-%d'') }}T23:59:59'
+    response_variable: cal_response
+  - variables:
+      has_office_event: '{% set events = cal_response[''calendar.master_calendar''][''events'']
+        | default([]) %}{% set ns = namespace(found=false) %}{% for e in events %}{%
+        set s = (e.summary | default('''')) | lower %}{% set ctx = ((e.location |
+        default('''')) ~ '' '' ~ (e.description | default(''''))) | lower %}{% if
+        ''wake up'' in s and ''office'' in ctx %}{% set ns.found = true %}{% endif
+        %}{% endfor %}{{ ns.found }}'
+      is_late_shift: '{% set events = cal_response[''calendar.master_calendar''][''events'']
+        | default([]) %}{% set ns = namespace(late=false) %}{% for e in events %}{%
+        set s = (e.summary | default('''')) | lower %}{% set ctx = ((e.location |
+        default('''')) ~ '' '' ~ (e.description | default(''''))) | lower %}{% if
+        ''wake up'' in s and ''office'' in ctx and ''late shift'' in (s ~ '' '' ~
+        ctx) %}{% set ns.late = true %}{% endif %}{% endfor %}{{ ns.late }}'
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{ has_office_event | trim | lower == ''true'' }}'
+      sequence:
+      - choose:
+        - conditions:
+          - condition: template
+            value_template: '{{ is_late_shift | trim | lower == ''true'' }}'
+          sequence:
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: input_datetime.commute_target_arrival
+            data:
+              time: 09:20:00
+        default:
+        - action: input_datetime.set_datetime
+          target:
+            entity_id: input_datetime.commute_target_arrival
+          data:
+            time: 07:50:00
+  mode: single
+- id: '1777933283116'
+  alias: 'Commute: Morning announcer with Waze (v2)'
+  description: 'Office mornings only. Calendar trigger 1h before wake-up event end
+    (checks event summary + description). Passes sensor.commute_leave_by so the script
+    counts down to actual departure. 2026-06-02: sole announcer (old Work Leave Time
+    Announcer disabled). 2026-06-05: bathroom Sonos Era 100 (media_player.bathroom)
+    added to players, replacing the HomePod for shower-window coverage. 2026-06-14:
+    HomePod support fully removed from the announcer chain (pyatv RAOP TTS never worked
+    on Python 3.14 — miniaudio failed-to-init-decoder, cloud + Piper both tested).
+    2026-06-16: replaced the person.lara_wiz==home gate with calendar.vacation==off.
+    The home gate suppressed the announcer during a short morning dog walk (Lara not_home
+    06:09-06:31, calendar trigger fired 06:25, mode single so it never re-fired on
+    return). Vacation calendar is the intended away-suppression gate per house style
+    section 8.'
+  triggers:
+  - platform: calendar
+    entity_id: calendar.master_calendar
+    event: end
+    offset: '-1:0:0'
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: template
+    value_template: '{{ ''wake up'' in (trigger.calendar_event.summary | lower) and
+      ''office'' in ((trigger.calendar_event.location | default('''')) ~ '' '' ~ (trigger.calendar_event.description
+      | default('''')) | lower) }}'
+  actions:
+  - variables:
+      leave_by_ts: '{% set lb = states(''sensor.commute_leave_by'') %}{% if lb not
+        in [''unknown'', ''unavailable''] %}{{ as_timestamp(today_at(lb)) }}{% else
+        %}{{ as_timestamp(trigger.calendar_event.end) }}{% endif %}'
+  - action: script.commute_time_announcer
+    data:
+      until_ts: '{{ leave_by_ts }}'
+      person_entity: person.lara_wiz
+      players:
+      - media_player.living_room_arc
+      - media_player.dining_room
+      - media_player.bedroom_frame
+      - media_player.bathroom
+  mode: single
+- id: '1777940949832'
+  alias: "\U0001F985 Eagles Score - Flash Green"
+  description: Flash living room lights Kelly Green (#4CBB17) whenever the Eagles
+    score, but only when home. Triggered by team_score attribute increase on the Team
+    Tracker sensor.
+  triggers:
+  - platform: state
+    entity_id: sensor.philadelphia_eagles
+    attribute: team_score
+  conditions:
+  - condition: state
+    entity_id: sensor.philadelphia_eagles
+    state: IN
+  - condition: template
+    value_template: '{{ trigger.from_state is not none and trigger.to_state.attributes.team_score
+      | int(0) > trigger.from_state.attributes.team_score | int(0) }}'
+  - condition: state
+    entity_id: person.lara_wiz
+    state: home
+  actions:
+  - alias: Flash living room Kelly Green (snapshot + restore via shared script)
+    action: script.alert_light_flash
+    data:
+      targets: light.living_room_lights
+      rgb_color:
+      - 76
+      - 187
+      - 23
+      pulses: 5
+  - alias: Resume Adaptive Lighting after snapshot restore
+    action: adaptive_lighting.set_manual_control
+    data:
+      entity_id: switch.adaptive_lighting_living_room_lights
+      manual_control: false
+  mode: single
+- id: '1778432571562'
+  alias: Pollen Alert Level — Daily Reset
+  description: Resets input_number.pollen_alert_level_reached to 0 at midnight so
+    the pollen spike alert starts fresh each day.
+  triggers:
+  - platform: time
+    at: 00:00:00
+  actions:
+  - action: input_number.set_value
+    target:
+      entity_id: input_number.pollen_alert_level_reached
+    data:
+      value: 0
+  mode: single
+- id: '1778498005512'
+  alias: Update Rain Forecast 24h
+  description: 'Hourly: checks NWS hourly forecast and sets rain_forecast_24h if rain/storms
+    expected in next 24 hours'
+  triggers:
+  - platform: time_pattern
+    minutes: '5'
+  - platform: homeassistant
+    event: start
+  actions:
+  - target:
+      entity_id: weather.kttn_daynight
+    data:
+      type: hourly
+    response_variable: wx_forecast
+    action: weather.get_forecasts
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{ wx_forecast[''weather.kttn_daynight''][''forecast''][:24]
+          | selectattr(''condition'', ''in'', [''lightning'', ''lightning-rainy'',
+          ''rainy'', ''pouring'', ''hail'', ''snowy-rainy'']) | list | count > 0 or
+          wx_forecast[''weather.kttn_daynight''][''forecast''][:24] | selectattr(''precipitation_probability'',
+          ''defined'') | selectattr(''precipitation_probability'', ''>'', 50) | list
+          | count > 0 }}'
+      sequence:
+      - target:
+          entity_id: input_boolean.rain_forecast_24h
+        action: input_boolean.turn_on
+    default:
+    - target:
+        entity_id: input_boolean.rain_forecast_24h
+      action: input_boolean.turn_off
+  mode: single
+- id: '1778537326845'
+  alias: Update Mow Forecast Scores
+  description: 'Every 3 hours: fetches NWS twice-daily forecast, scores next 4 daytime
+    mowing windows, stores results in helpers for the dashboard. Pollen is taken from
+    each pollen sensor''s per-day FORECAST (tree+grass+weeds ppm) aligned by date
+    (falls back to current reading for today), so big day-to-day pollen sweeps are
+    captured. Pollen penalty is magnitude-based (strong but non-vetoing, capped -55)
+    with an extra surcharge for grass since mowing aerosolizes it. Wind alone is a
+    minor penalty; wind combined with elevated pollen compounds (interaction term).'
+  triggers:
+  - platform: time_pattern
+    hours: /3
+  - platform: homeassistant
+    event: start
+  actions:
+  - target:
+      entity_id: weather.kttn_daynight
+    data:
+      type: twice_daily
+    response_variable: wx
+    action: weather.get_forecasts
+  - target:
+      entity_id: input_number.mow_forecast_score_1
+    data:
+      value: '{% set dt = wx[''weather.kttn_daynight''][''forecast''] | selectattr(''is_daytime'',''eq'',true)
+        | list %}{% if dt|length > 0 %}{% set p = dt[0] %}{% set wd = as_datetime(p.datetime).astimezone().date()
+        %}{% set precip = p.precipitation_probability|int(0) %}{% set cond = p.condition|lower
+        %}{% set temp = p.temperature|float(70) %}{% set wind = p.wind_speed|float(0)
+        %}{% if ''lightning'' in cond or ''thunderstorm'' in cond or ''hail'' in cond
+        or ''pouring'' in cond or precip>=75 %}{{ 0 }}{% else %}{% set r = 30 if precip<10
+        else (23 if precip<25 else (14 if precip<40 else (6 if precip<60 else 2)))
+        %}{% set c = 18 if cond==''sunny'' else (16 if cond==''partlycloudy'' else
+        (13 if cond==''cloudy'' else (4 if ''rain'' in cond or cond==''drizzle'' else
+        14))) %}{% set t = 22 if temp>=62 and temp<=85 else (16 if (temp>=55 and temp<62)
+        or (temp>85 and temp<=90) else (9 if (temp>=45 and temp<55) or (temp>90 and
+        temp<=95) else (3 if temp>=35 else 0))) %}{% set tf = state_attr(''sensor.kleenex_pollen_radar_ewing_trees'',''forecast'')
+        or [] %}{% set gf = state_attr(''sensor.kleenex_pollen_radar_ewing_grass'',''forecast'')
+        or [] %}{% set wf = state_attr(''sensor.kleenex_pollen_radar_ewing_weeds'',''forecast'')
+        or [] %}{% set tvl = tf | selectattr(''date'',''equalto'',wd) | map(attribute=''value'')
+        | list %}{% set gvl = gf | selectattr(''date'',''equalto'',wd) | map(attribute=''value'')
+        | list %}{% set wvl = wf | selectattr(''date'',''equalto'',wd) | map(attribute=''value'')
+        | list %}{% set tv = tvl[0] if tvl|length else states(''sensor.kleenex_pollen_radar_ewing_trees'')|float(0)
+        %}{% set gv = gvl[0] if gvl|length else states(''sensor.kleenex_pollen_radar_ewing_grass'')|float(0)
+        %}{% set wv = wvl[0] if wvl|length else states(''sensor.kleenex_pollen_radar_ewing_weeds'')|float(0)
+        %}{% set C = tv + gv + wv %}{% set pp = 0 if C<50 else (6 if C<75 else (16
+        if C<120 else (28 if C<150 else (40 if C<200 else 50)))) %}{% set pp = pp
+        + (8 if gv>=60 else (4 if gv>=40 else 0)) %}{% set pp = [pp,55]|min %}{% set
+        wstd = 0 if wind<12 else (3 if wind<18 else 6) %}{% set wint = 0 if C<75 else
+        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{{ [100,[0,
+        r+c+t+30-pp-wstd-wint]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
+    action: input_number.set_value
+  - target:
+      entity_id: input_text.mow_forecast_label_1_2
+    data:
+      value: '{% set dt = wx[''weather.kttn_daynight''][''forecast''] | selectattr(''is_daytime'',''eq'',true)
+        | list %}{% if dt|length > 0 %}{% set d = as_datetime(dt[0].datetime).astimezone()
+        %}{% if d.date() == now().date() %}Tonight · eve{% elif d.date() == (now()+timedelta(days=1)).date()
+        %}Tomorrow · {{ ''eve'' if d.weekday()<5 else ''all day'' }}{% else %}{{ d.strftime(''%a
+        %-d %b'') }} · {{ ''eve'' if d.weekday()<5 else ''all day'' }}{% endif %}{%
+        else %}—{% endif %}'
+    action: input_text.set_value
+  - target:
+      entity_id: input_number.mow_forecast_score_2
+    data:
+      value: '{% set dt = wx[''weather.kttn_daynight''][''forecast''] | selectattr(''is_daytime'',''eq'',true)
+        | list %}{% if dt|length > 1 %}{% set p = dt[1] %}{% set wd = as_datetime(p.datetime).astimezone().date()
+        %}{% set precip = p.precipitation_probability|int(0) %}{% set cond = p.condition|lower
+        %}{% set temp = p.temperature|float(70) %}{% set wind = p.wind_speed|float(0)
+        %}{% if ''lightning'' in cond or ''thunderstorm'' in cond or ''hail'' in cond
+        or ''pouring'' in cond or precip>=75 %}{{ 0 }}{% else %}{% set r = 30 if precip<10
+        else (23 if precip<25 else (14 if precip<40 else (6 if precip<60 else 2)))
+        %}{% set c = 18 if cond==''sunny'' else (16 if cond==''partlycloudy'' else
+        (13 if cond==''cloudy'' else (4 if ''rain'' in cond or cond==''drizzle'' else
+        14))) %}{% set t = 22 if temp>=62 and temp<=85 else (16 if (temp>=55 and temp<62)
+        or (temp>85 and temp<=90) else (9 if (temp>=45 and temp<55) or (temp>90 and
+        temp<=95) else (3 if temp>=35 else 0))) %}{% set tf = state_attr(''sensor.kleenex_pollen_radar_ewing_trees'',''forecast'')
+        or [] %}{% set gf = state_attr(''sensor.kleenex_pollen_radar_ewing_grass'',''forecast'')
+        or [] %}{% set wf = state_attr(''sensor.kleenex_pollen_radar_ewing_weeds'',''forecast'')
+        or [] %}{% set tvl = tf | selectattr(''date'',''equalto'',wd) | map(attribute=''value'')
+        | list %}{% set gvl = gf | selectattr(''date'',''equalto'',wd) | map(attribute=''value'')
+        | list %}{% set wvl = wf | selectattr(''date'',''equalto'',wd) | map(attribute=''value'')
+        | list %}{% set tv = tvl[0] if tvl|length else states(''sensor.kleenex_pollen_radar_ewing_trees'')|float(0)
+        %}{% set gv = gvl[0] if gvl|length else states(''sensor.kleenex_pollen_radar_ewing_grass'')|float(0)
+        %}{% set wv = wvl[0] if wvl|length else states(''sensor.kleenex_pollen_radar_ewing_weeds'')|float(0)
+        %}{% set C = tv + gv + wv %}{% set pp = 0 if C<50 else (6 if C<75 else (16
+        if C<120 else (28 if C<150 else (40 if C<200 else 50)))) %}{% set pp = pp
+        + (8 if gv>=60 else (4 if gv>=40 else 0)) %}{% set pp = [pp,55]|min %}{% set
+        wstd = 0 if wind<12 else (3 if wind<18 else 6) %}{% set wint = 0 if C<75 else
+        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{{ [100,[0,
+        r+c+t+30-pp-wstd-wint]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
+    action: input_number.set_value
+  - target:
+      entity_id: input_text.mow_forecast_label_2_2
+    data:
+      value: '{% set dt = wx[''weather.kttn_daynight''][''forecast''] | selectattr(''is_daytime'',''eq'',true)
+        | list %}{% if dt|length > 1 %}{% set d = as_datetime(dt[1].datetime).astimezone()
+        %}{% if d.date() == now().date() %}Tonight · eve{% elif d.date() == (now()+timedelta(days=1)).date()
+        %}Tomorrow · {{ ''eve'' if d.weekday()<5 else ''all day'' }}{% else %}{{ d.strftime(''%a
+        %-d %b'') }} · {{ ''eve'' if d.weekday()<5 else ''all day'' }}{% endif %}{%
+        else %}—{% endif %}'
+    action: input_text.set_value
+  - target:
+      entity_id: input_number.mow_forecast_score_3
+    data:
+      value: '{% set dt = wx[''weather.kttn_daynight''][''forecast''] | selectattr(''is_daytime'',''eq'',true)
+        | list %}{% if dt|length > 2 %}{% set p = dt[2] %}{% set wd = as_datetime(p.datetime).astimezone().date()
+        %}{% set precip = p.precipitation_probability|int(0) %}{% set cond = p.condition|lower
+        %}{% set temp = p.temperature|float(70) %}{% set wind = p.wind_speed|float(0)
+        %}{% if ''lightning'' in cond or ''thunderstorm'' in cond or ''hail'' in cond
+        or ''pouring'' in cond or precip>=75 %}{{ 0 }}{% else %}{% set r = 30 if precip<10
+        else (23 if precip<25 else (14 if precip<40 else (6 if precip<60 else 2)))
+        %}{% set c = 18 if cond==''sunny'' else (16 if cond==''partlycloudy'' else
+        (13 if cond==''cloudy'' else (4 if ''rain'' in cond or cond==''drizzle'' else
+        14))) %}{% set t = 22 if temp>=62 and temp<=85 else (16 if (temp>=55 and temp<62)
+        or (temp>85 and temp<=90) else (9 if (temp>=45 and temp<55) or (temp>90 and
+        temp<=95) else (3 if temp>=35 else 0))) %}{% set tf = state_attr(''sensor.kleenex_pollen_radar_ewing_trees'',''forecast'')
+        or [] %}{% set gf = state_attr(''sensor.kleenex_pollen_radar_ewing_grass'',''forecast'')
+        or [] %}{% set wf = state_attr(''sensor.kleenex_pollen_radar_ewing_weeds'',''forecast'')
+        or [] %}{% set tvl = tf | selectattr(''date'',''equalto'',wd) | map(attribute=''value'')
+        | list %}{% set gvl = gf | selectattr(''date'',''equalto'',wd) | map(attribute=''value'')
+        | list %}{% set wvl = wf | selectattr(''date'',''equalto'',wd) | map(attribute=''value'')
+        | list %}{% set tv = tvl[0] if tvl|length else states(''sensor.kleenex_pollen_radar_ewing_trees'')|float(0)
+        %}{% set gv = gvl[0] if gvl|length else states(''sensor.kleenex_pollen_radar_ewing_grass'')|float(0)
+        %}{% set wv = wvl[0] if wvl|length else states(''sensor.kleenex_pollen_radar_ewing_weeds'')|float(0)
+        %}{% set C = tv + gv + wv %}{% set pp = 0 if C<50 else (6 if C<75 else (16
+        if C<120 else (28 if C<150 else (40 if C<200 else 50)))) %}{% set pp = pp
+        + (8 if gv>=60 else (4 if gv>=40 else 0)) %}{% set pp = [pp,55]|min %}{% set
+        wstd = 0 if wind<12 else (3 if wind<18 else 6) %}{% set wint = 0 if C<75 else
+        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{{ [100,[0,
+        r+c+t+30-pp-wstd-wint]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
+    action: input_number.set_value
+  - target:
+      entity_id: input_text.mow_forecast_label_3_2
+    data:
+      value: '{% set dt = wx[''weather.kttn_daynight''][''forecast''] | selectattr(''is_daytime'',''eq'',true)
+        | list %}{% if dt|length > 2 %}{% set d = as_datetime(dt[2].datetime).astimezone()
+        %}{% if d.date() == now().date() %}Tonight · eve{% elif d.date() == (now()+timedelta(days=1)).date()
+        %}Tomorrow · {{ ''eve'' if d.weekday()<5 else ''all day'' }}{% else %}{{ d.strftime(''%a
+        %-d %b'') }} · {{ ''eve'' if d.weekday()<5 else ''all day'' }}{% endif %}{%
+        else %}—{% endif %}'
+    action: input_text.set_value
+  - target:
+      entity_id: input_number.mow_forecast_score_4
+    data:
+      value: '{% set dt = wx[''weather.kttn_daynight''][''forecast''] | selectattr(''is_daytime'',''eq'',true)
+        | list %}{% if dt|length > 3 %}{% set p = dt[3] %}{% set wd = as_datetime(p.datetime).astimezone().date()
+        %}{% set precip = p.precipitation_probability|int(0) %}{% set cond = p.condition|lower
+        %}{% set temp = p.temperature|float(70) %}{% set wind = p.wind_speed|float(0)
+        %}{% if ''lightning'' in cond or ''thunderstorm'' in cond or ''hail'' in cond
+        or ''pouring'' in cond or precip>=75 %}{{ 0 }}{% else %}{% set r = 30 if precip<10
+        else (23 if precip<25 else (14 if precip<40 else (6 if precip<60 else 2)))
+        %}{% set c = 18 if cond==''sunny'' else (16 if cond==''partlycloudy'' else
+        (13 if cond==''cloudy'' else (4 if ''rain'' in cond or cond==''drizzle'' else
+        14))) %}{% set t = 22 if temp>=62 and temp<=85 else (16 if (temp>=55 and temp<62)
+        or (temp>85 and temp<=90) else (9 if (temp>=45 and temp<55) or (temp>90 and
+        temp<=95) else (3 if temp>=35 else 0))) %}{% set tf = state_attr(''sensor.kleenex_pollen_radar_ewing_trees'',''forecast'')
+        or [] %}{% set gf = state_attr(''sensor.kleenex_pollen_radar_ewing_grass'',''forecast'')
+        or [] %}{% set wf = state_attr(''sensor.kleenex_pollen_radar_ewing_weeds'',''forecast'')
+        or [] %}{% set tvl = tf | selectattr(''date'',''equalto'',wd) | map(attribute=''value'')
+        | list %}{% set gvl = gf | selectattr(''date'',''equalto'',wd) | map(attribute=''value'')
+        | list %}{% set wvl = wf | selectattr(''date'',''equalto'',wd) | map(attribute=''value'')
+        | list %}{% set tv = tvl[0] if tvl|length else states(''sensor.kleenex_pollen_radar_ewing_trees'')|float(0)
+        %}{% set gv = gvl[0] if gvl|length else states(''sensor.kleenex_pollen_radar_ewing_grass'')|float(0)
+        %}{% set wv = wvl[0] if wvl|length else states(''sensor.kleenex_pollen_radar_ewing_weeds'')|float(0)
+        %}{% set C = tv + gv + wv %}{% set pp = 0 if C<50 else (6 if C<75 else (16
+        if C<120 else (28 if C<150 else (40 if C<200 else 50)))) %}{% set pp = pp
+        + (8 if gv>=60 else (4 if gv>=40 else 0)) %}{% set pp = [pp,55]|min %}{% set
+        wstd = 0 if wind<12 else (3 if wind<18 else 6) %}{% set wint = 0 if C<75 else
+        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{{ [100,[0,
+        r+c+t+30-pp-wstd-wint]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
+    action: input_number.set_value
+  - target:
+      entity_id: input_text.mow_forecast_label_4
+    data:
+      value: '{% set dt = wx[''weather.kttn_daynight''][''forecast''] | selectattr(''is_daytime'',''eq'',true)
+        | list %}{% if dt|length > 3 %}{% set d = as_datetime(dt[3].datetime).astimezone()
+        %}{% if d.date() == now().date() %}Tonight · eve{% elif d.date() == (now()+timedelta(days=1)).date()
+        %}Tomorrow · {{ ''eve'' if d.weekday()<5 else ''all day'' }}{% else %}{{ d.strftime(''%a
+        %-d %b'') }} · {{ ''eve'' if d.weekday()<5 else ''all day'' }}{% endif %}{%
+        else %}—{% endif %}'
+    action: input_text.set_value
+  mode: single
+- id: '1780227732805'
+  alias: Samba SMB Port Watchdog
+  description: Monitors binary_sensor.samba_smb_port. If the SMB port (445) is unreachable
+    for 2 minutes straight, restarts the Samba share app and sends a phone push. Catches
+    the failure mode where the addon container shows 'started' but smbd has stopped
+    listening.
+  triggers:
+  - platform: state
+    entity_id: binary_sensor.samba_smb_port
+    to: 'off'
+    for:
+      minutes: 2
+  actions:
+  - data:
+      title: Samba share down
+      message: SMB port 445 stopped responding. Restarting the Samba app now.
+    action: notify.mobile_app_iphone
+  - data:
+      addon: core_samba
+    action: hassio.addon_restart
+  mode: single
+- id: garbage_night_before_reminder
+  alias: Garbage — Night-Before Reminder
+  description: 'v3: Converted to the ellewiz/trash_reminder blueprint (Jun 2026).
+    Garbage and Recycling both live in calendar.garbage (Garbage = weekly Wednesdays);
+    the blueprint''s keyword filter restricts this instance to Garbage events only,
+    leaving Recycling to its sibling instance to avoid double notifications. Logic,
+    -4h offset, and calendar.vacation gate are unchanged from v2 — only the implementation
+    moved into the shared blueprint.'
+  use_blueprint:
+    path: ellewiz/trash_reminder.yaml
+    input:
+      bin_calendar: calendar.garbage
+      match_keyword: garbage
+      lead_offset: '-4:00:00'
+      alert_title: "\U0001F5D1️ Bins out tonight"
+      action_phrase: put the cans out tonight
+- id: garbage_recycling_night_before_reminder
+  alias: Recycling — Night-Before Reminder
+  description: 'v2: Converted to the ellewiz/trash_reminder blueprint (Jun 2026).
+    Recycling is an every-other-Tuesday all-day event living in calendar.garbage (first
+    occurrence 2026-06-09); the calendar''s rrule handles the biweekly cadence. The
+    blueprint''s keyword filter restricts this instance to Recycling events only —
+    its sibling (garbage_night_before_reminder) handles Garbage. Logic and gating
+    unchanged from v1.'
+  use_blueprint:
+    path: ellewiz/trash_reminder.yaml
+    input:
+      bin_calendar: calendar.garbage
+      match_keyword: recycling
+      lead_offset: '-4:00:00'
+      alert_title: ♻️ Recycling out tonight
+      action_phrase: put the recycling out tonight
+- id: '1780365192484'
+  alias: 'Alert: Core Heartbeat (dead-man''s switch)'
+  description: 'Dead-man''s switch for HA Core. Pings Healthchecks.io every 5 min
+    via rest_command.core_heartbeat (defined in packages/core_heartbeat.yaml, URL
+    in secrets.yaml as healthchecks_core_heartbeat_url). When Core or the whole box
+    dies, the pings stop and Healthchecks alerts Lara from outside the box after ~15
+    min (check Period 10m + Grace 5m). This exists because HA cannot notify about
+    its own death (the 2026-06-01 SIGBUS outage sent no alert). Ungated on purpose:
+    must run even during calendar.vacation, like security/fridge automations. Also
+    fires once on HA start so a fresh boot pings immediately. max_exceeded:silent
+    keeps the log quiet on the high-frequency time trigger.'
+  triggers:
+  - trigger: time_pattern
+    minutes: /5
+    id: heartbeat_tick
+  - trigger: homeassistant
+    event: start
+    id: ha_started
+  conditions: []
+  actions:
+  - action: rest_command.core_heartbeat
+    alias: Ping Healthchecks.io dead-man's switch
+  mode: single
+  max_exceeded: silent
+- id: '1780396731256'
+  alias: Log - Good Night Johnny button press
+  description: Durable press log for the office Lumi button. Fires on every short-press
+    (same trigger as Good night Johnny), independent of the music condition. Increments
+    a lifetime counter, a vacation-only counter, stamps the last-press time, and writes
+    a logbook entry tagged with vacation state. Created to make 'was it pressed during
+    vacation' answerable beyond recorder retention.
+  triggers:
+  - platform: device
+    device_id: c8bb0b9a688e58d28beaf2e26ee12b21
+    domain: zha
+    type: remote_button_short_press
+    subtype: remote_button_short_press
+  actions:
+  - action: counter.increment
+    target:
+      entity_id: counter.good_night_johnny_presses
+  - action: input_datetime.set_datetime
+    target:
+      entity_id: input_datetime.good_night_johnny_last_press
+    data:
+      datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
+  - choose:
+    - conditions:
+      - condition: state
+        entity_id: calendar.vacation
+        state: 'on'
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.good_night_johnny_presses_vacation
+      - action: logbook.log
+        data:
+          name: Good night Johnny button
+          message: pressed while vacation was ON
+          entity_id: automation.good_night_johnny
+    default:
+    - action: logbook.log
+      data:
+        name: Good night Johnny button
+        message: pressed (vacation off)
+        entity_id: automation.good_night_johnny
+  mode: queued
+  max: 10
+- id: '1780656091166'
+  alias: 'Oura: Flag sleep note pending on data sync'
+  description: 'Raises input_boolean.oura_note_pending when the Oura Ring sleep score
+    syncs each morning (state changes to a valid value). The Cowork scheduled task
+    ''oura-daily-sleep-note'' polls this flag every 30 min 6am-noon as a cheap gate:
+    flag off = exit in one call; flag on = write the Apple Notes report, then turn
+    the flag off. Replaces the old pattern where every poll did a full template eval
+    + Apple Notes duplicate scan even after the note was written. Not gated on calendar.vacation:
+    the note is harmless while away and sleep data still syncs.'
+  triggers:
+  - trigger: state
+    entity_id: sensor.oura_ring_sleep_score
+    not_to:
+    - unknown
+    - unavailable
+  conditions:
+  - condition: template
+    value_template: '{{ trigger.to_state.state not in [''unknown'', ''unavailable'',
+      ''none'', ''''] }}'
+  actions:
+  - alias: Raise the pending flag for the Cowork sleep-note task
+    action: input_boolean.turn_on
+    target:
+      entity_id: input_boolean.oura_note_pending
+  mode: single
+- id: bedroom_lights_off_manager
+  alias: Bedroom — Lights Off (Motion Clear / Bright / In Bed / Retry)
+  description: 'Companion to ''Bedroom — Motion Lights (v2)''. Standalone turn-off
+    so bedroom lights go off no matter how they were turned on (motion automation,
+    in_bed wake automation''s Energize scene, Hue button/app). Created after 2026-06-04
+    incident: lights came on at 06:26 via the wake automation, the motion automation''s
+    lux condition failed (room already bright), and its in-run wait never armed —
+    lights stayed on 16h. Branches: (1) motion clear 3 min — primary off path; (2)
+    lux above bedroom_lux_off_threshold for 2 min, gated on sun above_horizon so the
+    lights'' own output can''t self-trigger an off at night; (3) in_bed turns on —
+    lights out for sleep. Stateless triggers survive reloads/restarts, unlike the
+    old wait_for_trigger design. Note: wake-alarm light fade-in is safe — motion_clear
+    needs a fresh off-transition and the bright path needs a daylight lux crossing.
+    2026-06-07 retry branch added after incident #3: bedside_2 dropped off the Hue
+    bridge 2s before the 07:26 turn_off, missed the command, rejoined reporting ''on''
+    and stayed lit ~2.7h (motion_clear needs a fresh transition, bright needs a lux
+    crossing — no recovery path). New trigger ''rejoined'': a bedside bulb returns
+    from unavailable to ''on''; if motion has been clear >=3 min, re-send turn_off.
+    Top-level on-condition relaxed to OR trigger.id==''rejoined'' because the group
+    state can lag the member rejoin by milliseconds. Root cause is Zigbee interference
+    (see ''Alert: Zigbee Flapping Watchdog''); this branch is resilience, keep it
+    after the channel fix.'
+  triggers:
+  - entity_id: binary_sensor.hue_motion_sensor_2_motion
+    to: 'off'
+    for: 00:03:00
+    id: motion_clear
+    platform: state
+  - entity_id: sensor.hue_motion_sensor_2_light_level
+    above: input_number.bedroom_lux_off_threshold
+    for: 00:02:00
+    id: bright
+    platform: numeric_state
+  - entity_id: input_boolean.in_bed
+    from: 'off'
+    to: 'on'
+    id: in_bed
+    platform: state
+  - platform: state
+    entity_id:
+    - light.bedside_1
+    - light.bedside_2
+    from: unavailable
+    to: 'on'
+    id: rejoined
+  conditions:
+  - condition: or
+    conditions:
+    - condition: state
+      entity_id: light.bedroom_lights
+      state: 'on'
+    - condition: template
+      value_template: '{{ trigger.id == ''rejoined'' }}'
+  actions:
+  - choose:
+    - alias: No motion for 3 min — turn off
+      conditions:
+      - condition: trigger
+        id: motion_clear
+      sequence:
+      - action: light.turn_off
+        target:
+          entity_id: light.bedroom_lights
+        data:
+          transition: 1
+    - alias: Room bright in daylight — turn off
+      conditions:
+      - condition: trigger
+        id: bright
+      - condition: state
+        entity_id: sun.sun
+        state: above_horizon
+      sequence:
+      - action: light.turn_off
+        target:
+          entity_id: light.bedroom_lights
+        data:
+          transition: 1
+    - alias: Got in bed — turn off
+      conditions:
+      - condition: trigger
+        id: in_bed
+      sequence:
+      - action: light.turn_off
+        target:
+          entity_id: light.bedroom_lights
+        data:
+          transition: 1
+    - alias: Bulb rejoined bridge reporting on, no motion — retry off
+      conditions:
+      - condition: trigger
+        id: rejoined
+      - condition: state
+        entity_id: binary_sensor.hue_motion_sensor_2_motion
+        state: 'off'
+        for: 00:03:00
+      sequence:
+      - action: light.turn_off
+        target:
+          entity_id: light.bedroom_lights
+        data:
+          transition: 1
+  mode: single
+  max_exceeded: silent
+- id: '1780845090681'
+  alias: 'Alert: Zigbee Flapping Watchdog'
+  description: 'Counts Hue bulb unavailable-dropouts across the five individual bulbs
+    (bedside_1, bedside_2, corner, end table, torchiere) into counter.zigbee_flap_events,
+    reset hourly by ''Zigbee Flap Watchdog — Resets''. Pushes ONE iPhone alert per
+    day (guard: input_boolean.zigbee_flap_alerted_today, reset 4am) when drops reach
+    6 in an hour. Created 2026-06-07 after interference flapping (started ~Jun 5,
+    bedside_2 + corner ~65 drops each/48h) made bedside_2 miss a turn_off command
+    and stay lit 2.7h. Purpose: confirm whether the Hue Zigbee channel change works,
+    and catch recurrence. Healthy baseline is ~0 drops/hour, so threshold 6 is generous.
+    Known caveat: an HA restart can briefly mark all bulbs unavailable and add up
+    to 5 counts in that hour — below threshold by design. Not gated on calendar.vacation
+    (infrastructure alert). v1: if too chatty or not granular enough, v2 could track
+    per-bulb counters.'
+  triggers:
+  - trigger: state
+    entity_id:
+    - light.bedside_1
+    - light.bedside_2
+    - light.living_room_corner
+    - light.next_to_couch
+    - light.torchiere
+    to: unavailable
+    not_from: unknown
+  actions:
+  - alias: Count the dropout
+    action: counter.increment
+    target:
+      entity_id: counter.zigbee_flap_events
+  - alias: Alert once per day when threshold crossed
+    choose:
+    - conditions:
+      - condition: numeric_state
+        entity_id: counter.zigbee_flap_events
+        above: 5
+      - condition: state
+        entity_id: input_boolean.zigbee_flap_alerted_today
+        state: 'off'
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          title: ⚠️ Zigbee Flapping
+          message: '{{ states(''counter.zigbee_flap_events'') }} Hue bulb dropouts
+            in the past hour (latest: {{ trigger.to_state.attributes.friendly_name
+            | default(trigger.entity_id) }}). Interference is still active — bulbs
+            may miss commands.'
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.zigbee_flap_alerted_today
+  mode: queued
+  max: 10
+  max_exceeded: silent
+- id: '1780845094126'
+  alias: Zigbee Flap Watchdog — Resets
+  description: 'Housekeeping for ''Alert: Zigbee Flapping Watchdog''. Hourly: resets
+    counter.zigbee_flap_events so the threshold means drops-per-hour. At the 04:00
+    run, also clears input_boolean.zigbee_flap_alerted_today so the watchdog can alert
+    again the next day (matches the Health Tags 4am reset convention).'
+  triggers:
+  - minutes: 0
+    platform: time_pattern
+  actions:
+  - alias: Hourly counter reset
+    action: counter.reset
+    target:
+      entity_id: counter.zigbee_flap_events
+  - alias: 4am — re-arm the daily alert guard
+    choose:
+    - conditions:
+      - condition: time
+        after: 03:59:30
+        before: 04:59:30
+      sequence:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.zigbee_flap_alerted_today
+  mode: single
+- id: movie_lamp_observer_snapshot_log
+  alias: Living Room — Movie Lamp Observer
+  description: 'Diagnostic logging for the Movie Lamp Dimmer/Restore v2 automations
+    (Frndly blind-spot validation, added 2026-06-07). Whenever either automation fires,
+    write a logbook entry snapshotting the decision inputs at trigger time: ATV state
+    + app_id, TCL TV plug watts, Roku source, Arc state, and lamp state/brightness.
+    Lamp brightness reflects the state BEFORE the fired automation''s action completes
+    — that''s intentional (we want the inputs, not the outcome). Added 2026-06-08:
+    a /5-minute periodic_sample trigger that logs lamp brightness only while the lamp
+    is on, after sunset, and under AL manual_control (proxy for movie-dim active)
+    — this fills the gap where brightness isn''t recorded and the snapshot only samples
+    on automation fires, so we can confirm the 20% dim holds steady across a Frndly
+    evening. Same durable-logging pattern as the Good Night Johnny button. Remove
+    once the v2 logic is proven out.'
+  triggers:
+  - event_type: automation_triggered
+    event_data:
+      entity_id: automation.living_room_movie_lamp_dimmer
+    id: dimmer_fired
+    platform: event
+  - event_type: automation_triggered
+    event_data:
+      entity_id: automation.living_room_movie_lamp_restore
+    id: restore_fired
+    platform: event
+  - platform: time_pattern
+    minutes: /5
+    id: periodic_sample
+  conditions: []
+  actions:
+  - choose:
+    - alias: Automation-fired snapshot of decision inputs
+      conditions:
+      - condition: template
+        value_template: '{{ trigger.id in [''dimmer_fired'', ''restore_fired''] }}'
+      sequence:
+      - alias: Write snapshot of decision inputs to logbook
+        action: logbook.log
+        data:
+          name: Movie Lamp Observer
+          entity_id: light.next_to_couch
+          message: '{{ trigger.event.data.name }} fired | ATV: {{ states(''media_player.living_room_4k_2'')
+            }} (app: {{ state_attr(''media_player.living_room_4k_2'', ''app_id'')
+            or ''none'' }}) | TV plug: {{ states(''sensor.tcl_tv_current_consumption'')
+            }} W | Roku: {{ states(''media_player.55_tcl_roku_tv'') }}/{{ state_attr(''media_player.55_tcl_roku_tv'',
+            ''source'') or ''n/a'' }} | Arc: {{ states(''media_player.living_room_arc'')
+            }} | Lamp before: {{ states(''light.next_to_couch'') }}{% if is_state(''light.next_to_couch'',
+            ''on'') %} @ {{ ((state_attr(''light.next_to_couch'', ''brightness'')
+            or 0) / 2.55) | round }}%{% endif %}'
+    - alias: Periodic brightness sample during movie-dim window
+      conditions:
+      - condition: template
+        value_template: '{{ trigger.id == ''periodic_sample'' }}'
+      - condition: state
+        entity_id: light.next_to_couch
+        state: 'on'
+      - condition: state
+        entity_id: sun.sun
+        state: below_horizon
+      - condition: template
+        value_template: '{{ ''light.next_to_couch'' in (state_attr(''switch.adaptive_lighting_living_room_lights'',
+          ''manual_control'') or []) }}'
+      sequence:
+      - alias: Write periodic brightness sample to logbook
+        action: logbook.log
+        data:
+          name: Movie Lamp Observer
+          entity_id: light.next_to_couch
+          message: 'Periodic dim sample | Lamp: {{ states(''light.next_to_couch'')
+            }}{% if is_state(''light.next_to_couch'', ''on'') %} @ {{ ((state_attr(''light.next_to_couch'',
+            ''brightness'') or 0) / 2.55) | round }}%{% endif %} | ATV: {{ states(''media_player.living_room_4k_2'')
+            }} (app: {{ state_attr(''media_player.living_room_4k_2'', ''app_id'')
+            or ''none'' }}) | TV plug: {{ states(''sensor.tcl_tv_current_consumption'')
+            }} W | Roku: {{ states(''media_player.55_tcl_roku_tv'') }}/{{ state_attr(''media_player.55_tcl_roku_tv'',
+            ''source'') or ''n/a'' }} | Arc: {{ states(''media_player.living_room_arc'')
+            }}'
+  mode: queued
+  max: 10
+- id: '1781031863269'
+  alias: Living Room — Corner Lamp Dropout Logger
+  description: 'Logs every time light.living_room_corner drops off the Hue bridge
+    and when it recovers, to build a dropout count for deciding whether to replace
+    the bulb. Context: after the ch.25 change on 2026-06-07 fixed bedside_2 / end-table
+    / etc., the corner lamp is the lone remaining flapper (suspected bulb-specific
+    or local interferer). Increments counter.corner_lamp_unavailable_count on each
+    drop, stamps input_datetime.corner_lamp_last_unavailable / _last_recovered, and
+    writes logbook entries including downtime on recovery. not_from: unknown filters
+    HA-restart init noise so restarts aren''t miscounted as dropouts. TODO: if the
+    count climbs over ~a week, replace the bulb and retire this logger.'
+  triggers:
+  - trigger: state
+    entity_id: light.living_room_corner
+    to: unavailable
+    not_from:
+    - unknown
+    id: went_unavailable
+  - trigger: state
+    entity_id: light.living_room_corner
+    from: unavailable
+    not_to:
+    - unknown
+    - unavailable
+    id: recovered
+  actions:
+  - choose:
+    - alias: Drop — count it, stamp the time, log it
+      conditions:
+      - condition: trigger
+        id: went_unavailable
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.corner_lamp_unavailable_count
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.corner_lamp_last_unavailable
+        data:
+          datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
+      - action: logbook.log
+        data:
+          name: Corner Lamp
+          message: 'dropped off the Hue bridge (unavailable). Drop #{{ states(''counter.corner_lamp_unavailable_count'')
+            }} since logging began.'
+          entity_id: light.living_room_corner
+    - alias: Recovery — stamp the time, log downtime
+      conditions:
+      - condition: trigger
+        id: recovered
+      sequence:
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.corner_lamp_last_recovered
+        data:
+          datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
+      - action: logbook.log
+        data:
+          name: Corner Lamp
+          message: recovered to '{{ trigger.to_state.state }}' after {% set ts = state_attr('input_datetime.corner_lamp_last_unavailable','timestamp')
+            %}{% if ts %}{{ ((as_timestamp(now()) - ts) / 60) | round(1) }} min{%
+            else %}unknown{% endif %} of downtime.
+          entity_id: light.living_room_corner
+  mode: queued
+  max: 10
+- id: '1781291786499'
+  alias: Living Room — Ambient Logger (Flap Metrics)
+  description: 'Durable measurement logger for the Living Room Ambient Manager''s
+    anti-flap rework (2026-06-12). On every light.living_room_lights on/off transition
+    it writes a logbook entry capturing dwell time in the prior state plus the decision
+    inputs at that moment: smoothed lux (sensor.living_room_illuminance_smoothed),
+    raw Hue lux, living-room motion, and whether the change was auto or manual (context.user_id).
+    A ''flap'' = lights going on->off after fewer than 25 min on (the behavior the
+    25-min guard + smoothing + widened band are meant to kill); each flap increments
+    counter.living_room_light_flaps and stamps input_datetime.living_room_light_last_flap.
+    At 04:00 it logs the 24h flap tally and resets the counter, building a day-by-day
+    series. not_from/not_to unknown+unavailable filters HA-restart and Zigbee-dropout
+    noise. Same durable-logging pattern as the Corner Lamp Dropout Logger; retire
+    once the fix is proven steady.'
+  triggers:
+  - id: transition
+    entity_id: light.living_room_lights
+    not_from:
+    - unknown
+    - unavailable
+    not_to:
+    - unknown
+    - unavailable
+    platform: state
+  - id: daily_reset
+    at: 04:00:00
+    platform: time
+  actions:
+  - choose:
+    - alias: Log every transition with dwell + decision inputs
+      conditions:
+      - condition: trigger
+        id: transition
+      sequence:
+      - action: logbook.log
+        data:
+          name: LR Ambient Logger
+          entity_id: light.living_room_lights
+          message: now {{ trigger.to_state.state }} (was {{ trigger.from_state.state
+            }} for {{ ((trigger.to_state.last_changed - trigger.from_state.last_changed).total_seconds()/60)|round(1)
+            }} min) | smoothed {{ states('sensor.living_room_illuminance_smoothed')
+            }} lx / raw {{ states('sensor.hue_motion_sensor_4_illuminance') }} lx
+            | motion {{ states('binary_sensor.hue_motion_sensor_4_motion') }} | presence
+            {{ states('binary_sensor.living_room_presence') }} | {{ 'manual' if trigger.to_state.context.user_id
+            else 'auto' }}
+      - alias: Count it as a flap if lights were on under 25 min
+        choose:
+        - conditions:
+          - condition: template
+            value_template: '{{ trigger.from_state.state == ''on'' and trigger.to_state.state
+              == ''off'' and (trigger.to_state.last_changed - trigger.from_state.last_changed).total_seconds()
+              < 1500 }}'
+          sequence:
+          - action: counter.increment
+            target:
+              entity_id: counter.living_room_light_flaps
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: input_datetime.living_room_light_last_flap
+            data:
+              datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
+          - action: logbook.log
+            data:
+              name: LR Ambient Logger
+              entity_id: light.living_room_lights
+              message: 'FLAP #{{ states(''counter.living_room_light_flaps'') }}: lights
+                went off after only {{ ((trigger.to_state.last_changed - trigger.from_state.last_changed).total_seconds()/60)|round(1)
+                }} min on.'
+    - alias: Daily 4am — log the 24h tally, then reset
+      conditions:
+      - condition: trigger
+        id: daily_reset
+      sequence:
+      - action: logbook.log
+        data:
+          name: LR Ambient Logger
+          entity_id: counter.living_room_light_flaps
+          message: 'Daily summary: {{ states(''counter.living_room_light_flaps'')
+            }} short on/off flaps (under 25 min) in the last 24h.'
+      - action: counter.reset
+        target:
+          entity_id: counter.living_room_light_flaps
+  mode: queued
+  max: 10
+  max_exceeded: silent
+- id: meds_log_dose_from_button
+  alias: 'Meds: Log dose from Orb button'
+  description: 'Logs a medication dose when a button on the SONOFF SNZB-01M Orb (ieee
+    a4:c1:38:10:9e:56:ff:ff) is pressed. Per press it: (1) increments counter.med_*_doses
+    (durable -> mirrored to sensor.med_*_doses_recorded for long-term statistics,
+    read by the monthly crossfactor report as a per-med factor); (2) calls the existing
+    Health Tags script.log_* which checks the input_boolean.*_taken dashboard flag
+    AND writes the canonical ''Health Log'' logbook entry (so a button press behaves
+    identically to tapping the Oura dashboard); (3) pushes an iPhone notification
+    that opens Apple Health. Button->endpoint->med map (single press): ep1=Adderall
+    (1 dot, upper-left), ep2=Lexapro (2 dots, upper-right), ep3=Guanfacine (3 dots,
+    lower-left), ep4=Zepbound (4 dots, lower-right). DOUBLE-press ep1 = log Adderall
+    AND Lexapro together. NOTE: Adderall/Lexapro/Guanfacine no longer set an input_datetime
+    (consolidated away Jun 15 2026 as redundant with the daily flag + counter). Zepbound
+    has NO Health Tags boolean/script (weekly med; daily-reset model doesn''t fit),
+    so its branch logs inline and keeps input_datetime.med_zepbound_last_taken for
+    a ''last taken / days since'' readout, plus the counter. WHY zha_event: ZHA has
+    no quirk for this new model, no per-button entity; presses fire raw zha_event
+    on SONOFF cluster 64530 (0xFC52) with clean command names; filter cluster_id 64530
+    to drop on_off(6)/level(8) noise. NOT vacation-gated (meds taken while traveling;
+    report drops away nights). Iron not on a button. Never reset the counters (breaks
+    report deltas).'
+  triggers:
+  - trigger: event
+    event_type: zha_event
+    id: adderall
+    event_data:
+      device_ieee: a4:c1:38:10:9e:56:ff:ff
+      endpoint_id: 1
+      cluster_id: 64530
+      command: single
+  - trigger: event
+    event_type: zha_event
+    id: lexapro
+    event_data:
+      device_ieee: a4:c1:38:10:9e:56:ff:ff
+      endpoint_id: 2
+      cluster_id: 64530
+      command: single
+  - trigger: event
+    event_type: zha_event
+    id: guanfacine
+    event_data:
+      device_ieee: a4:c1:38:10:9e:56:ff:ff
+      endpoint_id: 3
+      cluster_id: 64530
+      command: single
+  - trigger: event
+    event_type: zha_event
+    id: zepbound
+    event_data:
+      device_ieee: a4:c1:38:10:9e:56:ff:ff
+      endpoint_id: 4
+      cluster_id: 64530
+      command: single
+  - trigger: event
+    event_type: zha_event
+    id: adderall_lexapro_combo
+    event_data:
+      device_ieee: a4:c1:38:10:9e:56:ff:ff
+      endpoint_id: 1
+      cluster_id: 64530
+      command: double
+  actions:
+  - alias: Increment durable counter, then check dashboard flag via Health Tags script
+    choose:
+    - alias: Adderall + Lexapro combo (Button 1 double-press)
+      conditions:
+      - condition: trigger
+        id: adderall_lexapro_combo
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.med_adderall_doses
+      - action: counter.increment
+        target:
+          entity_id: counter.med_lexapro_doses
+      - action: script.log_adderall
+      - action: script.log_lexapro
+    - alias: Adderall (Button 1)
+      conditions:
+      - condition: trigger
+        id: adderall
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.med_adderall_doses
+      - action: script.log_adderall
+    - alias: Lexapro (Button 2)
+      conditions:
+      - condition: trigger
+        id: lexapro
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.med_lexapro_doses
+      - action: script.log_lexapro
+    - alias: Guanfacine (Button 3)
+      conditions:
+      - condition: trigger
+        id: guanfacine
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.med_guanfacine_doses
+      - action: script.log_guanfacine
+    - alias: Zepbound (Button 4) — no Health Tags flag (weekly med), keeps last-taken
+        + counter
+      conditions:
+      - condition: trigger
+        id: zepbound
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.med_zepbound_doses
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.med_zepbound_last_taken
+        data:
+          timestamp: '{{ now().timestamp() }}'
+      - action: logbook.log
+        data:
+          name: Health Log
+          message: Zepbound taken
+          entity_id: input_datetime.med_zepbound_last_taken
+  - alias: Push iPhone notification that opens Apple Health
+    action: notify.mobile_app_iphone
+    data:
+      title: "\U0001F48A Med logged"
+      message: '{{ med_label }} logged at {{ now().strftime(''%-I:%M %p'') }}. Tap
+        to open Health.'
+      data:
+        url: x-apple-health://
+        push:
+          interruption-level: active
+  mode: queued
+  max: 10
+  variables:
+    med_label: '{% set m = {''adderall'':''Adderall'',''lexapro'':''Lexapro'',''guanfacine'':''Guanfacine'',''zepbound'':''Zepbound'',''adderall_lexapro_combo'':''Adderall
+      + Lexapro''} %}{{ m.get(trigger.id, ''Medication'') }}'
+- id: commute_airplay_interrupted_alert
+  alias: 'Commute: Alert if announcement interrupts AirPlay music'
+  description: 'The morning commute announcer (script.commute_time_announcer -> script.sonos_broadcast)
+    snapshots, unjoins and speaks on the Sonos players, then sonos.restore. Sonos-native
+    sources (Music Assistant) resume fine, but a live AirPlay stream (x-sonos-vli)
+    cannot be re-pulled by sonos.restore -- it comes back paused while the phone keeps
+    advancing the playlist silently. 2026-06-15: built after AirPlay music to bathroom
+    + bedroom_frame died on the 6:55 announcement and never resumed. This is a guard,
+    NOT a fix -- the AirPlay limitation is not solvable from HA. It just pushes a
+    heads-up so the interruption is noticed instead of discovered later as silence.
+    Fires when a target speaker sits paused on an AirPlay source for 20s while the
+    announcer is still running. Uses a notification tag so the 5-minute announcement
+    cadence updates one notification instead of stacking. Next step if this proves
+    noisy: gate on a once-per-morning input_boolean reset at wake time.
+
+    '
+  mode: single
+  triggers:
+  - trigger: state
+    entity_id:
+    - media_player.bathroom
+    - media_player.bedroom_frame
+    to: paused
+    for: 00:00:20
+  conditions:
+  - condition: state
+    entity_id: script.commute_time_announcer
+    state: 'on'
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: template
+    value_template: "{{ 'airplay' in (state_attr(trigger.entity_id, 'media_content_id')
+      | default('') | lower)\n   or (state_attr(trigger.entity_id, 'source') | default('')
+      | lower) == 'airplay' }}\n"
+  actions:
+  - action: notify.mobile_app_iphone
+    data:
+      title: "\U0001F3B5 AirPlay music paused"
+      message: The commute announcement interrupted AirPlay on {{ trigger.to_state.attributes.friendly_name
+        }} and Sonos can't auto-resume it. Tap play on your phone, or use Music Assistant
+        for morning music so it resumes itself.
+      data:
+        tag: airplay_interrupted
+        push:
+          interruption-level: active

@@ -1,0 +1,37 @@
+blueprint:
+  name: Leak Sensor Alert
+  description: Notify + flash lights if leak sensor trips.
+  domain: automation
+  input:
+    leak_sensor:
+      name: Leak Sensor
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: moisture
+    notify_device:
+      name: Notify Device
+      selector:
+        device:
+          integration: mobile_app
+    light_target:
+      name: Light(s) to flash
+      selector:
+        target:
+          entity:
+            domain: light
+
+trigger:
+  - platform: state
+    entity_id: !input leak_sensor
+    to: "on"
+
+action:
+  - service: notify.mobile_app_{{ device_attr(notify_device, 'name')|lower|replace(' ', '_') }}
+    data:
+      title: "Leak Detected!"
+      message: "Water detected by {{ trigger.entity_id }}"
+  - service: light.turn_on
+    data:
+      flash: long
+    target: !input light_target

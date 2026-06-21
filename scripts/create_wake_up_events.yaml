@@ -1,0 +1,25 @@
+create_wake_up_events:
+  alias: Create next week's Wake Up events
+  description: >
+    Creates Wake up events for Mon–Fri of next week, defaulting to office
+    schedule (6:00–7:25 AM, description "office"). Edit WFH days to 6:30–8:00,
+    late shift to 7:00–9:30, and remove "office" from the description for
+    non-office days.
+  mode: single
+  sequence:
+    - variables:
+        days_until_monday: >
+          {{ (7 - now().weekday()) % 7 or 7 }}
+    - repeat:
+        count: 5
+        sequence:
+          - action: calendar.create_event
+            target:
+              entity_id: calendar.master_calendar
+            data:
+              summary: Wake up
+              description: office
+              start_date_time: >
+                {{ (now() + timedelta(days=days_until_monday + repeat.index - 1)).strftime('%Y-%m-%d') }}T06:00:00
+              end_date_time: >
+                {{ (now() + timedelta(days=days_until_monday + repeat.index - 1)).strftime('%Y-%m-%d') }}T07:25:00

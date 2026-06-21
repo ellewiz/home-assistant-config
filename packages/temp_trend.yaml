@@ -1,0 +1,75 @@
+# ===== Helpers (optional but recommended) =====
+input_number:
+  temp_rate_threshold_f_per_h:
+    name: Temp rate threshold (°F/h)
+    min: 0
+    max: 10
+    step: 0.1
+    mode: box
+    icon: mdi:thermometer-chevron-up
+  temp_rate_hysteresis_f_per_h:
+    name: Temp rate hysteresis (°F/h)
+    min: 0
+    max: 5
+    step: 0.1
+    mode: box
+    icon: mdi:ray-vertex
+
+# ===== Sensors =====
+sensor:
+  # Numeric rate of change in °F per hour
+  - platform: derivative
+    name: kttn_temp_rate
+    source: sensor.kttn_temperature
+    unit_time: h              # °F per hour
+    time_window: "00:30:00"   # smoothing window (30–60 min is typical)
+
+# ===== Binary sensors (rising / falling) & tri-state display =====
+template:
+  - sensor:
+      - name: "Temperature trend"
+        unique_id: kttn_temp_trend_tri
+        icon: mdi:trending-neutral
+        state: >
+          {% set r = states('sensor.kttn_temp_rate')|float(0) %}
+          {% set th = states('input_number.temp_rate_threshold_f_per_h')|float(3) %}
+          {% if r >= th %}rising
+          {% elif r <= -th %}falling
+          {% else %}stable{% endif %}
+        attributes:
+          rate_per_hour: "{{ states('sensor.kttn_temp_rate') }}"
+        availability: >
+          {{ states('sensor.kttn_temp_rate') not in ['unknown','unavailable',''] }}
+    binary_sensor:
+      - default_entity_id: binary_sensor.temp_rising_bool
+        name: "Temp rising"
+        device_class: heat
+        # simple debounce to prevent flapping
+        delay_on:
+          minutes: 5
+        delay_off:
+          minutes: 5
+        availability: >
+          {{ states('sensor.kttn_temp_rate') not in ['unknown','unavailable',''] }}
+        # Turn ON when rate >= threshold + hysteresis
+        state: >
+          {% set r = states('sensor.kttn_temp_rate')|float(0) %}
+          {% set th = states('input_number.temp_rate_threshold_f_per_h')|float(3) %}
+          {% set h  = states('input_number.temp_rate_hysteresis_f_per_h')|float(0.5) %}
+          {{ r >= (th + h) }}
+
+      - default_entity_id: binary_sensor.temp_falling_bool
+        name: "Temp falling"
+        device_class: cold
+        delay_on:
+          minutes: 5
+        delay_off:
+          minutes: 5
+        availability: >
+          {{ states('sensor.kttn_temp_rate') not in ['unknown','unavailable',''] }}
+        # Turn ON when rate <= -threshold - hysteresis
+        state: >
+          {% set r = states('sensor.kttn_temp_rate')|float(0) %}
+          {% set th = states('input_number.temp_rate_threshold_f_per_h')|float(3) %}
+          {% set h  = states('input_number.temp_rate_hysteresis_f_per_h')|float(0.5) %}
+          {{ r <= -(th + h) }}

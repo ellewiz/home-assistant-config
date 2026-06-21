@@ -1,0 +1,22 @@
+{
+  "aliases": [
+    "Era 100",
+    "Sonos Era 100"
+  ],
+  "calculation_enabled_condition": "{{ is_state('[[entity]]', 'playing') }}",
+  "calculation_strategy": "linear",
+  "device_type": "smart_speaker",
+  "linear_config": {
+    "calibrate": [
+      "0 -> 2.2",
+      "25 -> 4.5",
+      "50 -> 7.5",
+      "75 -> 10.5",
+      "100 -> 14.0"
+    ]
+  },
+  "measure_description": "ESTIMATED, not measured. Anchored to Sonos official idle figure (1.98 W at 120V) and published ~5-10 W at 50% volume; 100% point extrapolated from Sonos One library profile shape. Replace with measured values if a smart plug is ever put on this speaker, or delete this custom profile if powercalc ships an official era_100 profile.",
+  "measure_method": "manual",
+  "name": "Era 100",
+  "standby_power": 1.98
+}

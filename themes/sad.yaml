@@ -1,0 +1,5 @@
+sad:
+  primary-color: steelblue
+  modes:
+    dark:
+      secondary-text-color: slategray

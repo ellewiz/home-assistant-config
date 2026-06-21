@@ -1,0 +1,51 @@
+shut_down_bedtime:
+  alias: Shut down at bedtime
+  icon: mdi:power-sleep
+  mode: single
+  description: >-
+    Triggered from an iPhone shortcut when a specific pair of Bluetooth
+    headphones connects. Late-night gate added 2026-06-12: only proceed when
+    binary_sensor.late_night_together (tod, 21:00–05:30) is on, so connecting
+    the headphones in bed during the day/morning no longer flips in_bed and
+    shuts off the lights. A failing condition step halts the script cleanly.
+  sequence:
+    # Gate: only run during the late-night window. If it's not late night
+    # (e.g. a daytime in-bed listen), the script stops here and does nothing.
+    - alias: Only run if it's late night
+      condition: state
+      entity_id: binary_sensor.late_night_together
+      state: "on"
+
+    # Always mark you as "in bed"
+    - alias: Set in_bed
+      action: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.in_bed
+
+    - alias: Blink bedside light
+      action: light.turn_on
+      target:
+        entity_id: light.bedside_2
+      data:
+        brightness: 255
+        flash: short
+
+    # Fade out bedroom lights
+    - alias: Bedroom lights off (30s fade)
+      action: light.turn_off
+      target:
+        entity_id: light.bedroom_lights
+      data:
+        transition: 30
+
+    # Random wind-down before the living room goes dark
+    - alias: Random delay before LR off
+      delay:
+        minutes: "{{ range(10, 25) | random | int }}"
+
+    # Turn off the living room
+    - alias: Living room lights off
+      action: light.turn_off
+      target:
+        entity_id: light.living_room_lights
+
