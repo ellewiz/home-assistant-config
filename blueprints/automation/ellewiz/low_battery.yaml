@@ -1,0 +1,43 @@
+blueprint:
+  name: Low Battery Notification
+  description: Notify if any battery sensor is below threshold.
+  domain: automation
+  input:
+    threshold:
+      name: Battery %
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 100
+    notify_device:
+      name: Device to notify
+      selector:
+        device:
+          integration: mobile_app
+
+trigger:
+  - platform: time
+    at: "09:00:00"
+
+action:
+  - variables:
+      threshold: !input threshold
+      low_batteries: >
+        {% set t = threshold | int %}
+        {% set ns = namespace(list=[]) %}
+        {% for s in expand(states.sensor)
+            | selectattr('attributes.device_class','eq','battery')
+            | selectattr('state','is_number') %}
+          {% if s.state | int < t %}
+            {% set ns.list = ns.list + [s.entity_id] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.list }}
+  - choose:
+      - conditions: "{{ low_batteries | length > 0 }}"
+        sequence:
+          - service: notify.mobile_app_{{ device_attr(notify_device, 'name')|lower|replace(' ', '_') }}
+            data:
+              title: "Low Batteries"
+              message: "{{ low_batteries | join(', ') }}"

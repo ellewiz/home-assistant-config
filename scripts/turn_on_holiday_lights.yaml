@@ -1,0 +1,15 @@
+randomize_holiday_lights:
+  alias: Randomize holiday lights
+  sequence:
+    - repeat:
+        count: "{{ expand('group.plugs_for_holiday_lights')|length }}"
+        sequence:
+          - service: homeassistant.turn_on
+            data:
+              entity_id:
+                "{{ expand('group.plugs_for_holiday_lights') | selectattr('state',
+                'eq', 'off') | map(attribute='entity_id') | list | random }}"
+          - delay:
+              seconds: "{{ range(10,20) | random | int }}"
+  mode: single
+  icon: mdi:home-switch

@@ -1,0 +1,31 @@
+# Living Room — Smoothed Illuminance (anti-flap for the Ambient Manager)
+#
+# Why: the raw Hue lux sensor (sensor.hue_motion_sensor_4_illuminance) is coarse
+# and noisy — observed swinging 19→43 every few minutes on a partly-cloudy
+# afternoon (2026-06-12). Worse, it sees the lamps the Ambient Manager controls:
+# each group turn-on adds ~15-20 lx, pushing the reading above the OFF threshold,
+# so the off-branch fires ~5 min later, lux falls back under the ON threshold, and
+# it re-fires. Confirmed flapping: light.living_room_lights cycled on/off 6 times
+# in ~80 min that afternoon, in an empty room.
+#
+# How: a 10-minute median over the raw sensor. Median (not mean) shrugs off single
+# spikes, and the window rides over the lamp-feedback wobble so the Ambient Manager
+# triggers on a stable value instead of the raw jitter. Backfills from recorder on
+# reload like the rain sensor. The Ambient Manager triggers off THIS entity; the
+# widened band (lux_on 18 / lux_off 45) and a 25-min minimum on-time guard in the
+# automation are the other two halves of the anti-flap fix.
+#
+# Note: median over 10 min adds a few minutes of lag, so on a fast-darkening storm
+# the lights come on slightly later than the raw sensor would fire — the intended
+# trade for stability. Shorten max_age if more responsiveness is wanted.
+
+sensor:
+  - platform: statistics
+    name: "Living Room Illuminance Smoothed"
+    unique_id: living_room_illuminance_smoothed
+    entity_id: sensor.hue_motion_sensor_4_illuminance
+    state_characteristic: median
+    precision: 0
+    sampling_size: 60
+    max_age:
+      minutes: 10

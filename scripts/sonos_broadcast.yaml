@@ -1,0 +1,111 @@
+sonos_broadcast:
+  alias: Sonos — Broadcast
+  description: >
+    Speak the same TTS message on several Sonos media players, using native
+    snapshot/restore.
+    2026-06-08: snapshot now runs BEFORE the unjoin (and with with_group: true)
+    so a player that was part of a group when the announcement fired is rebuilt
+    and resumed by sonos.restore. Previously unjoin ran first and the snapshot
+    captured a torn-apart, solo state, so grouped music (e.g. bathroom +
+    bedroom_frame during the morning commute announcer) came back paused on a
+    stale queue position instead of resuming.
+    2026-06-14: HomePod support removed. The HomePod Mini (media_player.minipod)
+    was pulled from all announcers after pyatv RAOP TTS broke (miniaudio decoder
+    failure on Python 3.14); the bathroom Sonos Era 100 now covers the shower
+    window. The homepod_players / homepod_volume fields and the
+    homepod_tts_announce / homepod_tts_speak_once wrapper scripts were deleted.
+  mode: parallel
+  fields:
+    players:
+      description: List of Sonos media_player entities
+      selector: { entity: { multiple: true, domain: media_player } }
+    message:
+      description: Text to speak
+      selector: { text: {} }
+    volume:
+      description: Volume level (0.0 – 1.0). Omit to keep current volume.
+      selector: { number: { min: 0, max: 1, step: 0.01 } }
+    volume_players:
+      description: >
+        Subset of players to apply `volume` to (list or JSON string). Omit to
+        apply `volume` to all players. Lets a caller boost only certain speakers
+        (e.g. upstairs) without changing the rest. Sonos players are snapshot
+        before this, so they restore to their prior volume afterward.
+      default: []
+      selector: { entity: { multiple: true, domain: media_player } }
+    restore:
+      description: Restore previous playback after speaking
+      default: true
+      selector: { boolean: {} }
+    ungroup:
+      description: Ungroup each Sonos player first
+      default: true
+      selector: { boolean: {} }
+  sequence:
+    - variables:
+        _restore: "{{ restore | default(true) }}"
+        _ungroup: "{{ ungroup | default(true) }}"
+        # Fields may arrive as JSON strings (when called from another script via tojson)
+        # or as real lists (when called directly from YAML). Handle both.
+        _sonos_count: >
+          {% set s = players | default('[]') %}
+          {{ ((s | from_json) if s is string else s) | length }}
+        # Normalised players list as JSON, used as the volume fallback target.
+        _players_json: >
+          {% set s = players | default('[]') %}
+          {{ ((s | from_json) if s is string else s) | tojson }}
+
+    # Snapshot Sonos players FIRST — before any unjoin — and WITH group topology
+    # so sonos.restore can rebuild the group and resume the queue from the
+    # coordinator. Must precede unjoin and the volume change below so both are
+    # captured and reverted afterward.
+    - choose:
+        - conditions: "{{ _restore and (_sonos_count | int) > 0 }}"
+          sequence:
+            - action: sonos.snapshot
+              target:
+                entity_id: "{{ players }}"
+              data:
+                with_group: true
+
+    # Ungroup Sonos players. Runs after the snapshot so the announcement plays
+    # per-room while the pre-announcement group is still safely recorded for restore.
+    - choose:
+        - conditions: "{{ _ungroup and (_sonos_count | int) > 0 }}"
+          sequence:
+            - action: media_player.unjoin
+              target:
+                entity_id: "{{ players }}"
+
+    # Set volume — on volume_players if provided, otherwise all players
+    - choose:
+        - conditions: "{{ volume is defined }}"
+          sequence:
+            - action: media_player.volume_set
+              target:
+                entity_id: >-
+                  {% set vp = volume_players | default([]) %}
+                  {% set vp_list = (vp | from_json) if vp is string else vp %}
+                  {{ (vp_list | tojson) if (vp_list | length) > 0 else _players_json }}
+              data:
+                volume_level: "{{ volume }}"
+
+    # Speak TTS on Sonos players
+    - choose:
+        - conditions: "{{ (_sonos_count | int) > 0 }}"
+          sequence:
+            - action: tts.speak
+              target:
+                entity_id: tts.home_assistant_cloud
+              data:
+                media_player_entity_id: "{{ players }}"
+                cache: false
+                message: "{{ message }}"
+
+    # Restore Sonos players
+    - choose:
+        - conditions: "{{ _restore and (_sonos_count | int) > 0 }}"
+          sequence:
+            - action: sonos.restore
+              target:
+                entity_id: "{{ players }}"

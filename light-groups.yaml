@@ -1,0 +1,13 @@
+# Light groups
+- platform: group
+  name: Living Room Lights
+  entities:
+    - light.living_room_corner
+    - light.torchiere
+    - light.next_to_couch
+
+- platform: group
+  name: Bedroom Lights
+  entities:
+    - light.bedside_1
+    - light.bedside_2

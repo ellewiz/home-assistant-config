@@ -1,0 +1,42 @@
+# ===== Secrets & credentials =====
+secrets.yaml
+.cloud/
+.storage/
+ssh/
+.mcp_proxy_config.json
+
+# ===== Databases & runtime state =====
+*.db
+*.db-shm
+*.db-wal
+.ha_run.lock
+.fuse_hidden*
+.smbdelete*
+home-assistant.log*
+*.log
+*.log.*
+
+# ===== Caches & third-party code =====
+.cache/
+deps/
+tts/
+image/
+custom_components/
+www/community/
+
+# ===== Personal / health data =====
+packages/health_tags.yaml
+oura_france_trip_analysis_may2026.md
+oura_france_trip_charts_may2026.html
+oura_sleep_report_*
+sleep_report_*
+_reports/
+daily-maintenance-*.md
+ha-daily-maintenance-*.md
+ha_daily_report_*.md
+
+# ===== Local tooling & misc =====
+.claude/
+.vscode/
+_newtest.txt
+.HA_VERSION

@@ -1,0 +1,7 @@
+day_and_night:
+  primary-color: coral
+  modes:
+    light:
+      secondary-text-color: olive
+    dark:
+      secondary-text-color: slategray

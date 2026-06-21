@@ -1,0 +1,186 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Unavailable / Unknown census (counts + handy attributes)
+# Drop-in file for Home Assistant (Template integration)
+#
+# NOTE: Uses time_pattern trigger (every 5 min) instead of reactive state
+# subscriptions to prevent template loops — these sensors include themselves
+# in the `states.sensor` / `states` collections they count.
+# ─────────────────────────────────────────────────────────────────────────────
+- trigger:
+    - trigger: time_pattern
+      minutes: "/5"
+    - trigger: homeassistant
+      event: start
+  sensor:
+    # ===== TOTAL =====
+    - unique_id: maintenance_unavailable_total
+      name: unavailable_count
+      icon: >-
+        {% set n = states | selectattr('state','in',['unavailable','unknown']) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {{ states | selectattr('state','in',['unavailable','unknown']) | list | count }}
+      attributes:
+        entities: >-
+          {{ states | selectattr('state','in',['unavailable','unknown'])| map(attribute='entity_id') | list }}
+
+    # ===== BY DOMAIN =====
+    - unique_id: maintenance_unavailable_binary_sensor
+      name: unavailable_binary_sensor
+      icon: >-
+        {% set n = states.binary_sensor | selectattr('state','in',['unavailable','unknown']) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {{ states.binary_sensor | selectattr('state','in',['unavailable','unknown']) | list | count }}
+      attributes:
+        entities: >-
+          {{ states.binary_sensor | selectattr('state','in',['unavailable','unknown'])| map(attribute='entity_id') | list }}
+
+    - unique_id: maintenance_unavailable_sensor
+      name: unavailable_sensor
+      icon: >-
+        {% set n = states.sensor | selectattr('state','in',['unavailable','unknown']) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {{ states.sensor | selectattr('state','in',['unavailable','unknown']) | list | count }}
+      attributes:
+        entities: >-
+          {{ states.sensor | selectattr('state','in',['unavailable','unknown'])
+                            | map(attribute='entity_id') | list }}
+
+    - unique_id: maintenance_unavailable_light
+      name: unavailable_light
+      icon: >-
+        {% set n = states.light | selectattr('state','in',['unavailable','unknown']) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {{ states.light | selectattr('state','in',['unavailable','unknown']) | list | count }}
+      attributes:
+        entities: >-
+          {{ states.light | selectattr('state','in',['unavailable','unknown'])| map(attribute='entity_id') | list }}
+
+    - unique_id: maintenance_unavailable_scene
+      name: unavailable_scene
+      icon: >-
+        {% set n = states.scene | selectattr('state','in',['unavailable','unknown']) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {{ states.scene | selectattr('state','in',['unavailable','unknown']) | list | count }}
+      attributes:
+        entities: >-
+          {{ states.scene | selectattr('state','in',['unavailable','unknown'])| map(attribute='entity_id') | list }}
+
+    - unique_id: maintenance_unavailable_script
+      name: unavailable_script
+      icon: >-
+        {% set n = states.script | selectattr('state','in',['unavailable','unknown']) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {{ states.script | selectattr('state','in',['unavailable','unknown']) | list | count }}
+      attributes:
+        entities: >-
+          {{ states.script | selectattr('state','in',['unavailable','unknown'])
+                            | map(attribute='entity_id') | list }}
+
+    - unique_id: maintenance_unavailable_device_tracker
+      name: unavailable_device_tracker
+      icon: >-
+        {% set n = states.device_tracker | selectattr('state','in',['unavailable','unknown']) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {{ states.device_tracker | selectattr('state','in',['unavailable','unknown']) | list | count }}
+      attributes:
+        entities: >-
+          {{ states.device_tracker | selectattr('state','in',['unavailable','unknown'])
+                                    | map(attribute='entity_id') | list }}
+
+    - unique_id: maintenance_unavailable_update
+      name: unavailable_update
+      icon: >-
+        {% set n = states.update | selectattr('state','in',['unavailable','unknown']) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {{ states.update | selectattr('state','in',['unavailable','unknown']) | list | count }}
+      attributes:
+        entities: >-
+          {{ states.update | selectattr('state','in',['unavailable','unknown'])
+                            | map(attribute='entity_id') | list }}
+
+    - unique_id: maintenance_unavailable_switch
+      name: unavailable_switch
+      icon: >-
+        {% set n = states.switch | selectattr('state','in',['unavailable','unknown']) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {{ states.switch | selectattr('state','in',['unavailable','unknown']) | list | count }}
+      attributes:
+        entities: >-
+          {{ states.switch | selectattr('state','in',['unavailable','unknown'])
+                            | map(attribute='entity_id') | list }}
+
+    - unique_id: maintenance_unavailable_button
+      name: unavailable_button
+      icon: >-
+        {% set n = states.button | selectattr('state','in',['unavailable','unknown']) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {{ states.button | selectattr('state','in',['unavailable','unknown']) | list | count }}
+      attributes:
+        entities: >-
+          {{ states.button | selectattr('state','in',['unavailable','unknown'])
+                            | map(attribute='entity_id') | list }}
+
+    - unique_id: maintenance_unavailable_vacuum
+      name: unavailable_vacuum
+      icon: >-
+        {% set n = states.vacuum | selectattr('state','in',['unavailable','unknown']) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {{ states.vacuum | selectattr('state','in',['unavailable','unknown']) | list | count }}
+      attributes:
+        entities: >-
+          {{ states.vacuum | selectattr('state','in',['unavailable','unknown'])
+                            | map(attribute='entity_id') | list }}
+
+    # ===== BY INTEGRATION (edit to your stack as needed) =====
+    - unique_id: maintenance_unavailable_zha
+      name: unavailable_zha
+      icon: >-
+        {% set bad = states | selectattr('state','in',['unavailable','unknown']) | list %}
+        {% set n = bad | selectattr('entity_id','in', integration_entities('zha')) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {% set bad = states | selectattr('state','in',['unavailable','unknown']) | list %}
+        {{ bad | selectattr('entity_id','in', integration_entities('zha')) | list | count }}
+      attributes:
+        entities: >-
+          {% set bad = states | selectattr('state','in',['unavailable','unknown']) | list %}
+          {{ bad | selectattr('entity_id','in', integration_entities('zha'))| map(attribute='entity_id') | list }}
+
+    - unique_id: maintenance_unavailable_hue
+      name: unavailable_hue
+      icon: >-
+        {% set bad = states | selectattr('state','in',['unavailable','unknown']) | list %}
+        {% set n = bad | selectattr('entity_id','in', integration_entities('hue')) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {% set bad = states | selectattr('state','in',['unavailable','unknown']) | list %}
+        {{ bad | selectattr('entity_id','in', integration_entities('hue')) | list | count }}
+      attributes:
+        entities: >-
+          {% set bad = states | selectattr('state','in',['unavailable','unknown']) | list %}
+          {{ bad | selectattr('entity_id','in', integration_entities('hue'))| map(attribute='entity_id') | list }}
+
+    - unique_id: maintenance_unavailable_mobile_app
+      name: unavailable_mobile_app
+      icon: >-
+        {% set bad = states | selectattr('state','in',['unavailable','unknown']) | list %}
+        {% set n = bad | selectattr('entity_id','in', integration_entities('mobile_app')) | list | count %}
+        {{ 'mdi:check-circle-outline' if n == 0 else 'mdi:alert-circle-outline' }}
+      state: >-
+        {% set bad = states | selectattr('state','in',['unavailable','unknown']) | list %}
+        {{ bad | selectattr('entity_id','in', integration_entities('mobile_app')) | list | count }}
+      attributes:
+        entities: >-
+          {% set bad = states | selectattr('state','in',['unavailable','unknown']) | list %}
+          {{ bad | selectattr('entity_id','in', integration_entities('mobile_app'))| map(attribute='entity_id') | list }}

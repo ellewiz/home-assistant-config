@@ -1,0 +1,55 @@
+- platform: tod
+  name: Late_Night_Together
+  after: "21:00"
+  before: "5:30"
+
+- platform: tod
+  name: Early Morning
+  after: "5:30"
+  before: "8:00"
+
+- platform: tod
+  name: Morning
+  after: "08:00"
+  before: "12:00"
+
+- platform: tod
+  name: Afternoon
+  after: "12:00"
+  before: sunset
+
+- platform: tod
+  name: Evening
+  after: sunset
+  before: "21:00"
+
+- platform: trend
+  sensors:
+    sun_rising:
+      entity_id: sun.sun
+      attribute: elevation
+      friendly_name: "Sun rising"
+
+- platform: trend
+  sensors:
+    sun_setting:
+      entity_id: sun.sun
+      attribute: elevation
+      invert: true
+      friendly_name: "Sun setting"
+
+- platform: trend
+  sensors:
+    humidity_rising:
+      entity_id: sensor.kttn_relative_humidity
+      sample_duration: 3600
+      max_samples: 60
+      friendly_name: "KTTN humidity rising"
+
+- platform: trend
+  sensors:
+    getting_darker:
+      entity_id: sensor.hue_outdoor_motion_sensor_1_light_level
+      sample_duration: 7200
+      max_samples: 120
+      min_gradient: -0.0008

@@ -1,0 +1,84 @@
+sonos_say:
+  alias: Sonos — Say
+  description: Speak a TTS message on a Sonos player with optional volume and restore.
+  mode: parallel
+  fields:
+    player:
+      description: Sonos media_player entity_id
+      example: media_player.dining_room
+      selector: { entity: { domain: media_player } }
+    message:
+      description: Text to speak
+      example: "Good morning! It's 7:00 a.m."
+      selector: { text: {} }
+    volume:
+      description: Volume level (0.0 – 1.0). Omit to keep current volume.
+      example: 0.35
+      selector: { number: { min: 0, max: 1, step: 0.01 } }
+    restore:
+      description: Restore previous playback after speaking
+      default: true
+      selector: { boolean: {} }
+    ungroup:
+      description: Ungroup this player first (avoid blasting the whole house)
+      default: true
+      selector: { boolean: {} }
+  sequence:
+    - variables:
+        _player: "{{ player }}"
+        _volume: "{{ volume | default(none) }}"
+        _restore: "{{ restore | default(true) }}"
+        _ungroup: "{{ ungroup | default(true) }}"
+        # Capture BEFORE any unjoin so grouped playback is detected and restored.
+        _was_playing: "{{ is_state(_player, 'playing') }}"
+
+    # Snapshot FIRST — before the unjoin — and WITH group topology so
+    # sonos.restore can rebuild the group and resume the queue. 2026-06-08:
+    # matched the fix made to sonos_broadcast. Previously the unjoin ran first
+    # and the snapshot captured a torn-apart solo state, so grouped music came
+    # back paused on a stale queue position instead of resuming.
+    - if:
+        - condition: template
+          value_template: "{{ _restore and _was_playing }}"
+      then:
+        - service: sonos.snapshot
+          target: { entity_id: "{{ _player }}" }
+          data: { with_group: true }
+
+    # Ungroup (optional) — after the snapshot
+    - if:
+        - condition: template
+          value_template: "{{ _ungroup }}"
+      then:
+        - service: media_player.unjoin
+          target: { entity_id: "{{ _player }}" }
+
+    # Set volume (optional)
+    - if:
+        - condition: template
+          value_template: "{{ _volume is not none }}"
+      then:
+        - service: media_player.volume_set
+          target: { entity_id: "{{ _player }}" }
+          data: { volume_level: "{{ _volume }}" }
+
+    # Speak
+    - service: tts.speak
+      target:
+        entity_id: tts.home_assistant_cloud
+      data:
+        media_player_entity_id: "{{ _player }}"
+        cache: false
+        message: "{{ message }}"
+
+    # Wait long enough for the TTS to finish (estimate length/12 chars + 2s)
+    - delay:
+        seconds: "{{ ((message | length) / 12) | round(0, 'ceil') + 2 }}"
+
+    # Restore (optional, only if we had something playing)
+    - if:
+        - condition: template
+          value_template: "{{ _restore and _was_playing }}"
+      then:
+        - service: sonos.restore
+          target: { entity_id: "{{ _player }}" }

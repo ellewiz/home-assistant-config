@@ -1,0 +1,55 @@
+template:
+  - sensor:
+      # Never-triggered automations
+      - name: HA Never-Triggered Automations
+        unique_id: ha_never_triggered_automations
+        icon: mdi:robot-off
+        state: >
+          {{ states.automation
+               | selectattr('attributes.last_triggered','equalto', none)
+               | list | count }}
+        attributes:
+          automations: >
+            {{ states.automation
+                 | selectattr('attributes.last_triggered','equalto', none)
+                 | map(attribute='entity_id') | list }}
+          names: >
+            {{ states.automation
+                 | selectattr('attributes.last_triggered','equalto', none)
+                 | map(attribute='name') | list }}
+
+      # Old-triggered (no run in N days)
+      - name: HA Old-Triggered Automations
+        unique_id: ha_old_triggered_automations
+        icon: mdi:robot
+        state: >
+          {% set days = 90 %}
+          {% set cutoff = now() - timedelta(days=days) %}
+          {{ states.automation
+               | selectattr('attributes.last_triggered','defined')
+               | selectattr('attributes.last_triggered','ne', none)
+               | selectattr('attributes.last_triggered','lt', cutoff)
+               | list | count }}
+        attributes:
+          days_threshold: 90
+          automations: >
+            {% set days = 90 %}
+            {% set cutoff = now() - timedelta(days=days) %}
+            {{ states.automation
+                 | selectattr('attributes.last_triggered','defined')
+                 | selectattr('attributes.last_triggered','ne', none)
+                 | selectattr('attributes.last_triggered','lt', cutoff)
+                 | map(attribute='entity_id') | list }}
+          pretty: >
+            {% set days = 90 %}
+            {% set cutoff = now() - timedelta(days=days) %}
+            {% set ns = namespace(result=[]) %}
+            {% for a in states.automation
+                 | selectattr('attributes.last_triggered','defined')
+                 | selectattr('attributes.last_triggered','ne', none)
+                 | selectattr('attributes.last_triggered','lt', cutoff) %}
+              {% set name = a.name or a.entity_id %}
+              {% set triggered = (a.attributes.last_triggered | as_datetime | as_local).strftime('%Y-%m-%d') %}
+              {% set ns.result = ns.result + [name ~ ' (' ~ triggered ~ ')'] %}
+            {% endfor %}
+            {{ ns.result }}

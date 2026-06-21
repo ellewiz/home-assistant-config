@@ -1,0 +1,77 @@
+blueprint:
+  name: Trash — Night-Before Reminder
+  description: >
+    Evening heads-up the night before a bin collection. Triggers on an event
+    start in a shared bin calendar, then filters to a single waste stream by a
+    keyword in the event summary — so Garbage and Recycling can live in one
+    calendar without double-notifying (each instance matches only its own
+    keyword). The lead offset lands the ping the evening before (-4:00:00 on an
+    all-day event ~ 20:00 the night before). Gated on calendar.vacation off
+    (dog-sitter handles the bins while away). Pushes to notify.mobile_app_iphone
+    per house style.
+  domain: automation
+  input:
+    bin_calendar:
+      name: Bin calendar
+      description: Calendar that holds the collection events.
+      default: calendar.garbage
+      selector:
+        entity:
+          domain: calendar
+    match_keyword:
+      name: Summary keyword
+      description: >
+        Lowercase keyword that must appear in the event summary for this stream
+        (e.g. "garbage", "recycling"). Case-insensitive match.
+      selector:
+        text: {}
+    lead_offset:
+      name: Lead time before event
+      description: >
+        Negative offset from the all-day event start. -4:00:00 lands the ping
+        around 20:00 the evening before.
+      default: "-4:00:00"
+      selector:
+        text: {}
+    alert_title:
+      name: Notification title
+      description: Short push title, emoji-prefixed per house style.
+      default: "Bins out tonight"
+      selector:
+        text: {}
+    action_phrase:
+      name: Action phrase
+      description: >
+        Tail of the message telling you what to do, e.g.
+        "put the cans out tonight".
+      default: "put the cans out tonight"
+      selector:
+        text: {}
+
+mode: single
+
+variables:
+  keyword: !input match_keyword
+  phrase: !input action_phrase
+
+triggers:
+  - trigger: calendar
+    entity_id: !input bin_calendar
+    event: start
+    offset: !input lead_offset
+
+conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: "off"
+  - condition: template
+    value_template: >
+      {{ keyword in (trigger.calendar_event.summary | default('') | lower) }}
+
+actions:
+  - action: notify.mobile_app_iphone
+    data:
+      title: !input alert_title
+      message: >-
+        {{ trigger.calendar_event.summary | default(keyword | title, true) }}
+        is tomorrow — {{ phrase }}.

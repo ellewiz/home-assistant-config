@@ -1,0 +1,43 @@
+# Rain — Rolling 7-Day Total
+#
+# Why: the Ambient Weather station's "weekly rain" counter resets every Sunday
+# at midnight (calendar week), so a Saturday-night storm vanishes from the
+# dashboard a couple hours later. This sensor is a true rolling window instead.
+#
+# How: statistics sensor over the daily rain accumulator. sum_differences_nonnegative
+# sums only the positive deltas between samples, so the midnight daily reset
+# (a large negative delta) and unavailable blips are ignored. Recorder retention
+# (~10 days) covers the 7-day window; the sensor backfills from recorder on restart.
+#
+# Dashboard: surfaced as "Last 7 Days" on the Weather view (Rain section) and
+# the Mow Lawn view (Lawn Dryness section).
+#
+# Two-entity design (display workaround): the statistics platform doesn't set a
+# suggested display precision, so HA falls back to the device-class default for
+# `precipitation`, which is 0 decimals — the frontend rendered 0.25 as "0 in".
+# That registry value can only be overridden by hand in the UI, so instead the
+# statistics sensor lives at sensor.rain_last_7_days_raw (hidden) and a template
+# sensor WITHOUT a device_class fronts it as sensor.rain_last_7_days, displaying
+# the raw rounded state. If statistics ever gains suggested_display_precision
+# upstream, this can collapse back to a single entity.
+
+sensor:
+  - platform: statistics
+    name: "Rain Last 7 Days Raw"
+    unique_id: rain_last_7_days
+    entity_id: sensor.weather_518_daily_rain
+    state_characteristic: sum_differences_nonnegative
+    precision: 2
+    sampling_size: 5000
+    max_age:
+      days: 7
+
+template:
+  - sensor:
+      - name: "Rain Last 7 Days"
+        unique_id: rain_last_7_days_display
+        unit_of_measurement: "in"
+        state_class: measurement
+        icon: mdi:weather-rainy
+        availability: "{{ has_value('sensor.rain_last_7_days_raw') }}"
+        state: "{{ states('sensor.rain_last_7_days_raw') | float(0) | round(2) }}"

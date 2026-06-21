@@ -1,0 +1,19 @@
+# ========== history_stats ==========
+- platform: history_stats
+  name: End table lamp ON today
+  entity_id: light.next_to_couch
+  state: "on"
+  type: time
+  start: "{{ now().replace(hour=0, minute=0, second=0) }}"
+  end: "{{ now() }}"
+
+# ========== time_date ==========
+- platform: time_date
+  display_options:
+    - "time"
+    - "date"
+    - "date_time"
+    - "time_date"
+    - "date_time_iso"
+
+#

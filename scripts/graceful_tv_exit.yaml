@@ -1,0 +1,59 @@
+graceful_tv_exit:
+  alias: Graceful TV exit
+  description: >
+    Cleanly leaves whatever is on the living-room TV: if a program is playing it
+    is paused first, the device is returned to its home screen, then after a
+    short settle delay the TV is powered off. Two branches cover the source in
+    use — the Apple TV 4K (device-based, select_source "Home") and the TCL Roku
+    (remote "home" command). The settle delay between returning home and
+    power-off keeps the exit from cutting off before the home screen lands;
+    without it the turn_off raced the home command.
+  mode: single
+  sequence:
+    - alias: Pause and return the active source to its home screen
+      choose:
+        - alias: Apple TV 4K — pause then go Home
+          conditions:
+            - condition: device
+              device_id: 0a28965692f7fead801299fd184f7f4e
+              domain: media_player
+              entity_id: b3ed2dece24ac28191b7c48a42d83134
+              type: is_playing
+          sequence:
+            - action: media_player.media_pause
+              target:
+                device_id: 0a28965692f7fead801299fd184f7f4e
+            - delay:
+                seconds: 2
+            - action: media_player.select_source
+              target:
+                device_id: 0a28965692f7fead801299fd184f7f4e
+              data:
+                source: Home
+        - alias: TCL Roku — pause then go Home
+          conditions:
+            - condition: state
+              entity_id: media_player.55_tcl_roku_tv
+              state: playing
+          sequence:
+            - action: media_player.media_pause
+              target:
+                entity_id: media_player.55_tcl_roku_tv
+            - delay:
+                seconds: 2
+            - action: remote.send_command
+              target:
+                entity_id: remote.55_tcl_roku_tv
+              data:
+                num_repeats: 1
+                delay_secs: 0.4
+                command: home
+    - alias: Let the home screen settle before powering off
+      delay:
+        seconds: 2
+    - alias: Power off the TV
+      action: media_player.turn_off
+      target:
+        entity_id:
+          - media_player.living_room_4k_2
+          - media_player.55_tcl_roku_tv

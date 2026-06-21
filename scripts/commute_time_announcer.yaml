@@ -1,0 +1,139 @@
+commute_time_announcer:
+  alias: Commute-aware time announcer
+  description: >
+    Announces the time every 5 minutes. When within 60 minutes of the
+    sensor.commute_leave_by time, enriches the announcement with Waze
+    travel time and the calculated leave-by time. (Formerly a companion
+    to announce_every_5_until, deleted 2026-06-05 along with its only
+    caller, the old Work Leave Time Announcer.)
+    2026-06-16: presence handling reworked. The loop now runs on the
+    leave-by time gate alone; each announcement is gated on person==home
+    via an if/then. Previously is_state(person_entity,'home') sat in the
+    while condition, so stepping out (e.g. a morning dog walk) exited the
+    whole loop for that run and it never resumed. Now a brief absence just
+    silences the speech and announcing resumes the moment Lara is home.
+  mode: restart
+  fields:
+    until_ts:
+      name: Fallback stop timestamp
+      description: >
+        Unix timestamp (seconds) to stop if sensor.commute_leave_by is
+        unavailable. Normally pass as_timestamp(today_at(sensor value)).
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 1
+          mode: box
+    person_entity:
+      name: Person
+      description: Person entity that must be "home" for an announcement to play
+      required: true
+      selector:
+        entity:
+          domain: person
+    players:
+      name: Sonos Players
+      description: Sonos media players to announce on
+      required: true
+      selector:
+        entity:
+          domain: media_player
+          multiple: true
+
+  sequence:
+    # Snap to next 5-minute boundary before entering loop
+    - wait_for_trigger:
+        - trigger: time_pattern
+          minutes: "/5"
+          seconds: "0"
+      timeout: "00:04:59"
+      continue_on_timeout: true
+
+    - repeat:
+        # Loop on the leave-by time gate only. Presence is checked
+        # per-announcement (see the if/then below) so a brief absence — e.g.
+        # a morning dog walk — silences the speech but the loop keeps ticking
+        # and resumes announcing the moment Lara is home again. (2026-06-16:
+        # presence moved out of this while condition, which used to exit the
+        # whole loop on the first away-tick and never resumed on return.)
+        while:
+          - condition: template
+            value_template: "{{ now().timestamp() < until_ts }}"
+        sequence:
+          - wait_for_trigger:
+              - trigger: time_pattern
+                minutes: "/5"
+                seconds: "0"
+            timeout: "00:04:59"
+            continue_on_timeout: true
+
+          - variables:
+              leave_by: "{{ states('sensor.commute_leave_by') }}"
+              waze_min: "{{ states('sensor.waze_travel_time') | float(0) | round | int }}"
+              mins_until_leave: >
+                {% set lb = states('sensor.commute_leave_by') %}
+                {% if lb not in ['unknown', 'unavailable'] %}
+                  {{ ((as_timestamp(today_at(lb)) - now().timestamp()) / 60) | round | int }}
+                {% else %}
+                  {{ ((until_ts - now().timestamp()) / 60) | round | int }}
+                {% endif %}
+              leave_by_display: >
+                {% set lb = states('sensor.commute_leave_by') %}
+                {% if lb not in ['unknown', 'unavailable'] %}
+                  {{ today_at(lb).strftime('%I:%M %p').lstrip('0') }}
+                {% else %}
+                  unknown
+                {% endif %}
+
+          # Only announce (and flash) when Lara is actually home. When she is
+          # out, the loop keeps ticking silently and picks back up on her
+          # return. (2026-06-16: presence gate moved here from the while.)
+          - if:
+              - condition: template
+                value_template: "{{ is_state(person_entity, 'home') }}"
+            then:
+              # Green-pulse the bedroom lights on the final approach so the
+              # announcement is visible over a running hair dryer — raising TTS
+              # volume enough to beat the dryer would startle Johnny. Fire-and-forget
+              # via script.turn_on so it runs concurrently with the speech and can't
+              # stall or break the repeat loop. Only fires near departure
+              # (<= 10 minutes to leave).
+              - choose:
+                  - conditions: "{{ mins_until_leave <= 10 }}"
+                    sequence:
+                      - action: script.turn_on
+                        data:
+                          entity_id: script.alert_light_flash
+                          variables:
+                            targets:
+                              - light.bedroom_lights
+                            rgb_color:
+                              - 0
+                              - 255
+                              - 0
+                            pulses: 2
+
+              - action: script.sonos_broadcast
+                continue_on_error: true
+                data:
+                  message: >
+                    The time is {{ now().strftime('%I:%M %p').lstrip('0') }}.
+                    {%- if mins_until_leave > 0 and mins_until_leave <= 60 %}
+                      Commute is {{ waze_min }} minute{{ 's' if waze_min != 1 else '' }}. Leave by {{ leave_by_display }}.
+                    {%- elif mins_until_leave <= 0 %}
+                      Time to leave!
+                    {%- endif %}
+                  players: "{{ players | tojson }}"
+                  # Boost only the upstairs speakers so the announcement carries over a
+                  # running shower; downstairs keep their lower resting volume. The
+                  # bathroom Sonos Era 100 (media_player.bathroom) is boosted alongside
+                  # the Bedroom Sonos; both are snapshot/restored, so they return to
+                  # their normal resting levels afterward. (HomePod support removed
+                  # 2026-06-14 — pyatv/miniaudio TTS never worked on py3.14.) Tweak to taste.
+                  volume: 0.75
+                  volume_players: >-
+                    {{ ['media_player.bedroom_frame', 'media_player.bathroom'] | tojson }}
+
+          # Debounce — don't double-fire within the same minute
+          - delay: "00:01:00"

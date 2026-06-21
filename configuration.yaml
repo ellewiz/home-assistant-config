@@ -1,0 +1,37 @@
+default_config:
+
+frontend:
+  themes: !include_dir_merge_named themes
+
+homeassistant:
+  packages: !include_dir_named packages
+
+# Quiet the Apple TV / HomePod boot-time handshake noise (pyatv companion
+# protocol timeouts logged at ERROR). Raised to critical so only the most
+# serious failures are flagged. Covers both the Apple TV 4K and the HomePod.
+logger:
+  logs:
+    homeassistant.components.apple_tv: critical
+    pyatv: critical
+
+
+group: !include groups.yaml
+light: !include light-groups.yaml
+automation: !include automations.yaml
+script: !include_dir_merge_named scripts
+scene: !include scenes.yaml
+sensor: !include sensor.yaml
+binary_sensor: !include binary_sensor.yaml
+
+template: !include_dir_merge_list templates
+
+command_line:
+  - binary_sensor:
+      name: Samba SMB Port
+      unique_id: samba_smb_port
+      command: >-
+        python3 -c "import socket; s=socket.socket(); s.settimeout(2); print('ON' if s.connect_ex(('192.168.1.47',445))==0 else 'OFF')"
+      payload_on: "ON"
+      payload_off: "OFF"
+      device_class: connectivity
+      scan_interval: 120
