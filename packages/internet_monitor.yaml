@@ -1,0 +1,152 @@
+# Wiz Manor — Internet (WAN) Monitor & Outage Alibi
+#
+# WHY: The Healthchecks.io dead-man's switch (see packages/core_heartbeat.yaml and
+# the "Alert: Core Heartbeat (dead-man's switch)" automation) is an OUTBOUND
+# heartbeat, so it cannot tell "HA Core is dead" apart from "the internet is down."
+# Both look identical from the cloud (no ping arrives). On 2026-06-23 a 1:17 to
+# 1:58pm internet outage tripped a Healthchecks "Core DOWN" email while Core was
+# perfectly healthy the entire time.
+#
+# HOW THIS DISAMBIGUATES IT:
+#   1. binary_sensor.internet polls two external hosts every 30s over TCP. It
+#      mirrors the "Samba SMB Port" probe in configuration.yaml, using a python3
+#      socket connect so there is no ICMP/ping privilege requirement.
+#   2. "Internet: Outage Detected (log start)" records the drop time and counts it.
+#      No push here: during an outage HA has no way out to the notify service.
+#   3. "Internet: Restored (Core alibi)" fires when connectivity returns and, if the
+#      outage was long enough to have tripped Healthchecks (>= 15 min = Period 10m
+#      plus Grace 5m), pushes an after-the-fact "Core was fine" alibi to the iPhone.
+#
+# So a Healthchecks "Core DOWN" email followed by an HA alibi means it was just the
+# internet; a "Core DOWN" email followed by SILENCE means the box actually died.
+# The recovery automation triggers only on a clean off -> on transition (never
+# unavailable -> on), so if Core itself had restarted (e.g. a power cut) no false
+# "Core stayed up" alibi is sent. See the core dead-man's switch notes.
+#
+# v1 checks ROUTING/WAN reachability (TCP to 8.8.8.8:53 and 1.1.1.1:443), not DNS
+# resolution. The 2026-06-23 event was a full WAN cut so this catches it. v2 idea:
+# add a DNS-resolve probe to also catch resolver-only failures.
+
+command_line:
+  - binary_sensor:
+      name: Internet
+      unique_id: wiz_internet_wan
+      command: >-
+        python3 -c "import socket; s=socket.socket(); s.settimeout(2); a=s.connect_ex(('8.8.8.8',53)); s.close(); t=socket.socket(); t.settimeout(2); b=t.connect_ex(('1.1.1.1',443)); t.close(); print('ON' if (a==0 or b==0) else 'OFF')"
+      payload_on: "ON"
+      payload_off: "OFF"
+      device_class: connectivity
+      scan_interval: 30
+
+# Outage tally. An input_number is used rather than a counter helper because the
+# counter integration was not already active in this config and cannot be
+# cold-started by a hot reload (a restart would be needed); input_number is
+# already in use (lux thresholds) and merges from packages on reload.
+input_number:
+  internet_outage_count:
+    name: Internet Outage Count
+    icon: mdi:wifi-off
+    min: 0
+    max: 1000000
+    step: 1
+    mode: box
+
+input_datetime:
+  internet_outage_start:
+    name: Internet Outage Start
+    has_date: true
+    has_time: true
+  internet_outage_end:
+    name: Internet Outage End
+    has_date: true
+    has_time: true
+
+template:
+  - sensor:
+      - name: Internet Last Outage Duration
+        unique_id: wiz_internet_last_outage_minutes
+        unit_of_measurement: min
+        icon: mdi:timer-alert-outline
+        state: >
+          {% set s = state_attr('input_datetime.internet_outage_start','timestamp') %}
+          {% set e = state_attr('input_datetime.internet_outage_end','timestamp') %}
+          {% if s and e and e >= s %}{{ ((e - s) / 60) | round(1) }}{% else %}unknown{% endif %}
+
+automation:
+  - id: internet_outage_log_start
+    alias: "Internet: Outage Detected (log start)"
+    description: >-
+      WAN watchdog, part 1 of 2. When binary_sensor.internet has been down for
+      2 min (filters single-poll blips), record the drop time (the sensor's
+      last_changed is the real moment it went down) into
+      input_datetime.internet_outage_start and bump counter.internet_outages.
+      No notification here: during an outage HA cannot reach the push service.
+      The companion "Internet: Restored (Core alibi)" sends the after-the-fact
+      alert once connectivity returns. Together they disambiguate a Healthchecks
+      "Core DOWN" email (alert plus later alibi means internet; alert plus
+      silence means the box died). See the core dead-man's switch.
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.internet
+        from: "on"
+        to: "off"
+        for: "00:02:00"
+    conditions: []
+    actions:
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.internet_outage_start
+        data:
+          timestamp: "{{ as_timestamp(states.binary_sensor.internet.last_changed) }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.internet_outage_count
+        data:
+          value: "{{ (states('input_number.internet_outage_count') | int(0)) + 1 }}"
+    mode: single
+
+  - id: internet_restored_alibi
+    alias: "Internet: Restored (Core alibi)"
+    description: >-
+      WAN watchdog, part 2 of 2. Fires when binary_sensor.internet recovers,
+      triggering only on a clean off -> on transition (NOT unavailable -> on), so
+      Core provably stayed online across the whole outage. Records the recovery
+      time, then, only if a fresh outage was actually logged (start newer than the
+      previous end, so brief un-logged blips are ignored), sends the alibi. If the
+      outage lasted >= 15 min (Healthchecks Period 10m plus Grace 5m, long enough
+      to have fired a "Core DOWN" email) it pushes a clear "Core was fine"
+      message; shorter outages are recorded silently. Pairs with the command_line
+      sensor and helpers above and the core dead-man's switch.
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.internet
+        from: "off"
+        to: "on"
+        for: "00:00:30"
+    conditions:
+      - condition: template
+        value_template: >-
+          {% set s = state_attr('input_datetime.internet_outage_start','timestamp') %}
+          {% set e = state_attr('input_datetime.internet_outage_end','timestamp') %}
+          {{ s is not none and (e is none or s > e) }}
+    actions:
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.internet_outage_end
+        data:
+          timestamp: "{{ now().timestamp() }}"
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {% set s = state_attr('input_datetime.internet_outage_start','timestamp') %}
+                  {{ s is not none and (now().timestamp() - s) >= 900 }}
+            sequence:
+              - action: notify.mobile_app_iphone
+                data:
+                  title: "✅ Internet restored: Core was fine"
+                  message: >-
+                    {% set s = state_attr('input_datetime.internet_outage_start','timestamp') %}
+                    {% set mins = ((now().timestamp() - s) / 60) | round(0) %}
+                    Internet was down from {{ s | timestamp_custom('%-I:%M %p', true) }} to {{ now().strftime('%-I:%M %p') }} ({{ mins }} min). HA Core stayed online the whole time, so any Healthchecks "Core DOWN" email from that window was the internet, not a crash.
+    mode: single

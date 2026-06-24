@@ -18,6 +18,14 @@
 # Note: median over 10 min adds a few minutes of lag, so on a fast-darkening storm
 # the lights come on slightly later than the raw sensor would fire — the intended
 # trade for stability. Shorten max_age if more responsiveness is wanted.
+#
+# 2026-06-22: added keep_last_sample. The raw Hue sensor only reports on CHANGE, so
+# in a dark, stable room (value steady at 0) it stops emitting samples; with a bare
+# 10-min max_age the buffer aged out and this sensor went "unknown" (observed 5:18pm,
+# exactly 10 min after the last raw update). The Ambient Manager's numeric trigger
+# can't fire from "unknown", so the lights couldn't auto-turn-on and the room stayed
+# dark. keep_last_sample retains the final reading past max_age so the value persists
+# through quiet periods instead of blanking.
 
 sensor:
   - platform: statistics
@@ -29,3 +37,4 @@ sensor:
     sampling_size: 60
     max_age:
       minutes: 10
+    keep_last_sample: true
