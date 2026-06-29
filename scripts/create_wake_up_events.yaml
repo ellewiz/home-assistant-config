@@ -1,10 +1,14 @@
 create_wake_up_events:
   alias: Create next week's Wake Up events
   description: >
-    Creates Wake up events for Mon–Fri of next week, defaulting to office
-    schedule (6:00–7:25 AM, description "office"). Edit WFH days to 6:30–8:00,
-    late shift to 7:00–9:30, and remove "office" from the description for
-    non-office days.
+    Creates Wake up events for the WORKDAYS of next week, defaulting to office
+    schedule (6:00–7:25 AM, description "office"). Iterates Mon–Fri of next week
+    and asks the Workday integration (workday.check_date against
+    binary_sensor.workday) whether each date is a working day; non-workdays
+    (weekends are already excluded by the Mon–Fri window, plus any configured
+    public holidays / excludes) are skipped so no Wake up event is created on
+    them. Edit WFH days to 6:30–8:00, late shift to 7:00–9:30, and remove
+    "office" from the description for non-office days.
   mode: single
   sequence:
     - variables:
@@ -13,13 +17,30 @@ create_wake_up_events:
     - repeat:
         count: 5
         sequence:
-          - action: calendar.create_event
+          - alias: Compute this iteration's date (Mon..Fri of next week)
+            variables:
+              target_date: >
+                {{ (now() + timedelta(days=days_until_monday + repeat.index - 1)).strftime('%Y-%m-%d') }}
+          - alias: Ask the Workday integration whether that date is a working day
+            action: workday.check_date
             target:
-              entity_id: calendar.master_calendar
+              entity_id: binary_sensor.workday
             data:
-              summary: Wake up
-              description: office
-              start_date_time: >
-                {{ (now() + timedelta(days=days_until_monday + repeat.index - 1)).strftime('%Y-%m-%d') }}T06:00:00
-              end_date_time: >
-                {{ (now() + timedelta(days=days_until_monday + repeat.index - 1)).strftime('%Y-%m-%d') }}T07:25:00
+              check_date: "{{ target_date }}"
+            response_variable: workday_check
+          - alias: Only create the Wake up event on workdays
+            if:
+              - condition: template
+                value_template: >
+                  {{ workday_check['binary_sensor.workday']['workday'] }}
+            then:
+              - action: calendar.create_event
+                target:
+                  entity_id: calendar.master_calendar
+                data:
+                  summary: Wake up
+                  description: office
+                  start_date_time: >
+                    {{ target_date }}T06:00:00
+                  end_date_time: >
+                    {{ target_date }}T07:25:00

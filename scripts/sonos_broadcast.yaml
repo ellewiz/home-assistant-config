@@ -33,6 +33,17 @@ sonos_broadcast:
         before this, so they restore to their prior volume afterward.
       default: []
       selector: { entity: { multiple: true, domain: media_player } }
+    volume_map:
+      description: >
+        Optional per-speaker announcement volume: a mapping of entity_id ->
+        volume_level (0.0–1.0), as a dict or JSON string. Use when speakers need
+        DIFFERENT announcement volumes in one call — e.g. the bedroom louder than
+        the bathroom (bedroom must beat a hair dryer, bathroom only a shower).
+        Applied in addition to / instead of `volume`. Players are snapshot first,
+        so each one restores to its prior (music) volume after the announcement —
+        this only changes how loud the TTS is, never the music it returns to.
+      default: {}
+      selector: { object: {} }
     restore:
       description: Restore previous playback after speaking
       default: true
@@ -54,6 +65,16 @@ sonos_broadcast:
         _players_json: >
           {% set s = players | default('[]') %}
           {{ ((s | from_json) if s is string else s) | tojson }}
+        # Normalise volume_map (dict or JSON string) into a JSON list of
+        # {entity_id, level} pairs so the per-speaker volume step can for_each it.
+        _vol_pairs: >
+          {% set m = volume_map | default({}) %}
+          {% set m = (m | from_json) if m is string else m %}
+          {% set ns = namespace(pairs=[]) %}
+          {% for k, v in m.items() %}
+            {% set ns.pairs = ns.pairs + [{'entity_id': k, 'level': v | float}] %}
+          {% endfor %}
+          {{ ns.pairs | tojson }}
 
     # Snapshot Sonos players FIRST — before any unjoin — and WITH group topology
     # so sonos.restore can rebuild the group and resume the queue from the
@@ -89,6 +110,22 @@ sonos_broadcast:
                   {{ (vp_list | tojson) if (vp_list | length) > 0 else _players_json }}
               data:
                 volume_level: "{{ volume }}"
+
+    # Per-speaker volume — one volume_set per entry in volume_map, so each
+    # speaker can announce at its own level (e.g. bedroom 0.90, bathroom 0.75).
+    # Like `volume` above, this is reverted by sonos.restore, so it only sets
+    # how loud the TTS plays, never the music the speaker returns to.
+    - choose:
+        - conditions: "{{ (_vol_pairs | from_json | length) > 0 }}"
+          sequence:
+            - repeat:
+                for_each: "{{ _vol_pairs | from_json }}"
+                sequence:
+                  - action: media_player.volume_set
+                    target:
+                      entity_id: "{{ repeat.item.entity_id }}"
+                    data:
+                      volume_level: "{{ repeat.item.level }}"
 
     # Speak TTS on Sonos players
     - choose:

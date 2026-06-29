@@ -512,7 +512,10 @@
       notify_device: e09c6dfb1aa561536feed2bbdcadfbc9
 - id: '1758078170419'
   alias: TV Event Reminder
-  description: Announce 15 minutes before an event on the watch party calendar starts
+  description: 'Announce 15 minutes before an event on the watch party calendar starts
+    2026-06-28: also turns OFF switch.adaptive_lighting_living_room_lights when the
+    Movie scene is set, so the 90s AL re-adapt cannot override the scene mid-event.
+    Paired with TV Event Over, which turns AL back on at event end.'
   triggers:
   - entity_id: calendar.tv
     event: start
@@ -534,6 +537,11 @@
       transition: 10
     target:
       entity_id: scene.living_room_movies_2
+  - alias: Pause Adaptive Lighting so its re-adapt interval cannot override the Movie
+      scene during the event
+    action: switch.turn_off
+    target:
+      entity_id: switch.adaptive_lighting_living_room_lights
   - action: script.sonos_broadcast
     data:
       restore: true
@@ -567,11 +575,13 @@
   mode: single
 - id: '1758078528885'
   alias: TV Event Over
-  description: Shut down TV when the TV event ends, then re-enable nightly automations
+  description: 'Shut down TV when the TV event ends, then re-enable nightly automations
+    2026-06-28: re-enables switch.adaptive_lighting_living_room_lights (paused by
+    TV Event Reminder during the Movie scene) before re-arming sleep mode.'
   triggers:
-  - trigger: calendar
-    entity_id: calendar.tv
+  - entity_id: calendar.tv
     event: end
+    platform: calendar
   actions:
   - action: script.sonos_say
     data:
@@ -581,6 +591,10 @@
       message: Show's over. Good night!
       volume: 0.65
   - action: script.graceful_tv_exit
+  - alias: Resume Adaptive Lighting now that the event is over
+    action: switch.turn_on
+    target:
+      entity_id: switch.adaptive_lighting_living_room_lights
   - action: automation.turn_on
     target:
       entity_id:
@@ -2509,22 +2523,22 @@
           interruption-level: active
 - id: '1782125200879'
   alias: Sonos Wake Alarm — in_bed Fallback
-  description: 'Safety net for the Sonos Wake Alarm. The alarm only proceeds if input_boolean.in_bed
-    is on at trigger time (-20 min before the ''Wake up'' calendar event). in_bed
-    is normally set by a phone Shortcuts/companion-app automation when Soundcore earbuds
-    connect. On 2026-06-21→22 that phone trigger never fired (iPhone hit 10% / Low
-    Power Mode in the bedtime window), in_bed stayed off, and the alarm took its ''not
-    in bed'' skip branch — no wake alarm. This automation fires 5 min before the alarm''s
-    prep phase (-25 min before the same calendar event) and, if in_bed is still off
-    on a workday morning while Lara is home and not on vacation, turns it on so the
-    alarm runs, then pushes a heads-up that the phone trigger was missed. Calendar-event
-    triggered (not a clock time) on purpose: it only ever acts at ~5:35am, so it can
-    never turn the bedroom lights off in the evening via automation.bedroom_lights_off_motion_clear_bright_in_bed.'
+  description: 'Safety net for the Sonos Wake Alarm, which only proceeds if input_boolean.in_bed
+    is on at trigger time. in_bed is normally set by a phone Shortcuts/companion-app
+    automation when Soundcore earbuds connect; if the phone misses (e.g. Low Power
+    Mode in the bedtime window, as on 2026-06-21 to 22), in_bed stays off and the
+    alarm skips. At 03:30 on a workday morning, if in_bed is still off while Lara
+    is home and not on vacation, this turns it on so the alarm runs and pushes a heads-up.
+    Moved from a -25min calendar offset (~6:35am) to a fixed 03:30 clock trigger on
+    2026-06-24: the old timing force-set in_bed on even when Lara had woken early
+    and gone downstairs, so the alarm fired at 7am while she was already up. 03:30
+    is reliably mid-sleep, so in_bed=off then genuinely means a missed phone trigger,
+    and with her asleep and the lights already off it cannot wrongly trip bedroom_lights_off_motion_clear_bright_in_bed.
+    The old calendar_event ''wake up'' template condition was dropped (a clock trigger
+    has no calendar event); binary_sensor.workday already gates it to wake-alarm days.'
   triggers:
-  - platform: calendar
-    entity_id: calendar.master_calendar
-    event: start
-    offset: -0:25:00
+  - trigger: time
+    at: 03:30:00
     id: wake_fallback
   conditions:
   - condition: state
@@ -2539,22 +2553,82 @@
   - condition: state
     entity_id: person.lara_wiz
     state: home
-  - condition: template
-    value_template: '{% set s = trigger.calendar_event.summary | lower | trim %} {{
-      ''wake up'' in s }}
-
-      '
   actions:
   - alias: Force in_bed on so the alarm runs
     action: input_boolean.turn_on
     target:
       entity_id: input_boolean.in_bed
   - alias: Tell Lara the phone trigger was missed
-    action: notify.iphone
+    action: notify.mobile_app_iphone
     data:
       title: Alarm fallback fired
       message: in_bed was still off this morning, so I set it on so your wake alarm
         runs. Your phone's earbud→in_bed trigger likely missed (check Low Power Mode
         / Shortcuts).
   mode: single
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+- id: living_room_lights_backstop_reassert
+  alias: Living Room — Lights Backstop (Re-assert After External Off)
+  description: 'Backstop so an external command can never leave the living room dark.
+    2026-06-22: diagnosed an external, non-HA source turning light.living_room_lights
+    off (all three Hue bulbs in the same instant, no HA automation trace, no HA user).
+    Source still unconfirmed (HomeKit/Hue-bridge/Shortcuts under investigation via
+    debug logging) but it recurs ~5:09pm and hit early at 1:49pm once. The Ambient
+    Manager only turns the group ON on a falling lux crossing, so an external OFF
+    while the room is already dark left no recovery and Lara came home to a dark room.
+    This re-asserts the group ON whenever it goes off while it should be lit. GATES:
+    (1) early_morning off (mirrors Ambient Manager); (2) smoothed lux below the lux_on
+    helper, so it only fires when genuinely dark — this also prevents fighting the
+    Ambient Manager''s own off-branches, which only fire when lux is ABOVE lux_off
+    (bright); (3) the off had no HA user_id, i.e. it was external/auto, so a deliberate
+    off from the HA UI is respected and NOT overridden; (4) not actively watching
+    Apple TV (TCL TV on + source Apple TV), so it won''t pop the room bright mid-movie.
+    Logs the off-event context (user_id/parent_id) to the logbook to aid the ongoing
+    source hunt. NOT vacation-gated on purpose: matches the Ambient Manager''s deliberate
+    occupied-look behavior (lights coming on while away is wanted). Pairs with the
+    keep_last_sample fix in living_room_lux_smoothing.yaml (which stops the smoothed
+    lux going ''unknown'' in a dark, stable room). Retire or tighten once the external
+    source is found and killed.'
+  triggers:
+  - trigger: state
+    entity_id: light.living_room_lights
+    from: 'on'
+    to: 'off'
+    for: 00:00:10
+    id: group_off
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.early_morning
+    state: 'off'
+  - condition: numeric_state
+    entity_id: sensor.living_room_illuminance_smoothed
+    below: input_number.living_room_lux_on
+  - condition: template
+    alias: Only re-assert external/auto offs — respect a deliberate HA-user off
+    value_template: '{{ trigger.to_state.context.user_id is none }}'
+  - condition: not
+    alias: Skip while actively watching Apple TV (movie mode)
+    conditions:
+    - condition: and
+      conditions:
+      - condition: state
+        entity_id: media_player.55_tcl_roku_tv
+        state: 'on'
+      - condition: state
+        entity_id: media_player.55_tcl_roku_tv
+        attribute: source
+        state: Apple TV
+  actions:
+  - action: light.turn_on
+    target:
+      entity_id: light.living_room_lights
+    data:
+      transition: 5
+  - action: logbook.log
+    data:
+      name: LR Lights Backstop
+      entity_id: light.living_room_lights
+      message: Re-asserted living room lights after an external off (smoothed {{ states('sensor.living_room_illuminance_smoothed')
+        }} lx). Off-event context user_id={{ trigger.to_state.context.user_id }} parent_id={{
+        trigger.to_state.context.parent_id }}.
+  mode: single
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       

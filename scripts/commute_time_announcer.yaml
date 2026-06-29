@@ -126,14 +126,19 @@ commute_time_announcer:
                     {%- endif %}
                   players: "{{ players | tojson }}"
                   # Boost only the upstairs speakers so the announcement carries over a
-                  # running shower; downstairs keep their lower resting volume. The
-                  # bathroom Sonos Era 100 (media_player.bathroom) is boosted alongside
-                  # the Bedroom Sonos; both are snapshot/restored, so they return to
-                  # their normal resting levels afterward. (HomePod support removed
-                  # 2026-06-14 — pyatv/miniaudio TTS never worked on py3.14.) Tweak to taste.
-                  volume: 0.75
-                  volume_players: >-
-                    {{ ['media_player.bedroom_frame', 'media_player.bathroom'] | tojson }}
+                  # running shower/dryer; downstairs keep their lower resting volume.
+                  # Per-speaker volumes (volume_map): the Bedroom Sonos goes louder than
+                  # the bathroom because it has to beat a running hair dryer, where the
+                  # bathroom Era 100 only competes with a shower. Both are snapshot/
+                  # restored, so this sets ONLY how loud the TTS plays — each speaker
+                  # returns to its prior (music) volume afterward, so music never jumps.
+                  # 2026-06-28: bedroom raised 0.75 -> 0.90 at Lara's request (was
+                  # deliberately held at 0.75 to avoid startling Johnny; she's accepted
+                  # the louder bedroom announcement). (HomePod support removed 2026-06-14
+                  # — pyatv/miniaudio TTS never worked on py3.14.) Tweak to taste.
+                  volume_map:
+                    media_player.bedroom_frame: 0.90
+                    media_player.bathroom: 0.75
 
           # Debounce — don't double-fire within the same minute
           - delay: "00:01:00"
