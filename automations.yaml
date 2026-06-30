@@ -2655,9 +2655,9 @@
     Guests = input_boolean.guests (created Jun 2026). NOTE no in_bed safety-release:
     Lara explicitly chose hold-until-logged with no timeout.'
   triggers:
-  - trigger: time
-    at: '20:10:00'
+  - at: '20:10:00'
     id: evening_check
+    platform: time
   conditions:
   - condition: state
     entity_id: input_boolean.guests
@@ -2754,6 +2754,8 @@
     - condition: template
       value_template: '{{ tv_player != ''none'' }}'
     then:
+    - alias: Grace period so Lara is back in the room before audio resumes
+      delay: 00:00:15
     - action: media_player.media_play
       target:
         entity_id: '{{ tv_player }}'
