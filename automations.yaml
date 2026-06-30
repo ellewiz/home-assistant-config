@@ -856,7 +856,12 @@
   alias: Sonos Wake Alarm
   description: '20 min before wake event: plays Lofi Sleep playlist with subliminal-start
     volume ramp (3%->20%). At wake time: classic alarm escalates every ~12s until
-    in_bed turns off. Alarm sound: /config/www/alarm-clock.mp3'
+    in_bed turns off. Alarm sound: /config/www/alarm-clock.mp3 [2026-06-29] Top-level
+    guard changed from binary_sensor.early_morning (window starts 05:30) to a dedicated
+    time condition after 04:30 / before 08:00, because an earlier wake time (5:50am)
+    pushed the -20min trigger onto 05:30:00 and lost a sub-second race against the
+    shared early_morning sensor flipping on, so the alarm silently failed its condition.
+    Dedicated guard avoids touching the 4 lighting automations that share early_morning.'
   triggers:
   - platform: calendar
     entity_id: calendar.master_calendar
@@ -864,9 +869,9 @@
     offset: -0:20:00
     id: wake_up_time
   conditions:
-  - condition: state
-    entity_id: binary_sensor.early_morning
-    state: 'on'
+  - condition: time
+    after: 04:30:00
+    before: 08:00:00
   - condition: state
     entity_id: calendar.vacation
     state: 'off'
@@ -2631,4 +2636,125 @@
         }} lx). Off-event context user_id={{ trigger.to_state.context.user_id }} parent_id={{
         trigger.to_state.context.parent_id }}.
   mode: single
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+- id: meds_guanfacine_tv_nudge
+  alias: 'Meds — Guanfacine: TV nudge until logged'
+  description: 'Evening nudge to take Guanfacine (resets off daily at 4am; normally
+    logged ~9-10pm, so at 8:10pm it''s usually still un-logged). At 8:10pm, if Guests
+    is off and the dose isn''t logged and we''re not on vacation: HOME -> immediately
+    snapshot the living-room lights, pause whatever is actively playing on the TV,
+    and raise the lights to 70%. AWAY at 8:10 -> wait until Lara is home AND living-room
+    presence is detected, then 10 min later run the same nudge (re-checking it isn''t
+    logged yet). Then HOLD (no timeout, per Lara) until input_boolean.guanfacine_taken
+    turns on, at which point: restore the lights to their exact prior state, hand
+    them back to Adaptive Lighting, and resume the paused player. ''Whatever is playing''
+    = Apple TV (media_player.living_room_4k_2) if playing/buffering, else TCL Roku
+    (media_player.55_tcl_roku_tv) if playing, else nothing (lights-only nudge). KNOWN
+    LIMITATION: Frndly is invisible to the ATV integration (sits idle, app_id '''')
+    so it can''t be paused via HA — lights still brighten. mode: restart so a new
+    evening''s 8:10 trigger supersedes any instance left waiting from an away night.
+    Guests = input_boolean.guests (created Jun 2026). NOTE no in_bed safety-release:
+    Lara explicitly chose hold-until-logged with no timeout.'
+  triggers:
+  - trigger: time
+    at: '20:10:00'
+    id: evening_check
+  conditions:
+  - condition: state
+    entity_id: input_boolean.guests
+    state: 'off'
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.guanfacine_taken
+    state: 'off'
+  actions:
+  - alias: If away at 8:10, wait for return + living-room presence, then settle 10
+      min
+    choose:
+    - alias: Away path
+      conditions:
+      - condition: not
+        conditions:
+        - condition: state
+          entity_id: person.lara_wiz
+          state: home
+      sequence:
+      - alias: Wait until home AND living-room presence detected
+        wait_template: '{{ is_state(''person.lara_wiz'', ''home'') and is_state(''binary_sensor.living_room_presence'',
+          ''on'') }}'
+      - alias: Settle 10 minutes after arriving in the living room
+        delay: 00:10:00
+  - alias: Re-gate after any waiting (logged during the wait? guests arrived? left
+      again?)
+    condition: state
+    entity_id: input_boolean.guanfacine_taken
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.guests
+    state: 'off'
+  - condition: state
+    entity_id: person.lara_wiz
+    state: home
+  - alias: Capture which player is actively playing (for pause + later resume)
+    variables:
+      tv_player: '{% if states(''media_player.living_room_4k_2'') in [''playing'',
+        ''buffering''] %}media_player.living_room_4k_2{% elif states(''media_player.55_tcl_roku_tv'')
+        == ''playing'' %}media_player.55_tcl_roku_tv{% else %}none{% endif %}'
+  - alias: Snapshot the living-room lights so we can restore them exactly
+    action: scene.create
+    data:
+      scene_id: guanfacine_nudge_restore
+      snapshot_entities:
+      - light.living_room_corner
+      - light.torchiere
+      - light.next_to_couch
+  - alias: Pause the TV if something is actively playing
+    if:
+    - condition: template
+      value_template: '{{ tv_player != ''none'' }}'
+    then:
+    - action: media_player.media_pause
+      target:
+        entity_id: '{{ tv_player }}'
+  - alias: Brighten the living-room lights to 70%
+    action: light.turn_on
+    target:
+      entity_id: light.living_room_lights
+    data:
+      brightness_pct: 70
+      transition: 2
+  - alias: Tell Lara why the TV paused
+    action: notify.mobile_app_iphone
+    data:
+      title: "\U0001F48A Guanfacine"
+      message: TV paused and lights up until you log tonight's dose.
+  - alias: Hold until the dose is logged (no timeout, per Lara)
+    wait_for_trigger:
+    - trigger: state
+      entity_id: input_boolean.guanfacine_taken
+      to: 'on'
+  - alias: Restore the living-room lights exactly as they were
+    action: scene.turn_on
+    target:
+      entity_id: scene.guanfacine_nudge_restore
+    data:
+      transition: 2
+  - alias: Hand the lights back to Adaptive Lighting
+    action: adaptive_lighting.set_manual_control
+    data:
+      entity_id: switch.adaptive_lighting_living_room_lights
+      lights:
+      - light.living_room_corner
+      - light.torchiere
+      - light.next_to_couch
+      manual_control: false
+  - alias: Resume the player we paused
+    if:
+    - condition: template
+      value_template: '{{ tv_player != ''none'' }}'
+    then:
+    - action: media_player.media_play
+      target:
+        entity_id: '{{ tv_player }}'
+  mode: restart
