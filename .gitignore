@@ -25,7 +25,8 @@ custom_components/
 www/community/
 
 # ===== Personal / health data =====
-packages/health_tags.yaml
+packages/health_*.yaml
+health_data/
 oura_france_trip_analysis_may2026.md
 oura_france_trip_charts_may2026.html
 oura_sleep_report_*
