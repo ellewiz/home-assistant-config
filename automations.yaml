@@ -612,8 +612,20 @@
         entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
   mode: single
 - id: '1758080771334'
-  alias: Johnny did a runner
-  description: ''
+  alias: Johnny — Did a Runner (v2, Not-Together Ping)
+  description: >-
+    Pings the iPhone when Johnny's Tractive tracker leaves zone.home AND he is not
+    in the same zone as Lara — i.e. they are NOT together (he got out on his own, or
+    left while she's home or at work). Stays silent when they leave together (a walk,
+    a trip to a saved zone) because both person entities land in the same zone. A 45s
+    settle delay before the together-check absorbs GPS lag: when they leave together,
+    Johnny's tracker can flip to not_home a few seconds before Lara's phone does.
+    v1 pinged only when Lara was AWAY and did a Sonos-only announce when she was home,
+    which was backwards — it never phone-alerted the scary escape-while-home case.
+    NOT gated on calendar.vacation on purpose: this is a safety alert that must fire
+    even while away (dog-sitter scenarios). Compares person.johnny (sourced solely
+    from device_tracker.johnny_tracker) against person.lara_wiz. To also announce on
+    Sonos, add that branch back.
   triggers:
   - device_id: a21a864f6f38a47a687299e25164bde0
     domain: device_tracker
@@ -623,33 +635,20 @@
     platform: device
   conditions: []
   actions:
-  - choose:
-    - conditions:
-      - condition: not
-        conditions:
-        - condition: state
-          entity_id: person.lara_wiz
-          state: home
-      sequence:
-      - action: notify.mobile_app_iphone
-        metadata: {}
-        data:
-          message: Johnny has left the house!
-          title: Alert!
-    default:
-    - action: script.sonos_broadcast
-      metadata: {}
-      data:
-        restore: true
-        ungroup: true
-        players:
-        - media_player.bedroom_frame
-        - media_player.dining_room
-        - media_player.living_room_arc
-        - media_player.sonos_move
-        - media_player.bathroom
-        message: Johnny has left the area!
-        volume: 0.87
+  - alias: Let presence settle in case we left together
+    delay: '00:00:45'
+  - alias: Only continue if Johnny and I are NOT in the same zone
+    condition: template
+    value_template: >-
+      {{ states('person.johnny') not in ['unknown', 'unavailable']
+         and states('person.johnny') != states('person.lara_wiz') }}
+  - alias: Ping iPhone — Johnny is out without me
+    action: notify.mobile_app_iphone
+    data:
+      title: 🚨 Johnny's out without you
+      message: >-
+        Johnny left home and isn't with you — he's {{ states('person.johnny') }},
+        you're {{ states('person.lara_wiz') }}.
   mode: single
 - id: '1758081142295'
   alias: TV off regular night
@@ -2760,3 +2759,69 @@
       target:
         entity_id: '{{ tv_player }}'
   mode: restart
+- id: living_room_tv_event_lighting_backstop
+  alias: Living Room — TV Event Lighting Backstop (Arrive-Home Re-fire)
+  description: 'Backstop for TV Event Reminder, which fires 15 min BEFORE a calendar.tv
+    event and requires person.lara_wiz to be home. If Lara arrives home after that
+    -0:15 pre-roll (e.g. 2026-07-01: home 7:56pm for an 8:00pm event, pre-roll fired
+    7:45pm while she was still out and bailed on failed_conditions), the Movie scene
+    never gets applied and there is no re-check. This re-fires the same lighting setup
+    when she gets home while a TV event is ALREADY active. Guard: only runs while
+    switch.adaptive_lighting_living_room_lights is still ON (proxy for ''TV setup
+    not yet applied'') so a GPS home/not_home bounce mid-event can''t re-apply the
+    scene or re-notify. Gated on calendar.tv active + in_bed off + calendar.vacation
+    off. Does NOT announce over Sonos (she is presumably about to watch) and does
+    NOT pause the TV, unlike the pre-roll reminder — this is purely the lighting catch-up.
+    Cleanup (resume AL, re-enable the 4 nightly automations, re-arm sleep mode) is
+    still handled by TV Event Over on calendar.tv event end.'
+  triggers:
+  - platform: state
+    entity_id: person.lara_wiz
+    to: home
+    for:
+      seconds: 20
+  conditions:
+  - condition: state
+    entity_id: calendar.tv
+    state: 'on'
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - alias: Only if the TV lighting setup hasn't already been applied (AL still adapting)
+    condition: state
+    entity_id: switch.adaptive_lighting_living_room_lights
+    state: 'on'
+  actions:
+  - alias: Apply the Movie scene
+    action: scene.turn_on
+    data:
+      transition: 10
+    target:
+      entity_id: scene.living_room_movies_2
+  - alias: Pause Adaptive Lighting so its 90s re-adapt cannot override the Movie scene
+      during the event
+    action: switch.turn_off
+    target:
+      entity_id: switch.adaptive_lighting_living_room_lights
+  - alias: Stand down the nightly automations that would fight the scene (TV Event
+      Over re-enables them)
+    action: automation.turn_off
+    data:
+      stop_actions: true
+    target:
+      entity_id:
+      - automation.living_room_ambient_manager
+      - automation.tv_off_regular_night
+      - automation.tv_off_weekends_and_time_off
+      - automation.living_room_lights_on_morning
+  - alias: Let Lara know the catch-up fired
+    action: notify.mobile_app_iphone
+    data:
+      title: "\U0001F4FA TV Event Lighting"
+      message: You got home after the 7:45 pre-roll, so I applied the Movie scene{%
+        if state_attr('calendar.tv','message') %} for "{{ state_attr('calendar.tv','message')
+        }}"{% endif %}.
+  mode: single
