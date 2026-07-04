@@ -4,6 +4,20 @@ Running log of the `lr-lights-phantom-off-source-hunt` scheduled task. Newest en
 
 ---
 
+## 2026-07-01 (Wed)
+
+**iPhone push:** No phantom off today. LR lights went off at 11:15pm (bedtime script) and 7:31am (motion/lux auto-off, motion+presence clear); no ~5:09pm away-day off. Debug logging re-armed.
+
+**Detail:**
+- Two off transitions today, both internal (not the phantom):
+  - **03:15:16 UTC (23:15 EDT, 11:15pm)** — the intentional bedtime off. Ambient logger: `was on for 271.3 min | 0 lx | motion off | presence off | manual`. The `manual` tag = a recognized service context (script.shut_down_bedtime's delayed final step). Known/by-design, not the hunt target.
+  - **11:31:51 UTC (07:31 EDT, 7:31am)** — motion/presence auto-off: `was on for 92.8 min | smoothed 20 lx | motion off | presence off | auto` (20 lx is below lux_off 45, so this is the motion/presence-clear auto-off, not a lux off). Lights had come back on at 09:59:03 UTC on morning motion.
+- **Backstop:** fired for **both** offs (03:15:26 and 11:32:01 UTC, ~10s after each) and both returned **execution = failed_conditions** — the null-context check returned false, so neither was treated as external. The 7:31am off carried **parent_id=01KWEQ65SPQCTHY9RCVPR4KAHH, user_id=null**, i.e. a non-null context chain confirming an HA-automation origin, not the classic null-parent phantom. (No "LR Lights Backstop" logbook line either run, since that line only writes when the external-off condition passes.)
+- **No HA restart** today (no Core start/stop in the logbook). An OS update became available at 16:02 UTC — informational, unrelated to any light off.
+- **No ~5:09pm (21:09 UTC) away-day off.** It is now past 19:00 EDT and no off landed in that window; the lights have been on since 09:59 UTC apart from the 7:31am motion auto-off.
+- **Logging:** no restart, so prior overrides should have persisted; re-armed homekit/homekit_controller/hue debug defensively to guarantee coverage. (`error_log` source still 404 via MCP; system log carries only WARNING/ERROR, so DEBUG lines remain unreadable this way.)
+- **Recommendation:** keep the task running. No clean away-day phantom captured at debug level yet, so the source stays unconfirmed — nothing to disable.
+
 ## 2026-06-30 (Tue)
 
 **iPhone push:** No phantom today. Both LR offs were internal HA automations (motion auto-off ~7:29a; lux auto-off ~5:18p with someone home, parent_id set). No 5:09pm away-day phantom; debug logging re-armed.
