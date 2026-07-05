@@ -4,6 +4,20 @@ Running log of the `lr-lights-phantom-off-source-hunt` scheduled task. Newest en
 
 ---
 
+## 2026-07-04 (Sat)
+
+**iPhone push:** No phantom off today (July 4, you were home all day). The 3:50pm LR off was the Ambient Manager's lux auto-off (room hit 48 lx, above the 45 lux-off), confirmed by trace; no ~5:09pm away-day off. Debug logging re-armed.
+
+**Detail:**
+- Two off transitions today, both internal/known (neither the phantom):
+  - **07:38:38 UTC (03:38 EDT)** — the intentional bedtime off (script.shut_down_bedtime's delayed final step). Ambient logger: `was on for 1662.8 min | 0 lx | motion off | presence on | manual`. Known/by-design.
+  - **19:50:51 UTC (15:50 EDT, 3:50pm)** — **Ambient Manager lux auto-off, confirmed by trace.** `automation.living_room_ambient_manager` ran at 19:50:50.245 on a rising lux crossing (`sensor.living_room_illuminance_smoothed` 45→46, i.e. above lux_off 45), took the OFF branch and called `light.turn_off` on the group (transition 1). Ambient logger at the off: `was on for 605.2 min | smoothed 48 lx / raw 51 lx | motion off | presence on | auto`. Per-bulb spread ~1s (torchiere 19:50:50.570 vs corner/next_to_couch 19:50:51.586/.588) — the sequential-command signature, not the 4ms-simultaneous phantom.
+- **Backstop:** fired at 19:51:01 (~10s after) but **execution = failed_conditions** — condition/1 (smoothed lux below lux_on 18) was false at 48 lx, so it correctly declined to re-assert in a bright room. The off-event context id (`01KWQAY1M5KWD7H9RS1X2QX686`) matches the Ambient Manager run's own context exactly, and that run carried **parent_id=01KWQAMWN3WB1NK11QCAP9XZJQ, user_id=null** — a non-null HA-automation origin, not the classic null-parent phantom. (No "LR Lights Backstop" logbook line, since the backstop action never ran.)
+- **No HA restart** today (no Core start/stop in the logbook; `person.lara_wiz` continuous `home` since yesterday 23:09 UTC). The 19:50 off is not a restart artifact.
+- **No ~5:09pm (21:09 UTC) away-day off.** Expected — it is July 4 (Sat) and Lara was **home all day** and present in the LR when the 3:50pm lux-off fired. A second Ambient Manager lux re-eval ran at 21:15 UTC and left the group off; lights auto-came-on at 22:52 UTC (18:52 EDT) as the room darkened (14 lx). Corner bulb logged its usual separate Zigbee flaps (16:03, 17:37, 19:16, 19:26 UTC unavailable) — the known reachability issue, not the phantom.
+- **Logging:** no restart, so prior overrides persisted; re-armed homekit/homekit_controller/hue debug defensively to guarantee coverage. (`error_log` source still 404 via MCP; system log carries only WARNING/ERROR, so DEBUG lines remain unreadable this way.)
+- **Recommendation:** keep the task running. Today produced no away-day phantom to capture (Lara home on a holiday), so the source remains unconfirmed — nothing to disable.
+
 ## 2026-07-01 (Wed)
 
 **iPhone push:** No phantom off today. LR lights went off at 11:15pm (bedtime script) and 7:31am (motion/lux auto-off, motion+presence clear); no ~5:09pm away-day off. Debug logging re-armed.
