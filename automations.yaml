@@ -613,19 +613,18 @@
   mode: single
 - id: '1758080771334'
   alias: Johnny — Did a Runner (v2, Not-Together Ping)
-  description: >-
-    Pings the iPhone when Johnny's Tractive tracker leaves zone.home AND he is not
-    in the same zone as Lara — i.e. they are NOT together (he got out on his own, or
-    left while she's home or at work). Stays silent when they leave together (a walk,
-    a trip to a saved zone) because both person entities land in the same zone. A 45s
-    settle delay before the together-check absorbs GPS lag: when they leave together,
-    Johnny's tracker can flip to not_home a few seconds before Lara's phone does.
-    v1 pinged only when Lara was AWAY and did a Sonos-only announce when she was home,
-    which was backwards — it never phone-alerted the scary escape-while-home case.
-    NOT gated on calendar.vacation on purpose: this is a safety alert that must fire
-    even while away (dog-sitter scenarios). Compares person.johnny (sourced solely
-    from device_tracker.johnny_tracker) against person.lara_wiz. To also announce on
-    Sonos, add that branch back.
+  description: 'Pings the iPhone when Johnny''s Tractive tracker leaves zone.home
+    AND he is not in the same zone as Lara — i.e. they are NOT together (he got out
+    on his own, or left while she''s home or at work). Stays silent when they leave
+    together (a walk, a trip to a saved zone) because both person entities land in
+    the same zone. A 45s settle delay before the together-check absorbs GPS lag: when
+    they leave together, Johnny''s tracker can flip to not_home a few seconds before
+    Lara''s phone does. v1 pinged only when Lara was AWAY and did a Sonos-only announce
+    when she was home, which was backwards — it never phone-alerted the scary escape-while-home
+    case. NOT gated on calendar.vacation on purpose: this is a safety alert that must
+    fire even while away (dog-sitter scenarios). Compares person.johnny (sourced solely
+    from device_tracker.johnny_tracker) against person.lara_wiz. To also announce
+    on Sonos, add that branch back.'
   triggers:
   - device_id: a21a864f6f38a47a687299e25164bde0
     domain: device_tracker
@@ -636,19 +635,17 @@
   conditions: []
   actions:
   - alias: Let presence settle in case we left together
-    delay: '00:00:45'
+    delay: 00:00:45
   - alias: Only continue if Johnny and I are NOT in the same zone
     condition: template
-    value_template: >-
-      {{ states('person.johnny') not in ['unknown', 'unavailable']
-         and states('person.johnny') != states('person.lara_wiz') }}
+    value_template: "{{ states('person.johnny') not in ['unknown', 'unavailable']\n
+      \  and states('person.johnny') != states('person.lara_wiz') }}"
   - alias: Ping iPhone — Johnny is out without me
     action: notify.mobile_app_iphone
     data:
-      title: 🚨 Johnny's out without you
-      message: >-
-        Johnny left home and isn't with you — he's {{ states('person.johnny') }},
-        you're {{ states('person.lara_wiz') }}.
+      title: "\U0001F6A8 Johnny's out without you"
+      message: Johnny left home and isn't with you — he's {{ states('person.johnny')
+        }}, you're {{ states('person.lara_wiz') }}.
   mode: single
 - id: '1758081142295'
   alias: TV off regular night
@@ -860,7 +857,11 @@
     time condition after 04:30 / before 08:00, because an earlier wake time (5:50am)
     pushed the -20min trigger onto 05:30:00 and lost a sub-second race against the
     shared early_morning sensor flipping on, so the alarm silently failed its condition.
-    Dedicated guard avoids touching the 4 lighting automations that share early_morning.'
+    Dedicated guard avoids touching the 4 lighting automations that share early_morning.
+    [2026-07-05] Added Phase 0 media_player.unjoin on media_player.bedroom_frame (native
+    Sonos bedroom) before playback so wake audio stays solo and does not bleed into
+    the grouped bathroom Era 100 and disturb Johnny; MA still plays to media_player.bedroom,
+    which routes to the same now-solo speaker.'
   triggers:
   - platform: calendar
     entity_id: calendar.master_calendar
@@ -889,6 +890,14 @@
 
           '
       sequence:
+      - alias: Phase 0 — Unjoin bedroom Sonos so wake audio stays out of the bathroom
+          (Johnny)
+        action: media_player.unjoin
+        target:
+          entity_id: media_player.bedroom_frame
+        continue_on_error: true
+      - alias: 'Phase 0 — Settle: let the Sonos group dissolve before playback'
+        delay: 00:00:01
       - alias: Phase 1 — Set initial low volume
         action: media_player.volume_set
         target:
@@ -1365,9 +1374,16 @@
   max_exceeded: silent
 - id: '1777633648574'
   alias: Power Outage / Restoration Alert
-  description: 'v1: Detects whole-home power loss via Hue Bridge unavailable for 2+
-    min (filters normal brief drops). Detects power restoration when fridge Fibaro
-    returns from unavailable. When voltage sensor is added, rewrite to v2 with brownout/sag
+  description: 'v1.1 (2026-07-07): Detects whole-home power loss via Hue Bridge unavailable
+    for 2+ min (filters normal brief drops). Two restoration paths: (a) hue_restored
+    fires an all-clear when sensor.bedroom_power returns from unavailable after a
+    2+ min outage, duration-gated to match the outage trigger so brief Hue blips do
+    not emit a spurious ''restored''; added after the 2026-07-07 network-gear outage
+    tripped the outage alert with no all-clear because the Z-Wave fridge never dropped.
+    (b) fridge_surge fires a bonus surge notice when the Fibaro fridge plug returns
+    from unavailable (true whole-home power loss only). Coverage split: outage + hue_restored
+    ride the NETWORK-dependent Hue proxy; fridge_surge rides the network-INDEPENDENT
+    Z-Wave fridge. When a voltage sensor is added, rewrite to v2 with brownout/sag
     detection.'
   triggers:
   - platform: state
@@ -1375,6 +1391,10 @@
     to: unavailable
     id: hue_unavailable
     for: 00:02:00
+  - platform: state
+    entity_id: sensor.bedroom_power
+    from: unavailable
+    id: hue_restored
   - platform: state
     entity_id: sensor.fibaro_wall_plug_for_fridge_electric_consumption_w
     from: unavailable
@@ -1390,6 +1410,19 @@
           title: ⚡ Power Outage Detected
           message: Power appears to be out. Hue Bridge went offline at {{ now().strftime('%I:%M
             %p') }}.
+        action: notify.notify
+    - conditions:
+      - condition: trigger
+        id: hue_restored
+      - condition: template
+        value_template: '{{ (as_timestamp(trigger.to_state.last_changed) - as_timestamp(trigger.from_state.last_changed))
+          | float(0) >= 120 }}'
+      sequence:
+      - data:
+          title: ✅ Power / Network Restored
+          message: Hue Bridge back online at {{ now().strftime('%I:%M %p') }} after
+            ~{{ ((as_timestamp(trigger.to_state.last_changed) - as_timestamp(trigger.from_state.last_changed))
+            / 60) | round(0) }} min offline. Power/network looks restored.
         action: notify.notify
     - conditions:
       - condition: trigger
@@ -1490,7 +1523,8 @@
     The home gate suppressed the announcer during a short morning dog walk (Lara not_home
     06:09-06:31, calendar trigger fired 06:25, mode single so it never re-fired on
     return). Vacation calendar is the intended away-suppression gate per house style
-    section 8.'
+    section 8. 2026-07-07: swapped media_player.dining_room for media_player.basement
+    (new basement Era 100) in the announcer players list per Lara.'
   triggers:
   - platform: calendar
     entity_id: calendar.master_calendar
@@ -1515,7 +1549,7 @@
       person_entity: person.lara_wiz
       players:
       - media_player.living_room_arc
-      - media_player.dining_room
+      - media_player.basement
       - media_player.bedroom_frame
       - media_player.bathroom
   mode: single
@@ -1783,27 +1817,6 @@
         %-d %b'') }} · {{ ''eve'' if d.weekday()<5 else ''all day'' }}{% endif %}{%
         else %}—{% endif %}'
     action: input_text.set_value
-  mode: single
-- id: '1780227732805'
-  alias: Samba SMB Port Watchdog
-  description: Monitors binary_sensor.samba_smb_port. If the SMB port (445) is unreachable
-    for 2 minutes straight, restarts the Samba share app and sends a phone push. Catches
-    the failure mode where the addon container shows 'started' but smbd has stopped
-    listening.
-  triggers:
-  - platform: state
-    entity_id: binary_sensor.samba_smb_port
-    to: 'off'
-    for:
-      minutes: 2
-  actions:
-  - data:
-      title: Samba share down
-      message: SMB port 445 stopped responding. Restarting the Samba app now.
-    action: notify.mobile_app_iphone
-  - data:
-      addon: core_samba
-    action: hassio.addon_restart
   mode: single
 - id: garbage_night_before_reminder
   alias: Garbage — Night-Before Reminder
@@ -2591,14 +2604,21 @@
     occupied-look behavior (lights coming on while away is wanted). Pairs with the
     keep_last_sample fix in living_room_lux_smoothing.yaml (which stops the smoothed
     lux going ''unknown'' in a dark, stable room). Retire or tighten once the external
-    source is found and killed.'
+    source is found and killed. 2026-07-07: tightened condition 3 to also require
+    a null parent_id after a regression the night before — a button-started shut_down_bedtime
+    chain carries no user_id anywhere, so the user-only check passed and the backstop
+    re-asserted the lights ON 10s after the intentional bedtime off, leaving them
+    on all night. The classic phantom''s signature is null user_id AND null parent_id
+    (no context chain at all); every internal HA automation/script off carries a parent_id,
+    so this now excludes bedtime, leave-home, ambient-manager and restart-recovery
+    offs regardless of how the chain started.'
   triggers:
-  - trigger: state
-    entity_id: light.living_room_lights
+  - entity_id: light.living_room_lights
     from: 'on'
     to: 'off'
     for: 00:00:10
     id: group_off
+    platform: state
   conditions:
   - condition: state
     entity_id: binary_sensor.early_morning
@@ -2607,8 +2627,10 @@
     entity_id: sensor.living_room_illuminance_smoothed
     below: input_number.living_room_lux_on
   - condition: template
-    alias: Only re-assert external/auto offs — respect a deliberate HA-user off
-    value_template: '{{ trigger.to_state.context.user_id is none }}'
+    alias: Only re-assert truly external offs — null user_id AND null parent_id (internal
+      HA chains always carry a parent_id)
+    value_template: '{{ trigger.to_state.context.user_id is none and trigger.to_state.context.parent_id
+      is none }}'
   - condition: not
     alias: Skip while actively watching Apple TV (movie mode)
     conditions:
@@ -2825,4 +2847,269 @@
         if state_attr('calendar.tv','message') %} for "{{ state_attr('calendar.tv','message')
         }}"{% endif %}.
   mode: single
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+- id: living_room_late_night_sleep_dim
+  alias: Living Room — Late-Night Sleep Dim (v1)
+  description: 'Puts the living room''s Adaptive Lighting into sleep mode at night
+    so AL''s target drops to a dim warm level (~10% / 2200K) instead of the ~33% evening
+    baseline. Fixes the ''lamps snap bright after a movie ends'' case: Movie Lamp
+    Restore (v2) hands the End table lamp back to AL via set_manual_control:false
+    and AL immediately re-applies its curve — with sleep mode on, that target is the
+    dim night level, so the hand-back lands dim. ADAPTIVE TIMING: arms at 21:00 on
+    work nights (input_boolean.workday_tomorrow on) and 22:00 on non-work nights,
+    because Lara is often in bed before 22:00 on work nights so a fixed 22:00 arm
+    was too late. GATES (arm branch only): calendar.vacation off, person.lara_wiz
+    home, input_boolean.guests off — don''t force the LR dim while away or when guests
+    may be using the room. Releases at 05:30 (ungated) so daytime AL always resumes.
+    Order: enable sleep mode FIRST, then re-apply sleep_brightness/sleep_color_temp
+    via change_switch_settings, so on-lights only ever dim (never a brighten flash)
+    and the sleep values self-heal after a restart resets them to the 1%/1000K default.
+    turn_on_lights:false so it never wakes dark lamps. TODO v2: single time-trigger
+    means arriving home after the arm time misses that night; if the 21:00/22:00 clock
+    proves too blunt, switch to an event-driven arm on evening TV-off (Apple TV playing→idle
+    after a cutoff hour); reconcile with script.shut_down_bedtime. [2026-07-06] Removed
+    turn_on_lights:false from the change_switch_settings call: it is not an accepted
+    key on this Adaptive Lighting version, so it raised ''extra keys not allowed''
+    and aborted this self-heal step every night (sleep_brightness/sleep_color_temp
+    were never applied). Enabling sleep mode alone never turns on already-off lamps,
+    so the no-wake-dark-lamps behavior is unchanged.'
+  triggers:
+  - at: '21:00:00'
+    id: night_start_work
+    platform: time
+  - at: '22:00:00'
+    id: night_start_reg
+    platform: time
+  - at: 05:30:00
+    id: night_end
+    platform: time
+  conditions: []
+  actions:
+  - choose:
+    - alias: Arm sleep-dim (21:00 work nights / 22:00 otherwise; home, no guests,
+        not away)
+      conditions:
+      - condition: or
+        conditions:
+        - condition: and
+          conditions:
+          - condition: trigger
+            id: night_start_work
+          - condition: state
+            entity_id: input_boolean.workday_tomorrow
+            state: 'on'
+        - condition: and
+          conditions:
+          - condition: trigger
+            id: night_start_reg
+          - condition: state
+            entity_id: input_boolean.workday_tomorrow
+            state: 'off'
+      - condition: state
+        entity_id: calendar.vacation
+        state: 'off'
+      - condition: state
+        entity_id: person.lara_wiz
+        state: home
+      - condition: state
+        entity_id: input_boolean.guests
+        state: 'off'
+      sequence:
+      - alias: Enable AL sleep mode for the living room
+        action: switch.turn_on
+        target:
+          entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+      - alias: Set LR AL sleep level to ~10% warm (self-heal against restart)
+        action: adaptive_lighting.change_switch_settings
+        data:
+          entity_id: switch.adaptive_lighting_living_room_lights
+          sleep_brightness: 10
+          sleep_color_temp: 2200
+    - alias: Release sleep-dim at 05:30 (always, so daytime AL resumes)
+      conditions:
+      - condition: trigger
+        id: night_end
+      sequence:
+      - action: switch.turn_off
+        target:
+          entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+  mode: single
+- id: bedroom_heat_alert_v2
+  alias: Bedroom — Heat Alert (v2, Vacation-Gated + Anti-Spam)
+  description: 'v2 consolidating "Bedroom temp too hot" (id 1654570339244) and "Bedroom
+    too hot when Lara comes home" (id 1691671531217). Two branches: sustained warm
+    (>75F for 15 min while home and awake, not at work) and arrival-home hot (>78F).
+    Adds calendar.vacation gate (house style section 8) and a 3h re-alert guard via
+    this automation''s own last_triggered so an oscillating temp can''t spam. Alert-only:
+    no controllable bedroom AC exists yet (Kasa plug pending) - upgrade to actually
+    cool when installed. Replaces the two v1 alerts (now disabled 2026-07-05). Installed
+    at Lara''s request.'
+  triggers:
+  - trigger: numeric_state
+    entity_id: sensor.temp_in_bedroom
+    above: 75
+    for: 00:15:00
+    id: sustained_warm
+  - trigger: state
+    entity_id: person.lara_wiz
+    to: home
+    id: arrived_home
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  actions:
+  - choose:
+    - conditions:
+      - condition: trigger
+        id: sustained_warm
+      - condition: not
+        conditions:
+        - condition: zone
+          entity_id: person.lara_wiz
+          zone: zone.work
+      - condition: template
+        alias: Re-alert at most once every 3h
+        value_template: '{{ this.attributes.last_triggered is none or (now() - this.attributes.last_triggered).total_seconds()
+          > 10800 }}'
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          title: ⚠️ Bedroom warm
+          message: Bedroom is {{ states('sensor.temp_in_bedroom') }}°F. Turn down
+            the heat / crank the AC.
+    - conditions:
+      - condition: trigger
+        id: arrived_home
+      - condition: numeric_state
+        entity_id: sensor.temp_in_bedroom
+        above: 78
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          title: ⚠️ Bedroom hot
+          message: Welcome home — bedroom is {{ states('sensor.temp_in_bedroom') }}°F.
+  mode: single
+- id: '1783335318996'
+  alias: 'Sonos Wake Alarm: Speaker Failsafe (v1)'
+  description: 'Failsafe for the Sonos Wake Alarm. On 2026-07-06 the wake alarm ran
+    perfectly per its trace but Lara slept through it: every audio step (lofi ramp
+    + escalating alarm) plays through media_player.bedroom, the Music Assistant entity
+    for the bedroom Sonos, and that entity had been ''unavailable'' since ~2026-07-04
+    23:00 because the Music Assistant integration was stuck in setup_retry (''Failed
+    to connect to music assistant server''). Both play steps use continue_on_error
+    and the wait-for-playing step timed out, so the alarm produced total silence with
+    no error and the trace looked normal. This is the backstop: at the wake event
+    (offset 0 = the intended wake time) it checks whether media_player.bedroom is
+    unavailable/unknown, and if so it (a) pushes an iPhone alert so the MA outage
+    gets fixed, and (b) sounds the classic alarm directly on the native bedroom Sonos
+    (media_player.bedroom_frame), escalating volume 0.40 to 0.70 every 12s until input_boolean.in_bed
+    turns off, mirroring the main alarm''s stop logic. It cannot double-alarm: when
+    MA is healthy the unavailable-check is false so this exits and the main alarm
+    runs; only when the MA player is down (main alarm silent) does this fire. Native
+    Sonos can''t play the MA lofi playlist, so the failsafe is alarm-tone-only (waking
+    is the priority; the lofi wind-down is a nicety). GATES mirror the main alarm:
+    time 04:30-08:00, calendar.vacation off, in_bed on, binary_sensor.workday on,
+    and the calendar summary must contain ''wake up''. Phase 0 unjoins the bedroom
+    Sonos so the alarm stays solo and doesn''t bleed into the bathroom Era 100 and
+    disturb Johnny. URL uses homeassistant.local:8123/local/alarm-clock.mp3 to match
+    the main alarm; if native Sonos ever fails to resolve mDNS, switch to the HA host
+    IP. Intentional infra, don''t flag. TODO v2: also cover ''main alarm started but
+    media_player.bedroom never reached playing'' to defend against non-unavailable
+    MA failures (player present but announcement errors).'
+  triggers:
+  - entity_id: calendar.master_calendar
+    event: start
+    id: wake_up_time
+    platform: calendar
+  conditions:
+  - condition: time
+    after: 04:30:00
+    before: 08:00:00
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'on'
+  - condition: state
+    entity_id: binary_sensor.workday
+    state: 'on'
+  - condition: template
+    value_template: '{% set s = trigger.calendar_event.summary | lower | trim %}{{
+      ''wake up'' in s }}'
+  - condition: state
+    entity_id: media_player.bedroom
+    state:
+    - unavailable
+    - unknown
+  actions:
+  - alias: Alert — MA bedroom player down, alarm on backup speaker
+    action: notify.mobile_app_iphone
+    data:
+      title: ⚠️ Wake alarm on backup speaker
+      message: Music Assistant's bedroom player was unavailable at wake time, so the
+        alarm is sounding on the bedroom Sonos directly. Check Music Assistant.
+  - alias: Phase 0 — Unjoin bedroom Sonos so the alarm stays out of the bathroom (Johnny)
+    action: media_player.unjoin
+    target:
+      entity_id: media_player.bedroom_frame
+    continue_on_error: true
+  - alias: Phase 0 — Settle before playback
+    delay: 00:00:01
+  - alias: Phase 1 — Escalating classic alarm on native Sonos until out of bed
+    repeat:
+      until:
+      - condition: state
+        entity_id: input_boolean.in_bed
+        state: 'off'
+      sequence:
+      - alias: Raise volume each pass (0.40 to 0.70 cap)
+        action: media_player.volume_set
+        target:
+          entity_id: media_player.bedroom_frame
+        data:
+          volume_level: '{{ ([0.40 + (repeat.index - 1) * 0.05, 0.70] | min) | float
+            }}'
+      - alias: Play alarm clip as a Sonos announcement
+        action: media_player.play_media
+        target:
+          entity_id: media_player.bedroom_frame
+        data:
+          media_content_id: http://homeassistant.local:8123/local/alarm-clock.mp3
+          media_content_type: music
+          announce: true
+        continue_on_error: true
+      - delay: 00:00:12
+  - alias: Phase 2 — Gentle light fade-in once up
+    action: light.turn_on
+    target:
+      entity_id: light.bedroom
+    data:
+      transition: 300
+  mode: restart
+- id: '1783476373361'
+  alias: Mac Samba Monitor Alert (webhook)
+  description: Receives status POSTs from the Mac-side Samba share monitor (LaunchAgent
+    com.ellewiz.sambamonitor) and pushes them to iPhone with a per-message iOS interruption
+    level (real outages = time-sensitive so they pierce Sleep/Focus, self-heal FYIs
+    = passive). Replaces the old server-side samba_smb_port watchdog, which could
+    not see Mac-side Finder/mount drops. Intentional infra - do not flag.
+  triggers:
+  - platform: webhook
+    webhook_id: mac_samba_monitor_9f3a7c2e5b8d1
+    local_only: true
+    allowed_methods:
+    - POST
+  actions:
+  - data:
+      title: '{{ trigger.json.title | default(''Samba share'', true) }}'
+      message: '{{ trigger.json.message | default(''Samba share status change on Mac'',
+        true) }}'
+      data:
+        push:
+          interruption-level: '{{ trigger.json.level | default(''active'', true) }}'
+    action: notify.mobile_app_iphone
+  mode: queued
