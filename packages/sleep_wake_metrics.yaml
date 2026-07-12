@@ -1,0 +1,642 @@
+# Wiz Manor — Sleep / Wake Bedroom Metrics
+#
+# WHY: Lara wants to study what governs when she wakes, especially on mornings she
+# does NOT use the alarm. Three things get measured here, all in the bedroom:
+#
+#   1. MORNING LIGHT. How much daylight is in the room during the final stretch of
+#      sleep. Measured on the Hue bedroom motion sensor's lux channel
+#      (sensor.hue_motion_sensor_2_light_level). The window OPENS when lux first
+#      rises past a small, tunable threshold after a 04:00 floor while she is still
+#      in bed ("first light"), and CLOSES when input_boolean.in_bed flips off (the
+#      house turns that off on the first bedroom motion after group.morning, i.e.
+#      when she gets up for the day). Captured four ways: peak lx, time-weighted
+#      average lx, cumulative dose (lx.min, a left-Riemann sum since the Hue sensor
+#      holds its value between change reports), and window length (min).
+#
+#   2. WAKE TRIGGER. What actually got her up, in her own terms: no alarm / woke
+#      before the music / woke to the music / woke to the "beep". The Sonos Wake
+#      Alarm (automation.testing_alarm_automation) plays a Lofi music ramp starting
+#      20 min before the calendar wake time, then escalates the classic
+#      alarm-clock.mp3 "beep" AT the wake time if she is still in bed. We do NOT
+#      edit that automation. Instead a tiny mirror automation shares its calendar
+#      trigger to stamp "armed" + the scheduled music-start time; the capture
+#      automation then classifies from get-up time: before music-start = before
+#      music; within 20 min = music; at/after music-start + 20 min = the beep.
+#
+#   3. OVERNIGHT BED-EXITS. Middle-of-the-night get-ups, to overlay on sleep data.
+#      The Hue bedroom motion sensor reads no motion while she lies in bed and fires
+#      when she moves/walks (last night: zero motion 11:12pm -> 6:56am wake), so a
+#      motion burst during the overnight in_bed window is a get-up. Bursts within
+#      10 min are one trip; a >10 min gap starts a new trip. Logged: count, the
+#      time of each trip, and approximate minutes out of bed (a lower bound).
+#
+# HOW IT PERSISTS FOR REPORTS: like input_number.bedroom_temp_at_bedtime is mirrored
+# by sensor.bedroom_temp_at_bedtime_recorded, every metric that feeds the monthly
+# reports is written to an input_number at wake and mirrored by a
+# state_class: measurement template sensor so the recorder keeps one clean daily
+# statistic per night. The daily Oura note reads sensor.bedroom_sleep_wake_summary.
+#
+# NOTES / LIMITATIONS:
+#   - Only signal in the bedroom is the Hue motion sensor (motion sensor 4 is the
+#     living room; there is no bed or bathroom sensor). Out-of-bed minutes are a
+#     lower bound (a single-pulse trip counts as ~0 min).
+#   - A get-up after group.morning turns on (~05:30) is what the house treats as
+#     "up for the day" (it flips in_bed off), so it is NOT counted as a night trip;
+#     it closes the night. Inherent to the existing in_bed design.
+#   - "First light" threshold is input_number.bedroom_morning_lux_start_threshold
+#     (default 3 lx). Raise it if a night-light ever holds the reading above it.
+#   - Reset each night by "Sleep Wake: Reset Night Counters at Bedtime".
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+input_boolean:
+  bedroom_morning_light_window_open:
+    name: Bedroom Morning Light Window Open
+    icon: mdi:window-shutter-open
+  wake_alarm_set:
+    name: Wake Alarm Set (armed today)
+    icon: mdi:alarm-check
+
+input_number:
+  bedroom_morning_lux_start_threshold:
+    name: Bedroom Morning Lux Start Threshold
+    icon: mdi:weather-sunset-up
+    min: 0
+    max: 100
+    step: 0.5
+    initial: 3
+    unit_of_measurement: lx
+    mode: box
+  bedroom_morning_light_peak:
+    name: Bedroom Morning Light Peak
+    icon: mdi:brightness-7
+    min: 0
+    max: 100000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: lx
+    mode: box
+  bedroom_morning_light_avg:
+    name: Bedroom Morning Light Average
+    icon: mdi:brightness-5
+    min: 0
+    max: 100000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: lx
+    mode: box
+  bedroom_morning_light_dose:
+    name: Bedroom Morning Light Dose
+    icon: mdi:weather-sunny
+    min: 0
+    max: 100000000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: "lx·min"
+    mode: box
+  bedroom_morning_light_window_min:
+    name: Bedroom Morning Light Window Minutes
+    icon: mdi:timer-sand
+    min: 0
+    max: 1440
+    step: 0.1
+    initial: 0
+    unit_of_measurement: min
+    mode: box
+  bedroom_morning_light_last_lux:
+    name: Bedroom Morning Light Last Lux (internal)
+    icon: mdi:tune-variant
+    min: 0
+    max: 100000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: lx
+    mode: box
+  bedroom_night_bed_exits:
+    name: Bedroom Night Bed Exits (live)
+    icon: mdi:bed-empty
+    min: 0
+    max: 100
+    step: 1
+    initial: 0
+    mode: box
+  bedroom_night_out_of_bed_min:
+    name: Bedroom Night Out-of-Bed Minutes (live)
+    icon: mdi:walk
+    min: 0
+    max: 1440
+    step: 0.1
+    initial: 0
+    unit_of_measurement: min
+    mode: box
+  bedroom_bed_exits_lastnight:
+    name: Bedroom Bed Exits Last Night
+    icon: mdi:bed-empty
+    min: 0
+    max: 100
+    step: 1
+    initial: 0
+    mode: box
+  bedroom_out_of_bed_min_lastnight:
+    name: Bedroom Out-of-Bed Minutes Last Night
+    icon: mdi:walk
+    min: 0
+    max: 1440
+    step: 0.1
+    initial: 0
+    unit_of_measurement: min
+    mode: box
+  bedroom_wake_trigger_code:
+    name: Bedroom Wake Trigger Code
+    icon: mdi:alarm
+    min: 0
+    max: 3
+    step: 1
+    initial: 0
+    mode: box
+
+input_datetime:
+  bedroom_morning_light_window_start:
+    name: Bedroom Morning Light Window Start
+    has_date: true
+    has_time: true
+  bedroom_morning_light_last_ts:
+    name: Bedroom Morning Light Last Sample Time (internal)
+    has_date: true
+    has_time: true
+  bedroom_morning_wake_time:
+    name: Bedroom Morning Wake Time
+    has_date: true
+    has_time: true
+  bedroom_night_start:
+    name: Bedroom Night Start (bedtime)
+    has_date: true
+    has_time: true
+  bedroom_night_last_motion_ts:
+    name: Bedroom Night Last Motion Time (internal)
+    has_date: true
+    has_time: true
+  wake_alarm_armed_time:
+    name: Wake Alarm Armed Time (scheduled music start)
+    has_date: true
+    has_time: true
+
+input_text:
+  bedroom_night_bed_exit_log:
+    name: Bedroom Night Bed Exit Log
+    icon: mdi:format-list-bulleted
+    min: 0
+    max: 255
+    initial: ""
+  bedroom_wake_trigger:
+    name: Bedroom Wake Trigger
+    icon: mdi:alarm-note
+    min: 0
+    max: 50
+    initial: "No alarm"
+
+# ---------------------------------------------------------------------------
+# Template mirror sensors (state_class measurement -> long-term statistics)
+# + one rich summary sensor for the daily Oura note
+# ---------------------------------------------------------------------------
+template:
+  - sensor:
+      - name: "Bedroom Morning Light Peak (recorded)"
+        unique_id: bedroom_morning_light_peak_recorded
+        unit_of_measurement: "lx"
+        device_class: illuminance
+        state_class: measurement
+        icon: mdi:brightness-7
+        state: "{{ states('input_number.bedroom_morning_light_peak') | float(0) | round(1) }}"
+
+      - name: "Bedroom Morning Light Average (recorded)"
+        unique_id: bedroom_morning_light_avg_recorded
+        unit_of_measurement: "lx"
+        device_class: illuminance
+        state_class: measurement
+        icon: mdi:brightness-5
+        state: "{{ states('input_number.bedroom_morning_light_avg') | float(0) | round(1) }}"
+
+      - name: "Bedroom Morning Light Dose (recorded)"
+        unique_id: bedroom_morning_light_dose_recorded
+        unit_of_measurement: "lx·min"
+        state_class: measurement
+        icon: mdi:weather-sunny
+        state: "{{ states('input_number.bedroom_morning_light_dose') | float(0) | round(1) }}"
+
+      - name: "Bedroom Morning Light Window (recorded)"
+        unique_id: bedroom_morning_light_window_recorded
+        unit_of_measurement: "min"
+        state_class: measurement
+        icon: mdi:timer-sand
+        state: "{{ states('input_number.bedroom_morning_light_window_min') | float(0) | round(1) }}"
+
+      - name: "Bedroom Night Bed Exits (recorded)"
+        unique_id: bedroom_night_bed_exits_recorded
+        state_class: measurement
+        icon: mdi:bed-empty
+        state: "{{ states('input_number.bedroom_bed_exits_lastnight') | int(0) }}"
+
+      - name: "Bedroom Out of Bed Minutes (recorded)"
+        unique_id: bedroom_out_of_bed_min_recorded
+        unit_of_measurement: "min"
+        state_class: measurement
+        icon: mdi:walk
+        state: "{{ states('input_number.bedroom_out_of_bed_min_lastnight') | float(0) | round(1) }}"
+
+      - name: "Bedroom Wake Trigger Code (recorded)"
+        unique_id: bedroom_wake_trigger_code_recorded
+        state_class: measurement
+        icon: mdi:alarm
+        state: "{{ states('input_number.bedroom_wake_trigger_code') | int(0) }}"
+
+      - name: "Bedroom Sleep Wake Summary"
+        unique_id: bedroom_sleep_wake_summary
+        icon: mdi:weather-sunset-up
+        state: "{{ states('input_text.bedroom_wake_trigger') }}"
+        attributes:
+          morning_light_peak_lx: "{{ states('input_number.bedroom_morning_light_peak') | float(0) | round(1) }}"
+          morning_light_avg_lx: "{{ states('input_number.bedroom_morning_light_avg') | float(0) | round(1) }}"
+          morning_light_dose_lxmin: "{{ states('input_number.bedroom_morning_light_dose') | float(0) | round(1) }}"
+          morning_light_window_min: "{{ states('input_number.bedroom_morning_light_window_min') | float(0) | round(1) }}"
+          first_light_time: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_light_window_start','timestamp') | float(0) %}
+            {{ ts | timestamp_custom('%-I:%M %p', true) if (ts > 1577923200 and (states('input_number.bedroom_morning_light_window_min')|float(0)) > 0) else 'n/a' }}
+          wake_time: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {{ ts | timestamp_custom('%-I:%M %p', true) if ts > 1577923200 else 'n/a' }}
+          wake_trigger: "{{ states('input_text.bedroom_wake_trigger') }}"
+          wake_trigger_code: "{{ states('input_number.bedroom_wake_trigger_code') | int(0) }}"
+          alarm_set: "{{ 'yes' if (states('input_number.bedroom_wake_trigger_code') | int(0)) >= 1 else 'no' }}"
+          bed_exits_last_night: "{{ states('input_number.bedroom_bed_exits_lastnight') | int(0) }}"
+          out_of_bed_min_last_night: "{{ states('input_number.bedroom_out_of_bed_min_lastnight') | float(0) | round(1) }}"
+          bed_exit_times: "{{ states('input_text.bedroom_night_bed_exit_log') }}"
+
+# ---------------------------------------------------------------------------
+# Automations
+# ---------------------------------------------------------------------------
+automation:
+  - id: wake_alarm_mark_armed
+    alias: "Wake Trigger: Mark Alarm Armed"
+    description: >-
+      Non-invasive mirror of the Sonos Wake Alarm's arm gate. Fires on the SAME
+      calendar trigger (20 min before a master_calendar "Wake up" event) and, when
+      the alarm would actually arm (inside 04:30-08:00, workday on, vacation off,
+      summary contains "wake up"), stamps input_boolean.wake_alarm_set on and
+      input_datetime.wake_alarm_armed_time = now. armed_time is the scheduled start
+      of the Lofi music ramp; the classic-alarm "beep" escalation begins 20 min
+      later (10 volume steps x 2 min). "Sleep Wake: Capture ..." reads these at wake
+      to classify before-music / music / beep. Does NOT touch
+      automation.testing_alarm_automation. Cleared nightly at bedtime.
+    triggers:
+      - trigger: calendar
+        entity_id: calendar.master_calendar
+        event: start
+        offset: "-0:20:00"
+        id: wake_up_time
+    conditions:
+      - condition: time
+        after: "04:30:00"
+        before: "08:00:00"
+      - condition: state
+        entity_id: binary_sensor.workday
+        state: "on"
+      - condition: state
+        entity_id: calendar.vacation
+        state: "off"
+      - condition: template
+        value_template: "{% set s = trigger.calendar_event.summary | lower | trim %}{{ 'wake up' in s }}"
+    actions:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.wake_alarm_set
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.wake_alarm_armed_time
+        data:
+          timestamp: "{{ now().timestamp() }}"
+    mode: single
+
+  - id: sleep_light_window_open
+    alias: "Sleep Light: Open Morning Window on First Light"
+    description: >-
+      Opens the morning bedroom-light measurement window when
+      sensor.hue_motion_sensor_2_light_level first rises above
+      input_number.bedroom_morning_lux_start_threshold (default 3 lx) for 1 minute,
+      after a 04:00 floor, while still in bed. Snapshots the window start time, seeds
+      the left-Riemann dose accumulator (last_lux + last_ts), sets peak to the
+      current level, and zeroes the running dose. one-shot via the window_open guard.
+      Closed at wake by "Sleep Wake: Capture Morning Light and Wake Trigger".
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.hue_motion_sensor_2_light_level
+        above: input_number.bedroom_morning_lux_start_threshold
+        for: "00:01:00"
+        id: first_light
+    conditions:
+      - condition: state
+        entity_id: input_boolean.in_bed
+        state: "on"
+      - condition: state
+        entity_id: input_boolean.bedroom_morning_light_window_open
+        state: "off"
+      - condition: time
+        after: "04:00:00"
+        before: "12:00:00"
+      - condition: state
+        entity_id: calendar.vacation
+        state: "off"
+    actions:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.bedroom_morning_light_window_open
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_morning_light_window_start
+        data:
+          timestamp: "{{ now().timestamp() }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_morning_light_last_ts
+        data:
+          timestamp: "{{ now().timestamp() }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_morning_light_last_lux
+        data:
+          value: "{{ states('sensor.hue_motion_sensor_2_light_level') | float(0) }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_morning_light_peak
+        data:
+          value: "{{ states('sensor.hue_motion_sensor_2_light_level') | float(0) }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_morning_light_dose
+        data:
+          value: 0
+    mode: single
+
+  - id: sleep_light_accrue
+    alias: "Sleep Light: Accrue Dose and Track Peak"
+    description: >-
+      While the morning-light window is open, on every change of the Hue bedroom lux
+      sensor: add the left-Riemann area since the last sample to the dose
+      (previous lx x minutes elapsed, because the Hue sensor holds its value between
+      change reports), then raise the running peak if the new level is higher, then
+      store the new level and sample time. The final partial segment is booked at
+      wake. Queued so consecutive lux changes are all integrated.
+    triggers:
+      - trigger: state
+        entity_id: sensor.hue_motion_sensor_2_light_level
+        not_to:
+          - unknown
+          - unavailable
+    conditions:
+      - condition: state
+        entity_id: input_boolean.bedroom_morning_light_window_open
+        state: "on"
+    actions:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_morning_light_dose
+        data:
+          value: "{{ (states('input_number.bedroom_morning_light_dose')|float(0)) + (states('input_number.bedroom_morning_light_last_lux')|float(0)) * ([ (now().timestamp() - (state_attr('input_datetime.bedroom_morning_light_last_ts','timestamp')|float(now().timestamp())))/60, 0]|max) }}"
+      - if:
+          - condition: template
+            value_template: "{{ (states('sensor.hue_motion_sensor_2_light_level')|float(0)) > (states('input_number.bedroom_morning_light_peak')|float(0)) }}"
+        then:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.bedroom_morning_light_peak
+            data:
+              value: "{{ states('sensor.hue_motion_sensor_2_light_level') | float(0) }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_morning_light_last_lux
+        data:
+          value: "{{ states('sensor.hue_motion_sensor_2_light_level') | float(0) }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_morning_light_last_ts
+        data:
+          timestamp: "{{ now().timestamp() }}"
+    mode: queued
+    max: 30
+
+  - id: sleep_wake_capture
+    alias: "Sleep Wake: Capture Morning Light and Wake Trigger at Wake"
+    description: >-
+      Fires when Lara gets up for the day (input_boolean.in_bed on -> off, which the
+      house flips on the first bedroom motion after group.morning). Gated to a real
+      morning wake (group.morning on, vacation off). Closes the morning-light window:
+      books the final Riemann segment, computes window length (min), time-weighted
+      average lx (dose / minutes); peak is left as tracked; stamps wake time. If the
+      window never opened (woke before measurable first light) the light metrics are
+      zeroed. Classifies the wake trigger: no alarm (0), woke before the music (1),
+      woke to the music ramp (2), or woke to the classic beep (3 = still in bed 20
+      min after music start). Snapshots the overnight bed-exit count and out-of-bed
+      minutes into the stable *_lastnight holders so reports read one value per night.
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.in_bed
+        from: "on"
+        to: "off"
+        id: wake
+    conditions:
+      - condition: state
+        entity_id: group.morning
+        state: "on"
+      - condition: state
+        entity_id: calendar.vacation
+        state: "off"
+    actions:
+      - variables:
+          now_ts: "{{ now().timestamp() }}"
+          win_open: "{{ is_state('input_boolean.bedroom_morning_light_window_open','on') }}"
+          armed: "{{ is_state('input_boolean.wake_alarm_set','on') }}"
+          armed_ts: "{{ state_attr('input_datetime.wake_alarm_armed_time','timestamp') | float(0) }}"
+          workday: "{{ is_state('binary_sensor.workday','on') }}"
+      # 1) Close the morning-light window
+      - if:
+          - "{{ win_open }}"
+        then:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.bedroom_morning_light_dose
+            data:
+              value: "{{ ((states('input_number.bedroom_morning_light_dose')|float(0)) + (states('input_number.bedroom_morning_light_last_lux')|float(0)) * ([ (now().timestamp() - (state_attr('input_datetime.bedroom_morning_light_last_ts','timestamp')|float(now().timestamp())))/60, 0]|max)) | round(1) }}"
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.bedroom_morning_light_window_min
+            data:
+              value: "{{ ([ (now().timestamp() - (state_attr('input_datetime.bedroom_morning_light_window_start','timestamp')|float(now().timestamp())))/60, 0]|max) | round(1) }}"
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.bedroom_morning_light_avg
+            data:
+              value: "{% set dose = states('input_number.bedroom_morning_light_dose')|float(0) %}{% set win = states('input_number.bedroom_morning_light_window_min')|float(0) %}{{ (dose/win)|round(1) if win > 0 else 0 }}"
+        else:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.bedroom_morning_light_dose
+            data:
+              value: 0
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.bedroom_morning_light_window_min
+            data:
+              value: 0
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.bedroom_morning_light_avg
+            data:
+              value: 0
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.bedroom_morning_light_peak
+            data:
+              value: "{{ states('sensor.hue_motion_sensor_2_light_level') | float(0) }}"
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.bedroom_morning_light_window_open
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_morning_wake_time
+        data:
+          timestamp: "{{ now_ts }}"
+      # 2) Classify the wake trigger
+      - variables:
+          wt_code: "{% if not armed and not workday %}0{% elif not armed and workday %}1{% elif armed and now_ts < armed_ts %}1{% elif armed and now_ts < (armed_ts + 1200) %}2{% else %}3{% endif %}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_wake_trigger_code
+        data:
+          value: "{{ wt_code | int(0) }}"
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.bedroom_wake_trigger
+        data:
+          value: "{{ {0:'No alarm',1:'Woke before music',2:'Woke to music',3:'Woke to the beep'}[wt_code | int(0)] }}"
+      # 3) Snapshot overnight bed-exit metrics to stable daily holders
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_bed_exits_lastnight
+        data:
+          value: "{{ states('input_number.bedroom_night_bed_exits') | int(0) }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_out_of_bed_min_lastnight
+        data:
+          value: "{{ states('input_number.bedroom_night_out_of_bed_min') | float(0) | round(1) }}"
+    mode: single
+
+  - id: sleep_bed_exit_count
+    alias: "Sleep Bed-Exits: Count Overnight Get-Ups"
+    description: >-
+      Counts middle-of-the-night get-ups from bedroom motion while in bed. A motion
+      burst within 10 min of the previous motion is the SAME trip (add the gap to
+      out-of-bed minutes); a gap over 10 min starts a NEW trip (increment count,
+      append the time to the log). Gated: in_bed on, group.morning OFF (so the
+      morning wake motion that flips in_bed off is never counted), at least 20 min
+      past bedtime (ignore settling in), vacation off. Queued for motion bursts.
+      Reset nightly at bedtime.
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.hue_motion_sensor_2_motion
+        from: "off"
+        to: "on"
+        id: motion
+    conditions:
+      - condition: state
+        entity_id: input_boolean.in_bed
+        state: "on"
+      - condition: state
+        entity_id: group.morning
+        state: "off"
+      - condition: state
+        entity_id: calendar.vacation
+        state: "off"
+      - condition: template
+        value_template: "{{ (now().timestamp() - (state_attr('input_datetime.bedroom_night_start','timestamp')|float(now().timestamp()))) > 1200 }}"
+    actions:
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ (now().timestamp() - (state_attr('input_datetime.bedroom_night_last_motion_ts','timestamp')|float(0))) > 600 }}"
+            sequence:
+              # NEW trip
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.bedroom_night_bed_exits
+                data:
+                  value: "{{ (states('input_number.bedroom_night_bed_exits')|int(0)) + 1 }}"
+              - action: input_text.set_value
+                target:
+                  entity_id: input_text.bedroom_night_bed_exit_log
+                data:
+                  value: "{% set cur = states('input_text.bedroom_night_bed_exit_log')|trim %}{% set t = now().strftime('%-I:%M %p') %}{{ (cur ~ ', ' ~ t) if cur not in ['','unknown','unavailable'] else t }}"
+        default:
+          # SAME trip -> extend out-of-bed minutes by the gap since last motion
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.bedroom_night_out_of_bed_min
+            data:
+              value: "{{ ((states('input_number.bedroom_night_out_of_bed_min')|float(0)) + (now().timestamp() - (state_attr('input_datetime.bedroom_night_last_motion_ts','timestamp')|float(now().timestamp())))/60) | round(1) }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_night_last_motion_ts
+        data:
+          timestamp: "{{ now().timestamp() }}"
+    mode: queued
+    max: 20
+
+  - id: sleep_night_reset
+    alias: "Sleep Wake: Reset Night Counters at Bedtime"
+    description: >-
+      On going to bed (input_boolean.in_bed off -> on), reset the overnight bed-exit
+      tally, out-of-bed minutes and trip log, seed night_start and last_motion_ts to
+      now (the 20-min settle window and cluster gap key off these), close any stale
+      morning-light window, and clear the wake-alarm mirror flag so the next morning
+      starts fresh.
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.in_bed
+        from: "off"
+        to: "on"
+        id: bedtime
+    conditions: []
+    actions:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_night_bed_exits
+        data:
+          value: 0
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_night_out_of_bed_min
+        data:
+          value: 0
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.bedroom_night_bed_exit_log
+        data:
+          value: ""
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_night_start
+        data:
+          timestamp: "{{ now().timestamp() }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_night_last_motion_ts
+        data:
+          timestamp: "{{ now().timestamp() }}"
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.bedroom_morning_light_window_open
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.wake_alarm_set
+    mode: single
