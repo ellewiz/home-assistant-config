@@ -18,6 +18,12 @@ sensor:
     state_characteristic: mean
     max_age:
       days: 30
+    # 2026-07-12: without sampling_size the statistics default of 20 samples
+    # applies, which covered only ~10 of the 30 days (age_coverage_ratio 0.35).
+    # 200 comfortably holds 30 days even with multiple updates/day. Note:
+    # recorder retention limits restart backfill, so the full window only
+    # rebuilds after 30 days of accumulation.
+    sampling_size: 200
     precision: 1
 
   # 7-day rolling mean of bedroom temp when you go to bed
@@ -28,6 +34,7 @@ sensor:
     state_characteristic: mean
     max_age:
       days: 7
+    sampling_size: 50
     precision: 1
 
 # ===== Template sensors =====
@@ -55,7 +62,10 @@ template:
           today_hrv: "{{ states('sensor.oura_ring_average_sleep_hrv') | float(0) | round(1) }}"
           baseline_hrv: "{{ states('sensor.oura_hrv_30_day_baseline') | float(0) | round(1) }}"
           interpretation: >
-            {% set d = states('sensor.oura_hrv_vs_baseline') | float(0) %}
+            {# 2026-07-12: was states('sensor.oura_hrv_vs_baseline') — an entity
+               ID that never existed (real ID lacks the oura_ prefix), so this
+               always read 0. this.state can't drift from the sensor again. #}
+            {% set d = this.state | float(0) %}
             {% if d >= 5 %}above baseline — great recovery
             {% elif d >= 0 %}near baseline — normal
             {% elif d >= -5 %}slightly below baseline
@@ -78,7 +88,8 @@ template:
           target_hours: 8
           actual_hours: "{{ states('sensor.oura_ring_total_sleep_duration') | float(0) | round(2) }}"
           status: >
-            {% set debt = states('sensor.oura_sleep_debt_today') | float(0) %}
+            {# 2026-07-12: was a nonexistent oura_-prefixed entity ID; see HRV note #}
+            {% set debt = this.state | float(0) %}
             {% if debt <= 0 %}fully rested
             {% elif debt <= 0.5 %}slight deficit
             {% elif debt <= 1.5 %}moderate deficit
@@ -138,7 +149,8 @@ template:
           deep_pct: "{{ states('sensor.oura_ring_deep_sleep_percentage') | float(0) }}"
           rem_pct: "{{ states('sensor.oura_ring_rem_sleep_percentage') | float(0) }}"
           interpretation: >
-            {% set r = states('sensor.oura_restorative_sleep') | float(0) %}
+            {# 2026-07-12: was a nonexistent oura_-prefixed entity ID; see HRV note #}
+            {% set r = this.state | float(0) %}
             {% if r >= 45 %}excellent
             {% elif r >= 40 %}good
             {% elif r >= 30 %}below average
