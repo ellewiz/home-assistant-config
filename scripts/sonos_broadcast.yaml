@@ -65,16 +65,20 @@ sonos_broadcast:
         _players_json: >
           {% set s = players | default('[]') %}
           {{ ((s | from_json) if s is string else s) | tojson }}
-        # Normalise volume_map (dict or JSON string) into a JSON list of
+        # Normalise volume_map (dict or JSON string) into a native list of
         # {entity_id, level} pairs so the per-speaker volume step can for_each it.
+        # 2026-07-12: removed the trailing `| tojson` — script variables render
+        # with native typing, so this was already a list, and the downstream
+        # `| from_json` calls raised on it every run (per-speaker volumes never
+        # applied). Consumers now use the list directly.
         _vol_pairs: >
           {% set m = volume_map | default({}) %}
           {% set m = (m | from_json) if m is string else m %}
           {% set ns = namespace(pairs=[]) %}
           {% for k, v in m.items() %}
-            {% set ns.pairs = ns.pairs + [{'entity_id': k, 'level': v | float}] %}
+            {% set ns.pairs = ns.pairs + [{'entity_id': k, 'level': v | float(0.5)}] %}
           {% endfor %}
-          {{ ns.pairs | tojson }}
+          {{ ns.pairs }}
 
     # Snapshot Sonos players FIRST — before any unjoin — and WITH group topology
     # so sonos.restore can rebuild the group and resume the queue from the
@@ -116,10 +120,10 @@ sonos_broadcast:
     # Like `volume` above, this is reverted by sonos.restore, so it only sets
     # how loud the TTS plays, never the music the speaker returns to.
     - choose:
-        - conditions: "{{ (_vol_pairs | from_json | length) > 0 }}"
+        - conditions: "{{ (_vol_pairs | length) > 0 }}"
           sequence:
             - repeat:
-                for_each: "{{ _vol_pairs | from_json }}"
+                for_each: "{{ _vol_pairs }}"
                 sequence:
                   - action: media_player.volume_set
                     target:
