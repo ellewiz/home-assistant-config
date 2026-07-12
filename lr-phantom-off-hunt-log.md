@@ -4,6 +4,36 @@ Running log of the `lr-lights-phantom-off-source-hunt` scheduled task. Newest en
 
 ---
 
+## 2026-07-11 (Sat)
+
+**iPhone push:** No LR off at all today (Sat Jul 11) — lights on since 6:57am and you were home through the 5:09pm window, so no away-day test. No restart; logging re-armed, hunt continues.
+
+**Detail:**
+- **No off today.** Zero off transitions in the July 11 ET window. The group was off at midnight (last night's intentional bedtime off landed 03:41 UTC / 11:41pm EDT Jul 10, outside today's window), turned **on at 10:57:35 UTC (06:57 EDT)** and has stayed on continuously since (still on at 19:08 EDT).
+- **Backstop:** zero runs in today's window. Its most recent run was 03:41:13 UTC (11:41pm EDT Jul 10, the bedtime off), execution = failed_conditions — correctly declined. No off-event today to inspect for user_id/parent_id.
+- **No HA restart** today. The only "Home Assistant" logbook hit is `update.home_assistant_core_update` flipping on at 21:22 UTC (a new Core release became available — informational, not a restart). No Core start/stop; group and person tracker continuous.
+- **No ~5:09pm (21:09 UTC) away-day off, and the window was NOT a live test.** `person.lara_wiz` was **home continuously all day** (Saturday, no state changes), so the away-day trigger condition never existed. The lights were on straight through the window.
+- **Logging:** no restart, so prior overrides persisted; re-armed homekit/homekit_controller/hue debug defensively (logger.set_level succeeded). `error_log` still 404s via MCP, so DEBUG lines remain unreadable that way.
+- **Recommendation:** keep the task running. Quiet 11th consecutive monitored day with no phantom, but today (like most recent days) was not a live away-day test. Still pending from Jul 9: Lara's Home app check for whether the Hue bridge itself is HomeKit-paired (Home Settings → Hubs & Bridges) — that answer closes or opens the last Hue-side door. Note: a Core update is now pending (flagged 21:22 UTC); when it's installed, that restart WILL wipe the debug overrides — the next run after any update must re-arm.
+
+## 2026-07-10 (Fri)
+
+**iPhone push:** No phantom off today (Fri Jul 10). Both LR offs (8:27am, 10:50am) were your own leave-home departures: lights cut ~1s after your phone left home, each carried a parent_id and the backstop declined. You were home through the 5:09pm window, so no away-day test today; logging re-armed.
+
+**Detail:**
+- Three off transitions in the 24h window, all internal or known (none the phantom):
+  - **03:05:26 UTC (23:05 EDT, Jul 9 11:05pm):** the intentional bedtime off (script.shut_down_bedtime's delayed final step). Ambient logger: `was on for 839.8 min | smoothed 0 lx / raw 0 lx | motion off | presence off | manual`. Overnight, by design, not the hunt target.
+  - **12:27:34 UTC (08:27 EDT):** leave-home departure off. `person.lara_wiz` went `not_home` at 12:27:33 UTC (1s before the off) and tracked away from Wiz Manor on a short errand (back `home` 12:42:14 UTC / 08:42 EDT). Ambient logger: `was on for 143.5 min | smoothed 19 lx / raw 19 lx | motion off | presence off | auto`. Group came back on 12:35:53 UTC (8.3 min later).
+  - **14:50:53 UTC (10:50 EDT):** second leave-home departure off. `person.lara_wiz` went `not_home` at 14:50:52 UTC (1s before the off), away on a second short errand (back `home` 15:13:23 UTC / 11:13 EDT). Ambient logger: `was on for 135.0 min | smoothed 10 lx / raw 12 lx | motion off | presence off | auto`. Group came back on 15:17:52 UTC (27 min later) and has stayed on since.
+- **Backstop:** fired ~10s after each off (03:05:36, 12:27:44, 14:51:03 UTC), all three **execution = failed_conditions** (none treated as external):
+  - 12:27:44 run: off-event context **parent_id=01KX5ZYNZWHBH12GR65Q8YVGW4, user_id=null**; short-circuited at the lux gate (condition/1: 19 lx not below lux_on 18) before reaching the null-context check.
+  - 14:51:03 run: off-event context **parent_id=01KX6853Q5P9VGSK33G9HJRG8C, user_id=null**; passed condition/0 and condition/1 (10 lx below 18, dark room) then correctly failed condition/2 (requires null user_id AND null parent_id) because the parent_id was non-null.
+  - Both non-null parent_id values confirm an internal HA-automation origin (the leave-home departure chain), not the classic null-parent phantom. No "LR Lights Backstop" logbook line on any run (the re-assert action never executed).
+- **No HA restart** today. Logbook "Home Assistant" search over 24h shows only `tts.home_assistant_cloud` (00:30) and `update.home_assistant_mcp_server_update` toggling (off 02:09, on 21:26 UTC, an add-on update notice), with no Core start/stop. The LR group and person tracker were continuous. Neither off is a restart artifact.
+- **No ~5:09pm (21:09 UTC) away-day off, and the window was NOT a live test.** The group has been on continuously since 15:17:52 UTC through now (23:08 UTC / 19:08 EDT). More important, `person.lara_wiz` was **home continuously from 15:13 UTC (11:13 EDT) onward**, so home during the 5:09pm window. Today's only away periods were the two short morning errands (08:27 to 08:42 and 10:50 to 11:13 EDT), neither in the hunted window.
+- **Logging:** no restart, so the prior debug overrides persisted; re-armed homekit/homekit_controller/hue debug defensively (logger.set_level succeeded) to guarantee coverage. The `error_log` source still 404s via MCP, so DEBUG lines remain unreadable that way.
+- **Recommendation:** keep the task running. Both of today's offs are internal leave-home departures carrying a non-null parent_id, so there was no null-context away-day phantom to capture, and the 5:09pm window was not a live away-day test (Lara home). The source stays unconfirmed; nothing to disable.
+
 ## 2026-07-09 (Thu)
 
 **iPhone push:** No phantom off today — the 9:03am off was your own leave-home automation (late shift), and no 5:09pm off occurred. Debug logging re-armed; hunt continues.
