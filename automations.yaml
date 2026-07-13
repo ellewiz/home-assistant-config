@@ -304,29 +304,6 @@
     target:
       entity_id: switch.living_room_arc_night_sound
   mode: single
-- id: '1654570339244'
-  alias: Bedroom temp too hot
-  description: ''
-  triggers:
-  - trigger: numeric_state
-    entity_id:
-    - sensor.temp_in_bedroom
-    above: 75
-  conditions:
-  - condition: state
-    entity_id: input_boolean.in_bed
-    state: 'off'
-  - condition: not
-    conditions:
-    - condition: zone
-      entity_id: person.lara_wiz
-      zone: zone.work
-  actions:
-  - action: notify.mobile_app_iphone
-    data:
-      title: Bedroom too hot
-      message: Turn down heat in bedroom
-  mode: single
 - id: '1667009276306'
   alias: Button to turn off bedroom lights
   description: Switch off lights with tap button
@@ -350,23 +327,6 @@
       ungroup: true
       player: media_player.bedroom_frame
       message: Turning off the lights… Good night!
-  mode: single
-- id: '1691671531217'
-  alias: Bedroom too hot when Lara comes home
-  description: ''
-  triggers:
-  - entity_id:
-    - person.lara_wiz
-    to: home
-    trigger: state
-  conditions:
-  - condition: numeric_state
-    entity_id: sensor.temp_in_bedroom
-    above: 78
-  actions:
-  - data:
-      message: Temp in bedroom is over 78°F!
-    action: notify.mobile_app_iphone
   mode: single
 - id: '1718503009309'
   alias: TV off weekends and time off
@@ -577,19 +537,31 @@
   alias: TV Event Over
   description: 'Shut down TV when the TV event ends, then re-enable nightly automations
     2026-06-28: re-enables switch.adaptive_lighting_living_room_lights (paused by
-    TV Event Reminder during the Movie scene) before re-arming sleep mode.'
+    TV Event Reminder during the Movie scene) before re-arming sleep mode. 2026-07-13:
+    goodnight sonos_say wrapped in a calendar.vacation gate so it doesn''t play to
+    an empty house / the sitter; the re-enable + AL housekeeping deliberately stays
+    unconditional. Companion: ''TV Event — Nightly Reconcile'' catches the stranded-off
+    case where a calendar.tv event is deleted mid-event and this end trigger never
+    fires.'
   triggers:
   - entity_id: calendar.tv
     event: end
     platform: calendar
   actions:
-  - action: script.sonos_say
-    data:
-      restore: true
-      ungroup: true
-      player: media_player.living_room_arc
-      message: Show's over. Good night!
-      volume: 0.65
+  - alias: 'Goodnight announcement — only when someone''s home to hear it (2026-07-13:
+      vacation gate; housekeeping below stays unconditional)'
+    if:
+    - condition: state
+      entity_id: calendar.vacation
+      state: 'off'
+    then:
+    - action: script.sonos_say
+      data:
+        restore: true
+        ungroup: true
+        player: media_player.living_room_arc
+        message: Show's over. Good night!
+        volume: 0.65
   - action: script.graceful_tv_exit
   - alias: Resume Adaptive Lighting now that the event is over
     action: switch.turn_on
@@ -861,7 +833,10 @@
     [2026-07-05] Added Phase 0 media_player.unjoin on media_player.bedroom_frame (native
     Sonos bedroom) before playback so wake audio stays solo and does not bleed into
     the grouped bathroom Era 100 and disturb Johnny; MA still plays to media_player.bedroom,
-    which routes to the same now-solo speaker.'
+    which routes to the same now-solo speaker. [2026-07-13] ''Wake up'' summary check
+    hoisted to top-level conditions and the no-wake-event fallback branch deleted:
+    any other early calendar event (appointment, flight) in the 04:30-08:00 window
+    used to fall through to it and create a spurious ''Alarm Skipped'' notification.'
   triggers:
   - platform: calendar
     entity_id: calendar.master_calendar
@@ -875,6 +850,10 @@
   - condition: state
     entity_id: calendar.vacation
     state: 'off'
+  - condition: template
+    alias: Only 'Wake up' events (hoisted from branch 1, 2026-07-13)
+    value_template: '{{ ''wake up'' in (trigger.calendar_event.summary | lower | trim)
+      }}'
   actions:
   - choose:
     - conditions:
@@ -884,11 +863,6 @@
       - condition: state
         entity_id: binary_sensor.workday
         state: 'on'
-      - condition: template
-        value_template: '{% set s = trigger.calendar_event.summary | lower | trim
-          %} {{ ''wake up'' in s }}
-
-          '
       sequence:
       - alias: Phase 0 — Unjoin bedroom Sonos so wake audio stays out of the bathroom
           (Johnny)
@@ -1026,17 +1000,6 @@
         data:
           title: Alarm Skipped
           message: Skipped — not a workday.
-    - conditions:
-      - condition: template
-        value_template: '{% set s = trigger.calendar_event.summary | lower | trim
-          %} {{ not (''wake up'' in s) }}
-
-          '
-      sequence:
-      - action: persistent_notification.create
-        data:
-          title: Alarm Skipped
-          message: Skipped — calendar event didn't include "Wake up".
   mode: single
 - id: '1764645467296'
   alias: Heat the car
@@ -1555,9 +1518,12 @@
   mode: single
 - id: '1777940949832'
   alias: "\U0001F985 Eagles Score - Flash Green"
-  description: Flash living room lights Kelly Green (#4CBB17) whenever the Eagles
+  description: 'Flash living room lights Kelly Green (#4CBB17) whenever the Eagles
     score, but only when home. Triggered by team_score attribute increase on the Team
-    Tracker sensor.
+    Tracker sensor. 2026-07-13: score-increase template also rejects recovery from
+    unknown/unavailable (a mid-game sensor blip used to read as empty->score = spurious
+    flash), and max_exceeded: silent so a TD+PAT re-trigger during the 5-pulse flash
+    doesn''t warn in the log.'
   triggers:
   - platform: state
     entity_id: sensor.philadelphia_eagles
@@ -1567,7 +1533,8 @@
     entity_id: sensor.philadelphia_eagles
     state: IN
   - condition: template
-    value_template: '{{ trigger.from_state is not none and trigger.to_state.attributes.team_score
+    value_template: '{{ trigger.from_state is not none and trigger.from_state.state
+      not in [''unknown'', ''unavailable''] and trigger.to_state.attributes.team_score
       | int(0) > trigger.from_state.attributes.team_score | int(0) }}'
   - condition: state
     entity_id: person.lara_wiz
@@ -1588,6 +1555,7 @@
       entity_id: switch.adaptive_lighting_living_room_lights
       manual_control: false
   mode: single
+  max_exceeded: silent
 - id: '1778432571562'
   alias: Pollen Alert Level — Daily Reset
   description: Resets input_number.pollen_alert_level_reached to 0 at midnight so
@@ -2806,13 +2774,18 @@
     off. Does NOT announce over Sonos (she is presumably about to watch) and does
     NOT pause the TV, unlike the pre-roll reminder — this is purely the lighting catch-up.
     Cleanup (resume AL, re-enable the 4 nightly automations, re-arm sleep mode) is
-    still handled by TV Event Over on calendar.tv event end.'
+    still handled by TV Event Over on calendar.tv event end. 2026-07-13: arrival trigger
+    filters unknown/unavailable so a tracker blip or HA restart walking unknown->home
+    can''t count as an arrival.'
   triggers:
   - platform: state
     entity_id: person.lara_wiz
     to: home
     for:
       seconds: 20
+    not_from:
+    - unknown
+    - unavailable
   conditions:
   - condition: state
     entity_id: calendar.tv
@@ -2947,23 +2920,29 @@
 - id: bedroom_heat_alert_v2
   alias: Bedroom — Heat Alert (v2, Vacation-Gated + Anti-Spam)
   description: 'v2 consolidating "Bedroom temp too hot" (id 1654570339244) and "Bedroom
-    too hot when Lara comes home" (id 1691671531217). Two branches: sustained warm
-    (>75F for 15 min while home and awake, not at work) and arrival-home hot (>78F).
-    Adds calendar.vacation gate (house style section 8) and a 3h re-alert guard via
-    this automation''s own last_triggered so an oscillating temp can''t spam. Alert-only:
-    no controllable bedroom AC exists yet (Kasa plug pending) - upgrade to actually
-    cool when installed. Replaces the two v1 alerts (now disabled 2026-07-05). Installed
-    at Lara''s request.'
+    too hot when Lara comes home" (id 1691671531217), both deleted 2026-07-13 (superseded).
+    Two branches: sustained warm (>75F for 15 min while home and awake, not at work)
+    and arrival-home hot (>78F). calendar.vacation gate per house style section 8.
+    Anti-spam: 3h guard via input_datetime.bedroom_heat_last_alerted, stamped ONLY
+    when a notification actually sends. (2026-07-13: was this.attributes.last_triggered,
+    which updates on every conditions-passing run including no-op arrivals, so an
+    ordinary arrival re-armed the 3h suppression and could swallow a real sustained-warm
+    alert.) Arrival trigger filters unknown/unavailable so tracker blips don''t count
+    as arrivals. Alert-only: no controllable bedroom AC exists yet (Kasa plug pending)
+    - upgrade to actually cool when installed. Installed at Lara''s request.'
   triggers:
-  - trigger: numeric_state
-    entity_id: sensor.temp_in_bedroom
+  - entity_id: sensor.temp_in_bedroom
     above: 75
     for: 00:15:00
     id: sustained_warm
-  - trigger: state
-    entity_id: person.lara_wiz
+    platform: numeric_state
+  - entity_id: person.lara_wiz
     to: home
+    not_from:
+    - unknown
+    - unavailable
     id: arrived_home
+    platform: state
   conditions:
   - condition: state
     entity_id: calendar.vacation
@@ -2971,6 +2950,11 @@
   - condition: state
     entity_id: input_boolean.in_bed
     state: 'off'
+  - condition: template
+    alias: Re-alert at most once every 3h (stamped only on real sends)
+    value_template: '{{ not has_value(''input_datetime.bedroom_heat_last_alerted'')
+      or (now().timestamp() - as_timestamp(states(''input_datetime.bedroom_heat_last_alerted''),
+      0)) > 10800 }}'
   actions:
   - choose:
     - conditions:
@@ -2981,16 +2965,18 @@
         - condition: zone
           entity_id: person.lara_wiz
           zone: zone.work
-      - condition: template
-        alias: Re-alert at most once every 3h
-        value_template: '{{ this.attributes.last_triggered is none or (now() - this.attributes.last_triggered).total_seconds()
-          > 10800 }}'
       sequence:
       - action: notify.mobile_app_iphone
         data:
           title: ⚠️ Bedroom warm
           message: Bedroom is {{ states('sensor.temp_in_bedroom') }}°F. Turn down
             the heat / crank the AC.
+      - alias: Stamp anti-spam clock
+        action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_heat_last_alerted
+        data:
+          timestamp: '{{ now().timestamp() }}'
     - conditions:
       - condition: trigger
         id: arrived_home
@@ -3002,6 +2988,12 @@
         data:
           title: ⚠️ Bedroom hot
           message: Welcome home — bedroom is {{ states('sensor.temp_in_bedroom') }}°F.
+      - alias: Stamp anti-spam clock
+        action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_heat_last_alerted
+        data:
+          timestamp: '{{ now().timestamp() }}'
   mode: single
 - id: '1783335318996'
   alias: 'Sonos Wake Alarm: Speaker Failsafe (v1)'
@@ -3165,4 +3157,88 @@
         push:
           interruption-level: passive
     action: notify.mobile_app_iphone
+  mode: single
+- id: meds_guanfacine_nudge_restore_failsafe
+  alias: 'Meds — Guanfacine: Nudge Restore Failsafe'
+  description: 'Stateless companion to ''Meds — Guanfacine: TV nudge until logged''.
+    That automation holds indefinitely (wait_for_trigger, no timeout, per Lara) until
+    the dose is logged; an automation reload or HA restart mid-hold kills the run
+    and strands the living room (lights pinned at 70% under AL manual_control, TV
+    paused, scene.guanfacine_nudge_restore never applied) — same failure class as
+    the 2026-06-04 bedroom 16h incident. This failsafe fires on input_boolean.guanfacine_taken
+    -> on and performs the restore only when the main automation is NOT mid-run (current
+    == 0; if it is running, it does its own restore): re-apply the snapshot scene
+    if it still exists (dynamic scenes don''t survive restart — in that case AL handback
+    alone re-normalizes the lights at the next adapt cycle), then hand the lights
+    back to Adaptive Lighting. Deliberately does NOT blindly resume the TV: after
+    a strand there''s no record of which player was paused vs paused-by-Lara, so resume
+    stays manual. Evening window gate (19:30-04:00) so an out-of-band toggle of the
+    boolean can''t re-apply a stale snapshot at midday. Created 2026-07-13 (code review
+    R7).'
+  triggers:
+  - platform: state
+    entity_id: input_boolean.guanfacine_taken
+    from: 'off'
+    to: 'on'
+  conditions:
+  - condition: time
+    after: '19:30:00'
+    before: 04:00:00
+  - condition: template
+    alias: Main nudge automation not mid-run (it handles its own restore)
+    value_template: '{{ state_attr(''automation.meds_guanfacine_tv_nudge_until_logged'',
+      ''current'') | int(0) == 0 }}'
+  actions:
+  - alias: Re-apply light snapshot if it survived (skip after restart)
+    if:
+    - condition: template
+      value_template: '{{ states(''scene.guanfacine_nudge_restore'') not in [''unknown'',
+        ''unavailable''] }}'
+    then:
+    - action: scene.turn_on
+      target:
+        entity_id: scene.guanfacine_nudge_restore
+      data:
+        transition: 2
+  - alias: Hand the lights back to Adaptive Lighting
+    action: adaptive_lighting.set_manual_control
+    data:
+      entity_id: switch.adaptive_lighting_living_room_lights
+      lights:
+      - light.living_room_corner
+      - light.torchiere
+      - light.next_to_couch
+      manual_control: false
+  mode: single
+- id: tv_event_nightly_reconcile
+  alias: TV Event — Nightly Reconcile
+  description: 'Safety net for the TV-event automation set. TV Event Reminder and
+    the Lighting Backstop disable four nightly automations (ambient manager, both
+    TV-off automations, morning lights) with stop_actions and rely solely on TV Event
+    Over''s calendar-end trigger to re-enable them. If a calendar.tv event is deleted
+    mid-event, no end event fires and the four stay off indefinitely (the 23:00 weekend
+    re-enable only covers non-work nights while home). This runs every day at 04:00:
+    when no calendar.tv event is active, it re-enables all four and resumes the living-room
+    AL switch. All actions are no-ops when everything is already on, so it''s safe
+    to fire nightly. Created 2026-07-13 (code review R10).'
+  triggers:
+  - platform: time
+    at: 04:00:00
+  conditions:
+  - condition: state
+    entity_id: calendar.tv
+    state: 'off'
+  actions:
+  - alias: Re-enable the nightly automation set (no-op if already on)
+    action: automation.turn_on
+    target:
+      entity_id:
+      - automation.living_room_ambient_manager
+      - automation.tv_off_regular_night
+      - automation.tv_off_weekends_and_time_off
+      - automation.living_room_lights_on_morning
+  - alias: Resume living-room Adaptive Lighting (no-op if already on)
+    action: switch.turn_on
+    target:
+      entity_id: switch.adaptive_lighting_living_room_lights
   mode: single
