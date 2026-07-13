@@ -1,4 +1,9 @@
 # ===== Helpers (optional but recommended) =====
+# INTENDED VALUES (2026-07-13): threshold = 3.0 °F/h, hysteresis = 0.5 °F/h.
+# These are UI-editable helpers; the |float fallbacks below are NOT defaults
+# (a set helper always has a numeric state). Found swapped (1.0/3.0) during
+# the Jul 2026 code review — tri-state flipped at ±1°F/h while the debounced
+# binaries needed ±3.5°F/h. If tuning, keep hysteresis well under threshold.
 input_number:
   temp_rate_threshold_f_per_h:
     name: Temp rate threshold (°F/h)
