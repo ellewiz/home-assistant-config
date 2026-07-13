@@ -59,7 +59,9 @@ commute_time_announcer:
         # whole loop on the first away-tick and never resumed on return.)
         while:
           - condition: template
-            value_template: "{{ now().timestamp() < until_ts }}"
+            # 2026-07-13: coerce until_ts — a string value would TypeError the
+            # comparison and silently end the loop.
+            value_template: "{{ now().timestamp() < (until_ts | float(0)) }}"
         sequence:
           - wait_for_trigger:
               - trigger: time_pattern
@@ -117,9 +119,12 @@ commute_time_announcer:
               - action: script.sonos_broadcast
                 continue_on_error: true
                 data:
+                  # 2026-07-13: commute clause additionally requires waze_min > 0 and a
+                  # real leave-by time — with Waze unavailable it used to announce
+                  # "Commute is 0 minutes. Leave by unknown."
                   message: >
                     The time is {{ now().strftime('%I:%M %p').lstrip('0') }}.
-                    {%- if mins_until_leave > 0 and mins_until_leave <= 60 %}
+                    {%- if mins_until_leave > 0 and mins_until_leave <= 60 and waze_min > 0 and leave_by_display != 'unknown' %}
                       Commute is {{ waze_min }} minute{{ 's' if waze_min != 1 else '' }}. Leave by {{ leave_by_display }}.
                     {%- elif mins_until_leave <= 0 %}
                       Time to leave!
