@@ -1,0 +1,277 @@
+# Wiz Manor — Outdoor Air Quality (Open-Meteo)
+#
+# WHY: The config tracks pollen (Kleenex Pollen Radar, Ewing) but had zero
+# air-quality data. This adds outdoor US AQI + pollutant concentrations so the
+# same health lens that already covers pollen also covers particulates, ozone
+# and summer smog — and so a wildfire-smoke day (cf. the June 2023 NJ event)
+# raises a flag instead of going unnoticed.
+#
+# HOW: Home Assistant's native `rest:` platform pulls ONE request from the
+# Open-Meteo Air Quality API (free, no API key, non-commercial use) every 30 min
+# and fans it out into the sensors below. Coordinates are zone.home (Ewing NJ,
+# 40.2596 / -74.8283). The API's pollen fields are Europe-only, so they are NOT
+# requested here — Kleenex already covers US pollen. The global CAMS model
+# supplies US AQI + concentrations worldwide, which is what we use.
+#
+# ATTRIBUTION (required by the Open-Meteo licence): air-quality data © CAMS /
+# Copernicus Atmosphere Monitoring Service, delivered via Open-Meteo.com.
+#
+# UNITS NOTE: Open-Meteo publishes carbon_monoxide and dust in µg/m³. HA's
+# `carbon_monoxide` device_class expects ppm, so device_class is omitted on CO
+# (and on dust, which has no device_class) to keep the log clean — both are plain
+# measurement sensors in µg/m³.
+#
+# ALERT: "Air Quality: Unhealthy Alert (v1)" mirrors the Pollen Spike Alert
+# tiered pattern — input_number.air_quality_alert_level_reached (0-4) tracks the
+# highest US-AQI band hit today so each band pushes at most once, and the midnight
+# reset re-arms it. First alert fires at USG (101); routine summer "Moderate"
+# (51-100) is intentionally silent to avoid nuisance pings. v2 idea: add a
+# Moderate (51) heads-up tier and name the dominant pollutant in the message
+# (would need the us_aqi_* sub-indices pulled too).
+
+rest:
+  - resource: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=40.2596&longitude=-74.8283&current=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,dust,uv_index&timezone=America%2FNew_York"
+    scan_interval: 1800
+    sensor:
+      - name: "Air Quality US AQI"
+        unique_id: air_quality_us_aqi
+        value_template: "{{ value_json.current.us_aqi | int(0) }}"
+        device_class: aqi
+        state_class: measurement
+        icon: mdi:air-filter
+        json_attributes_path: "$.current"
+        json_attributes:
+          - time
+        availability: "{{ value_json.current.us_aqi is defined and value_json.current.us_aqi is not none }}"
+      - name: "Air Quality PM2.5"
+        unique_id: air_quality_pm2_5
+        value_template: "{{ value_json.current.pm2_5 | float(0) | round(1) }}"
+        unit_of_measurement: "µg/m³"
+        device_class: pm25
+        state_class: measurement
+        availability: "{{ value_json.current.pm2_5 is defined and value_json.current.pm2_5 is not none }}"
+      - name: "Air Quality PM10"
+        unique_id: air_quality_pm10
+        value_template: "{{ value_json.current.pm10 | float(0) | round(1) }}"
+        unit_of_measurement: "µg/m³"
+        device_class: pm10
+        state_class: measurement
+        availability: "{{ value_json.current.pm10 is defined and value_json.current.pm10 is not none }}"
+      - name: "Air Quality Ozone"
+        unique_id: air_quality_ozone
+        value_template: "{{ value_json.current.ozone | float(0) | round(1) }}"
+        unit_of_measurement: "µg/m³"
+        device_class: ozone
+        state_class: measurement
+        availability: "{{ value_json.current.ozone is defined and value_json.current.ozone is not none }}"
+      - name: "Air Quality Nitrogen Dioxide"
+        unique_id: air_quality_nitrogen_dioxide
+        value_template: "{{ value_json.current.nitrogen_dioxide | float(0) | round(1) }}"
+        unit_of_measurement: "µg/m³"
+        device_class: nitrogen_dioxide
+        state_class: measurement
+        availability: "{{ value_json.current.nitrogen_dioxide is defined and value_json.current.nitrogen_dioxide is not none }}"
+      - name: "Air Quality Sulphur Dioxide"
+        unique_id: air_quality_sulphur_dioxide
+        value_template: "{{ value_json.current.sulphur_dioxide | float(0) | round(1) }}"
+        unit_of_measurement: "µg/m³"
+        device_class: sulphur_dioxide
+        state_class: measurement
+        availability: "{{ value_json.current.sulphur_dioxide is defined and value_json.current.sulphur_dioxide is not none }}"
+      - name: "Air Quality Carbon Monoxide"
+        unique_id: air_quality_carbon_monoxide
+        value_template: "{{ value_json.current.carbon_monoxide | float(0) | round(1) }}"
+        unit_of_measurement: "µg/m³"
+        state_class: measurement
+        icon: mdi:molecule-co
+        availability: "{{ value_json.current.carbon_monoxide is defined and value_json.current.carbon_monoxide is not none }}"
+      - name: "Air Quality Dust"
+        unique_id: air_quality_dust
+        value_template: "{{ value_json.current.dust | float(0) | round(1) }}"
+        unit_of_measurement: "µg/m³"
+        state_class: measurement
+        icon: mdi:weather-dust
+        availability: "{{ value_json.current.dust is defined and value_json.current.dust is not none }}"
+      - name: "Air Quality UV Index"
+        unique_id: air_quality_uv_index
+        value_template: "{{ value_json.current.uv_index | float(0) | round(1) }}"
+        state_class: measurement
+        icon: mdi:sun-wireless
+        availability: "{{ value_json.current.uv_index is defined and value_json.current.uv_index is not none }}"
+
+# Derived plain-language band from the US AQI number. Used on the dashboard and
+# inside the alert message so the push reads "Unhealthy" rather than a bare number.
+template:
+  - sensor:
+      - name: "Air Quality US AQI Category"
+        unique_id: air_quality_us_aqi_category
+        icon: mdi:air-filter
+        availability: "{{ has_value('sensor.air_quality_us_aqi') }}"
+        state: >-
+          {% set a = states('sensor.air_quality_us_aqi') | int(-1) %}
+          {%- if a < 0 -%}unknown
+          {%- elif a <= 50 -%}Good
+          {%- elif a <= 100 -%}Moderate
+          {%- elif a <= 150 -%}Unhealthy for Sensitive Groups
+          {%- elif a <= 200 -%}Unhealthy
+          {%- elif a <= 300 -%}Very Unhealthy
+          {%- else -%}Hazardous
+          {%- endif -%}
+
+# Tier tracker for the alert (mirrors input_number.pollen_alert_level_reached).
+# input_number is chosen (not a counter helper) because it already merges from
+# packages on a hot reload, whereas the counter integration is not cold-started.
+input_number:
+  air_quality_alert_level_reached:
+    name: Air Quality Alert Level Reached
+    icon: mdi:air-filter
+    min: 0
+    max: 4
+    step: 1
+    mode: box
+
+automation:
+  - id: air_quality_unhealthy_alert_v1
+    alias: "Air Quality: Unhealthy Alert (v1)"
+    description: >-
+      Pushes an iPhone alert when the outdoor US AQI (sensor.air_quality_us_aqi,
+      Open-Meteo — see packages/air_quality.yaml) climbs into an unhealthy band.
+      Mirrors the Pollen Spike Alert tier tracker: input_number.air_quality_alert_level_reached
+      (0-4) records the highest band hit today so each band fires at most once and a
+      value jittering near a boundary cannot re-spam. Bands: 1 = USG (101),
+      2 = Unhealthy (151), 3 = Very Unhealthy (201), 4 = Hazardous (301). Routine
+      summer "Moderate" (51-100) is intentionally NOT alerted. Vacation-gated per
+      house style §8 (no point pinging about home air quality while away for a
+      house-sitter). Companion reset "Air Quality Alert Level — Daily Reset" clears
+      the tracker at midnight. v2 idea: add a Moderate (51) heads-up tier and name
+      the dominant pollutant (needs the us_aqi_* sub-indices added to the REST pull).
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.air_quality_us_aqi
+        above: 100
+        id: aqi_usg
+      - trigger: numeric_state
+        entity_id: sensor.air_quality_us_aqi
+        above: 150
+        id: aqi_unhealthy
+      - trigger: numeric_state
+        entity_id: sensor.air_quality_us_aqi
+        above: 200
+        id: aqi_very_unhealthy
+      - trigger: numeric_state
+        entity_id: sensor.air_quality_us_aqi
+        above: 300
+        id: aqi_hazardous
+    conditions:
+      - condition: state
+        entity_id: calendar.vacation
+        state: "off"
+    actions:
+      - choose:
+          - conditions:
+              - condition: numeric_state
+                entity_id: sensor.air_quality_us_aqi
+                above: 300
+              - condition: numeric_state
+                entity_id: input_number.air_quality_alert_level_reached
+                below: 4
+            sequence:
+              - action: notify.mobile_app_iphone
+                data:
+                  title: "🚨 Air Quality Hazardous"
+                  message: >-
+                    US AQI just crossed 300 (now {{ states('sensor.air_quality_us_aqi') }},
+                    {{ states('sensor.air_quality_us_aqi_category') }}). PM2.5
+                    {{ states('sensor.air_quality_pm2_5') }} µg/m³, ozone
+                    {{ states('sensor.air_quality_ozone') }} µg/m³. Stay indoors, windows
+                    shut, run air filtration.
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.air_quality_alert_level_reached
+                data:
+                  value: 4
+          - conditions:
+              - condition: numeric_state
+                entity_id: sensor.air_quality_us_aqi
+                above: 200
+              - condition: numeric_state
+                entity_id: input_number.air_quality_alert_level_reached
+                below: 3
+            sequence:
+              - action: notify.mobile_app_iphone
+                data:
+                  title: "🟣 Air Quality Very Unhealthy"
+                  message: >-
+                    US AQI just crossed 200 (now {{ states('sensor.air_quality_us_aqi') }},
+                    {{ states('sensor.air_quality_us_aqi_category') }}). PM2.5
+                    {{ states('sensor.air_quality_pm2_5') }} µg/m³, ozone
+                    {{ states('sensor.air_quality_ozone') }} µg/m³. Limit outdoor time;
+                    keep windows closed.
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.air_quality_alert_level_reached
+                data:
+                  value: 3
+          - conditions:
+              - condition: numeric_state
+                entity_id: sensor.air_quality_us_aqi
+                above: 150
+              - condition: numeric_state
+                entity_id: input_number.air_quality_alert_level_reached
+                below: 2
+            sequence:
+              - action: notify.mobile_app_iphone
+                data:
+                  title: "🔴 Air Quality Unhealthy"
+                  message: >-
+                    US AQI just crossed 150 (now {{ states('sensor.air_quality_us_aqi') }},
+                    {{ states('sensor.air_quality_us_aqi_category') }}). PM2.5
+                    {{ states('sensor.air_quality_pm2_5') }} µg/m³, ozone
+                    {{ states('sensor.air_quality_ozone') }} µg/m³. Everyone should cut
+                    back on prolonged outdoor exertion.
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.air_quality_alert_level_reached
+                data:
+                  value: 2
+          - conditions:
+              - condition: numeric_state
+                entity_id: sensor.air_quality_us_aqi
+                above: 100
+              - condition: numeric_state
+                entity_id: input_number.air_quality_alert_level_reached
+                below: 1
+            sequence:
+              - action: notify.mobile_app_iphone
+                data:
+                  title: "🟠 Air Quality — Unhealthy for Sensitive Groups"
+                  message: >-
+                    US AQI just crossed 100 (now {{ states('sensor.air_quality_us_aqi') }},
+                    {{ states('sensor.air_quality_us_aqi_category') }}). PM2.5
+                    {{ states('sensor.air_quality_pm2_5') }} µg/m³, ozone
+                    {{ states('sensor.air_quality_ozone') }} µg/m³. Sensitive groups
+                    (allergies/asthma) should ease up on outdoor exertion.
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.air_quality_alert_level_reached
+                data:
+                  value: 1
+    mode: single
+    max_exceeded: silent
+
+  - id: air_quality_alert_level_daily_reset
+    alias: "Air Quality Alert Level — Daily Reset"
+    description: >-
+      Resets input_number.air_quality_alert_level_reached to 0 at midnight so the
+      Air Quality Unhealthy Alert re-arms each day (mirror of "Pollen Alert Level —
+      Daily Reset").
+    triggers:
+      - trigger: time
+        at: "00:00:00"
+    actions:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.air_quality_alert_level_reached
+        data:
+          value: 0
+    mode: single
