@@ -18,10 +18,16 @@
 #      Alarm (automation.testing_alarm_automation) plays a Lofi music ramp starting
 #      20 min before the calendar wake time, then escalates the classic
 #      alarm-clock.mp3 "beep" AT the wake time if she is still in bed. We do NOT
-#      edit that automation. Instead a tiny mirror automation shares its calendar
-#      trigger to stamp "armed" + the scheduled music-start time; the capture
-#      automation then classifies from get-up time: before music-start = before
-#      music; within 20 min = music; at/after music-start + 20 min = the beep.
+#      edit that automation. Whether an alarm was actually SCHEDULED for today is
+#      read straight from master_calendar at get-up (a morning "Wake up" event,
+#      workday on, vacation off), so an early riser who is up BEFORE the mirror
+#      arms is still classified correctly (this is what "not armed yet" used to get
+#      wrong: a plain workday with no alarm looked identical to "woke before
+#      music"). A tiny mirror automation still stamps the scheduled music-start
+#      time; the capture then classifies from get-up time: no calendar alarm = No
+#      alarm (labelled workday vs free morning); alarm scheduled but up before
+#      music-start = before music; up within the 20-min ramp = music; still in bed
+#      20 min after music start = the beep.
 #
 #   3. OVERNIGHT BED-EXITS. Middle-of-the-night get-ups, to overlay on sleep data.
 #      The Hue bedroom motion sensor reads no motion while she lies in bed and fires
@@ -46,6 +52,13 @@
 #   - "First light" threshold is input_number.bedroom_morning_lux_start_threshold
 #     (default 3 lx). Raise it if a night-light ever holds the reading above it.
 #   - Reset each night by "Sleep Wake: Reset Night Counters at Bedtime".
+#   - STALENESS GUARD: the summary sensor exposes wake_captured_today (true only
+#     once THIS morning's get-up has been stamped, i.e. wake-time is today). All
+#     "this morning" fields (wake_trigger, wake_time, alarm_set, wake_trigger_code)
+#     read back 'pending' until then. Consumers (the daily Oura note) MUST gate on
+#     wake_captured_today, because Oura can sync (and the note can fire) while she
+#     is still in bed (e.g. she opens the app from bed) before the capture runs.
+#     Without the guard the note would print yesterday's wake as today's.
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -250,12 +263,34 @@ template:
           first_light_time: >-
             {% set ts = state_attr('input_datetime.bedroom_morning_light_window_start','timestamp') | float(0) %}
             {{ ts | timestamp_custom('%-I:%M %p', true) if (ts > 1577923200 and (states('input_number.bedroom_morning_light_window_min')|float(0)) > 0) else 'n/a' }}
+          wake_captured_today: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {{ ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') }}
           wake_time: >-
             {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
-            {{ ts | timestamp_custom('%-I:%M %p', true) if ts > 1577923200 else 'n/a' }}
-          wake_trigger: "{{ states('input_text.bedroom_wake_trigger') }}"
-          wake_trigger_code: "{{ states('input_number.bedroom_wake_trigger_code') | int(0) }}"
-          alarm_set: "{{ 'yes' if (states('input_number.bedroom_wake_trigger_code') | int(0)) >= 1 else 'no' }}"
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {{ ts | timestamp_custom('%-I:%M %p', true) if captured else 'pending' }}
+          oura_wake_time: >-
+            {% set be = states('sensor.oura_ring_bedtime_end') %}
+            {{ as_local(as_datetime(be)).strftime('%-I:%M %p') if be not in ['unknown','unavailable',''] else 'n/a' }}
+          minutes_in_bed_after_waking: >-
+            {% set up = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {% set be = states('sensor.oura_ring_bedtime_end') %}
+            {% set woke = (as_timestamp(as_datetime(be)) | float(0)) if be not in ['unknown','unavailable',''] else 0 %}
+            {% set captured = up > 1577923200 and (up | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {{ ((up - woke) / 60) | round(0) | int if (captured and woke > 0 and up > woke) else 'n/a' }}
+          wake_trigger: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {{ states('input_text.bedroom_wake_trigger') if captured else 'pending' }}
+          wake_trigger_code: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {{ (states('input_number.bedroom_wake_trigger_code') | int(0)) if captured else -1 }}
+          alarm_set: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {{ ('yes' if (states('input_number.bedroom_wake_trigger_code') | int(0)) >= 1 else 'no') if captured else 'pending' }}
           bed_exits_last_night: "{{ states('input_number.bedroom_bed_exits_lastnight') | int(0) }}"
           out_of_bed_min_last_night: "{{ states('input_number.bedroom_out_of_bed_min_lastnight') | float(0) | round(1) }}"
           bed_exit_times: "{{ states('input_text.bedroom_night_bed_exit_log') }}"
@@ -421,10 +456,16 @@ automation:
       books the final Riemann segment, computes window length (min), time-weighted
       average lx (dose / minutes); peak is left as tracked; stamps wake time. If the
       window never opened (woke before measurable first light) the light metrics are
-      zeroed. Classifies the wake trigger: no alarm (0), woke before the music (1),
-      woke to the music ramp (2), or woke to the classic beep (3 = still in bed 20
-      min after music start). Snapshots the overnight bed-exit count and out-of-bed
-      minutes into the stable *_lastnight holders so reports read one value per night.
+      zeroed. Classifies the wake trigger by first reading, straight from
+      master_calendar, whether an alarm was actually SCHEDULED today (a morning
+      "Wake up" event, workday on, vacation off), so it stays correct even when she
+      is up before the mirror arms. Codes: no alarm (0, labelled "workday" vs "free
+      morning" in the text), woke before the music (1), woke to the music ramp (2),
+      or woke to the classic beep (3 = still in bed 20 min after music start).
+      Snapshots the overnight bed-exit count and out-of-bed minutes into the stable
+      *_lastnight holders so reports read one value per night. The summary sensor's
+      wake_captured_today flag (wake-time is today) lets the daily note wait for this
+      capture instead of reading yesterday's values.
     triggers:
       - trigger: state
         entity_id: input_boolean.in_bed
@@ -493,9 +534,32 @@ automation:
           entity_id: input_datetime.bedroom_morning_wake_time
         data:
           timestamp: "{{ now_ts }}"
-      # 2) Classify the wake trigger
+      # 2) Classify the wake trigger.
+      #    Read whether an alarm was actually SCHEDULED today from master_calendar (a
+      #    morning "Wake up" event, workday on, vacation off), so an early riser who
+      #    is up before the mirror arms is still classified correctly. 270..510 =
+      #    04:30..08:30 event-start window (matches the alarm's 04:30-08:00 arm gate).
+      - action: calendar.get_events
+        target:
+          entity_id: calendar.master_calendar
+        data:
+          start_date_time: "{{ today_at('00:00') }}"
+          duration:
+            hours: 24
+        response_variable: cal_today
       - variables:
-          wt_code: "{% if not armed and not workday %}0{% elif not armed and workday %}1{% elif armed and now_ts < armed_ts %}1{% elif armed and now_ts < (armed_ts + 1200) %}2{% else %}3{% endif %}"
+          wt_code: >-
+            {% set evs = cal_today['calendar.master_calendar']['events'] | default([]) %}
+            {% set ns = namespace(found=false) %}
+            {% for e in evs %}
+              {%- if 'wake up' in (e.summary | default('') | lower) %}
+                {%- set st = as_local(as_datetime(e.start)) %}
+                {%- set mins = st.hour * 60 + st.minute %}
+                {%- if 270 <= mins <= 510 %}{% set ns.found = true %}{% endif %}
+              {%- endif %}
+            {%- endfor %}
+            {%- set alarm_scheduled = ns.found and workday and is_state('calendar.vacation','off') %}
+            {%- if not alarm_scheduled %}0{% elif armed and now_ts >= (armed_ts + 1200) %}3{% elif armed and now_ts >= armed_ts %}2{% else %}1{% endif %}
       - action: input_number.set_value
         target:
           entity_id: input_number.bedroom_wake_trigger_code
@@ -505,7 +569,12 @@ automation:
         target:
           entity_id: input_text.bedroom_wake_trigger
         data:
-          value: "{{ {0:'No alarm',1:'Woke before music',2:'Woke to music',3:'Woke to the beep'}[wt_code | int(0)] }}"
+          value: >-
+            {% set c = wt_code | int(0) %}
+            {%- if c == 0 %}{{ 'No alarm (workday)' if workday else 'No alarm (free morning)' }}
+            {%- elif c == 1 %}Woke before music
+            {%- elif c == 2 %}Woke to music
+            {%- else %}Woke to the beep{% endif %}
       # 3) Snapshot overnight bed-exit metrics to stable daily holders
       - action: input_number.set_value
         target:
