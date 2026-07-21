@@ -27,10 +27,18 @@
 # reset re-arms it. First alert fires at USG (101); routine summer "Moderate"
 # (51-100) is intentionally silent to avoid nuisance pings. v2 idea: add a
 # Moderate (51) heads-up tier and name the dominant pollutant in the message
-# (would need the us_aqi_* sub-indices pulled too).
+# (would need the us_aqi_* sub-indices pulled too). The alert also re-checks on HA
+# start so a spike already present across a restart is not missed.
+#
+# FORECAST + MOW: the same request also pulls &hourly=us_aqi&forecast_days=4.
+# sensor.air_quality_forecast_raw carries the hourly arrays; sensor.air_quality_daily_forecast
+# aggregates them to each day's daytime (09:00-19:00) peak AQI, exposed as a per-day
+# `forecast` attribute. automation.update_mow_forecast_scores reads that to apply a
+# per-day air-quality penalty aligned by date (mowing = outdoor exertion + aerosolized
+# particulates), mirroring how it already uses the Kleenex pollen forecast.
 
 rest:
-  - resource: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=40.2596&longitude=-74.8283&current=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,dust,uv_index&timezone=America%2FNew_York"
+  - resource: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=40.2596&longitude=-74.8283&current=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,dust,uv_index&hourly=us_aqi&forecast_days=4&timezone=America%2FNew_York"
     scan_interval: 1800
     sensor:
       - name: "Air Quality US AQI"
@@ -98,6 +106,19 @@ rest:
         state_class: measurement
         icon: mdi:sun-wireless
         availability: "{{ value_json.current.uv_index is defined and value_json.current.uv_index is not none }}"
+      # Hourly US-AQI forecast (next 4 days) pulled from the SAME request via &hourly=.
+      # Plumbing sensor: the two arrays (time, us_aqi) ride as attributes and are
+      # aggregated to a per-day daytime peak by sensor.air_quality_daily_forecast below,
+      # which the mow forecast reads. Hidden from the UI; not in the Weather area.
+      - name: "Air Quality Forecast Raw"
+        unique_id: air_quality_forecast_raw
+        value_template: "{{ value_json.hourly.time | count if value_json.hourly is defined else 0 }}"
+        icon: mdi:blur
+        json_attributes_path: "$.hourly"
+        json_attributes:
+          - time
+          - us_aqi
+        availability: "{{ value_json.hourly is defined and value_json.hourly.us_aqi is defined }}"
 
 # Derived plain-language band from the US AQI number. Used on the dashboard and
 # inside the alert message so the push reads "Unhealthy" rather than a bare number.
@@ -117,6 +138,49 @@ template:
           {%- elif a <= 300 -%}Very Unhealthy
           {%- else -%}Hazardous
           {%- endif -%}
+
+      # Per-day US-AQI forecast for the mow scorer. Aggregates the hourly forecast
+      # (sensor.air_quality_forecast_raw) to each day's DAYTIME peak (09:00-19:00, the
+      # mowing window). state = worst upcoming daytime AQI; attribute `forecast` = a
+      # list of {date: 'YYYY-MM-DD', aqi: N} mirroring the Kleenex forecast attribute
+      # shape so automation.update_mow_forecast_scores can selectattr by date.
+      - name: "Air Quality Daily Forecast"
+        unique_id: air_quality_daily_forecast
+        device_class: aqi
+        state_class: measurement
+        icon: mdi:blur
+        availability: "{{ has_value('sensor.air_quality_forecast_raw') }}"
+        state: >-
+          {% set vals = state_attr('sensor.air_quality_forecast_raw','us_aqi') or [] %}
+          {% set times = state_attr('sensor.air_quality_forecast_raw','time') or [] %}
+          {% set n = [times|count, vals|count]|min %}
+          {% set day = namespace(v=[]) %}
+          {% for i in range(n) %}
+          {% set t = as_datetime(times[i]) %}
+          {% if t is not none and 9 <= t.hour <= 19 %}
+          {% set day.v = day.v + [vals[i]|int(0)] %}
+          {% endif %}
+          {% endfor %}
+          {{ day.v | max if day.v|count > 0 else 0 }}
+        attributes:
+          forecast: >-
+            {% set vals = state_attr('sensor.air_quality_forecast_raw','us_aqi') or [] %}
+            {% set times = state_attr('sensor.air_quality_forecast_raw','time') or [] %}
+            {% set n = [times|count, vals|count]|min %}
+            {% set rows = namespace(l=[]) %}
+            {% for i in range(n) %}
+            {% set t = as_datetime(times[i]) %}
+            {% if t is not none and 9 <= t.hour <= 19 %}
+            {% set rows.l = rows.l + [{'date': t.date()|string, 'aqi': vals[i]|int(0)}] %}
+            {% endif %}
+            {% endfor %}
+            {% set dates = rows.l | map(attribute='date') | unique | list %}
+            {% set out = namespace(days=[]) %}
+            {% for d in dates %}
+            {% set dayvals = rows.l | selectattr('date','equalto',d) | map(attribute='aqi') | list %}
+            {% set out.days = out.days + [{'date': d, 'aqi': dayvals|max}] %}
+            {% endfor %}
+            {{ out.days }}
 
 # Tier tracker for the alert (mirrors input_number.pollen_alert_level_reached).
 # input_number is chosen (not a counter helper) because it already merges from
@@ -144,7 +208,9 @@ automation:
       house style §8 (no point pinging about home air quality while away for a
       house-sitter). Companion reset "Air Quality Alert Level — Daily Reset" clears
       the tracker at midnight. v2 idea: add a Moderate (51) heads-up tier and name
-      the dominant pollutant (needs the us_aqi_* sub-indices added to the REST pull).
+      the dominant pollutant (needs the us_aqi_* sub-indices added to the REST pull). Also
+      re-checks on Home Assistant start (after waiting for the sensor to repopulate) so a
+      band already present across a restart is not silently missed.
     triggers:
       - trigger: numeric_state
         entity_id: sensor.air_quality_us_aqi
@@ -162,11 +228,22 @@ automation:
         entity_id: sensor.air_quality_us_aqi
         above: 300
         id: aqi_hazardous
+      # Restart safety net: numeric_state fires only on the crossing, so a spike that
+      # was already present before a restart (e.g. wildfire smoke during a reboot) would
+      # never re-fire. Re-evaluate on HA start; the wait below lets the REST sensor
+      # repopulate first, and the tier tracker still prevents a same-day repeat.
+      - trigger: homeassistant
+        event: start
+        id: aqi_startup
     conditions:
       - condition: state
         entity_id: calendar.vacation
         state: "off"
     actions:
+      - alias: Wait for the AQI sensor to have a real value (repopulates after a restart)
+        wait_template: "{{ states('sensor.air_quality_us_aqi') | int(-1) >= 0 }}"
+        timeout: "00:03:00"
+        continue_on_timeout: true
       - choose:
           - conditions:
               - condition: numeric_state
