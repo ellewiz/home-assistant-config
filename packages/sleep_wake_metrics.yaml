@@ -1,7 +1,8 @@
 # Wiz Manor — Sleep / Wake Bedroom Metrics
 #
 # WHY: Lara wants to study what governs when she wakes, especially on mornings she
-# does NOT use the alarm. Three things get measured here, all in the bedroom:
+# does NOT use the alarm. Five things get measured here (four in the bedroom,
+# one about how the night STARTED):
 #
 #   1. MORNING LIGHT. How much daylight is in the room during the final stretch of
 #      sleep. Measured on the Hue bedroom motion sensor's lux channel
@@ -36,6 +37,36 @@
 #      10 min are one trip; a >10 min gap starts a new trip. Logged: count, the
 #      time of each trip, and approximate minutes out of bed (a lower bound).
 #
+#   4. COUCH DOZE. Nights that start asleep on the living-room couch before she
+#      moves to actual bed. Everything above keys off input_boolean.in_bed, so a
+#      couch doze used to read as nothing but a very late bedtime. The ring closes
+#      the gap: Oura records the sleep session wherever she is, so once the
+#      morning sync lands we compare where Oura says the session began
+#      (sensor.oura_ring_bedtime_start) with when in_bed actually flipped on
+#      (input_datetime.bedroom_night_start, stamped at bedtime and held all
+#      night). Gap >= input_number.bedroom_couch_doze_threshold_min (default
+#      25 min, tunable) = couch doze; the gap is logged as approximate couch
+#      minutes (an UPPER bound: it includes the transfer walk and any still-awake
+#      couch time inside Oura's session).
+#
+#   5. OVERNIGHT TEMPERATURE. How the bedroom temperature evolves across the whole
+#      in_bed window, not just the single bedtime snapshot
+#      (input_number.bedroom_temp_at_bedtime, captured elsewhere at in_bed on).
+#      Motivation: the AC is usually turned down shortly BEFORE getting into bed,
+#      so the bedtime snapshot lands mid-cooldown and says little about the room
+#      she actually slept in. Source is the same Hue bedroom motion sensor's
+#      temperature channel (sensor.hue_motion_sensor_2_temperature). Seeded at
+#      bedtime by the nightly reset, accrued on every temp change while in_bed
+#      (left-Riemann dose, same integration style as morning light, because the
+#      Hue sensor holds its value between change reports), closed at wake.
+#      Captured per night: minimum (the settled/coldest point) + its time,
+#      maximum, time-weighted average, and temp at wake. Derived in the summary
+#      (not separately recorded, reports can recompute from the recorded pieces):
+#      cooldown = bedtime - min, overnight drift = wake - bedtime. Correlates
+#      night-level against Oura's stage totals (deep/REM/light, efficiency) in
+#      the monthly crossfactor report; the Oura integration exposes no
+#      within-night hypnogram, so stage-by-stage alignment is out of scope.
+#
 # HOW IT PERSISTS FOR REPORTS: like input_number.bedroom_temp_at_bedtime is mirrored
 # by sensor.bedroom_temp_at_bedtime_recorded, every metric that feeds the monthly
 # reports is written to an input_number at wake and mirrored by a
@@ -59,6 +90,16 @@
 #     wake_captured_today, because Oura can sync (and the note can fire) while she
 #     is still in bed (e.g. she opens the app from bed) before the capture runs.
 #     Without the guard the note would print yesterday's wake as today's.
+#   - COUCH DOZE capture waits for BOTH this morning's wake capture AND today's
+#     Oura sync (bedtime_end dated today), firing on whichever lands LAST, then
+#     stamps bedroom_couch_doze_captured so it runs once per morning. The summary
+#     exposes couch_doze_captured_today (same pattern as wake_captured_today);
+#     couch_doze / couch_sleep_min read 'pending' until the capture runs — on
+#     no-sync days the recorded mirror repeats stale numbers, so consumers MUST
+#     gate on the flag. Known limitations: if the couch stretch is separate
+#     enough that Oura files it as a nap rather than part of the main session,
+#     the delta goes small/negative and the night reads "no"; and a WHOLE night
+#     on the couch (in_bed never flipped) still skips the package entirely.
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -70,6 +111,9 @@ input_boolean:
   wake_alarm_set:
     name: Wake Alarm Set (armed today)
     icon: mdi:alarm-check
+  bedroom_couch_doze_lastnight:
+    name: Bedroom Couch Doze Last Night
+    icon: mdi:sofa
 
 input_number:
   bedroom_morning_lux_start_threshold:
@@ -157,6 +201,86 @@ input_number:
     max: 3
     step: 1
     mode: box
+  bedroom_couch_doze_threshold_min:
+    name: Bedroom Couch Doze Threshold
+    icon: mdi:sofa-single
+    min: 5
+    max: 120
+    step: 5
+    unit_of_measurement: min
+    mode: box
+  bedroom_couch_sleep_min_lastnight:
+    name: Bedroom Couch Sleep Minutes Last Night
+    icon: mdi:sofa
+    min: 0
+    max: 720
+    step: 1
+    unit_of_measurement: min
+    mode: box
+  bedroom_night_temp_min:
+    name: Bedroom Night Temp Min (live)
+    icon: mdi:thermometer-chevron-down
+    min: 0
+    max: 120
+    step: 0.01
+    unit_of_measurement: °F
+    mode: box
+  bedroom_night_temp_max:
+    name: Bedroom Night Temp Max (live)
+    icon: mdi:thermometer-chevron-up
+    min: 0
+    max: 120
+    step: 0.01
+    unit_of_measurement: °F
+    mode: box
+  bedroom_night_temp_dose:
+    name: Bedroom Night Temp Dose (internal)
+    icon: mdi:tune-variant
+    min: 0
+    max: 200000
+    step: 0.1
+    unit_of_measurement: "°F·min"
+    mode: box
+  bedroom_night_temp_last:
+    name: Bedroom Night Temp Last Sample (internal)
+    icon: mdi:tune-variant
+    min: 0
+    max: 120
+    step: 0.01
+    unit_of_measurement: °F
+    mode: box
+  bedroom_temp_min_lastnight:
+    name: Bedroom Temp Min Last Night
+    icon: mdi:thermometer-chevron-down
+    min: 0
+    max: 120
+    step: 0.01
+    unit_of_measurement: °F
+    mode: box
+  bedroom_temp_max_lastnight:
+    name: Bedroom Temp Max Last Night
+    icon: mdi:thermometer-chevron-up
+    min: 0
+    max: 120
+    step: 0.01
+    unit_of_measurement: °F
+    mode: box
+  bedroom_temp_avg_lastnight:
+    name: Bedroom Temp Average Last Night
+    icon: mdi:thermometer
+    min: 0
+    max: 120
+    step: 0.01
+    unit_of_measurement: °F
+    mode: box
+  bedroom_temp_at_wake_lastnight:
+    name: Bedroom Temp at Wake Last Night
+    icon: mdi:thermometer-alert
+    min: 0
+    max: 120
+    step: 0.01
+    unit_of_measurement: °F
+    mode: box
 
 input_datetime:
   bedroom_morning_light_window_start:
@@ -181,6 +305,22 @@ input_datetime:
     has_time: true
   wake_alarm_armed_time:
     name: Wake Alarm Armed Time (scheduled music start)
+    has_date: true
+    has_time: true
+  bedroom_couch_doze_captured:
+    name: Bedroom Couch Doze Captured (internal)
+    has_date: true
+    has_time: true
+  bedroom_night_temp_last_ts:
+    name: Bedroom Night Temp Last Sample Time (internal)
+    has_date: true
+    has_time: true
+  bedroom_night_temp_min_ts:
+    name: Bedroom Night Temp Min Time (live)
+    has_date: true
+    has_time: true
+  bedroom_temp_min_time_lastnight:
+    name: Bedroom Temp Min Time Last Night
     has_date: true
     has_time: true
 
@@ -251,6 +391,45 @@ template:
         icon: mdi:alarm
         state: "{{ states('input_number.bedroom_wake_trigger_code') | int(0) }}"
 
+      - name: "Bedroom Couch Sleep Minutes (recorded)"
+        unique_id: bedroom_couch_sleep_min_recorded
+        unit_of_measurement: "min"
+        state_class: measurement
+        icon: mdi:sofa
+        state: "{{ states('input_number.bedroom_couch_sleep_min_lastnight') | float(0) | round(0) }}"
+
+      - name: "Bedroom Night Temp Min (recorded)"
+        unique_id: bedroom_night_temp_min_recorded
+        unit_of_measurement: "°F"
+        device_class: temperature
+        state_class: measurement
+        icon: mdi:thermometer-chevron-down
+        state: "{{ states('input_number.bedroom_temp_min_lastnight') | float(0) | round(1) }}"
+
+      - name: "Bedroom Night Temp Max (recorded)"
+        unique_id: bedroom_night_temp_max_recorded
+        unit_of_measurement: "°F"
+        device_class: temperature
+        state_class: measurement
+        icon: mdi:thermometer-chevron-up
+        state: "{{ states('input_number.bedroom_temp_max_lastnight') | float(0) | round(1) }}"
+
+      - name: "Bedroom Night Temp Average (recorded)"
+        unique_id: bedroom_night_temp_avg_recorded
+        unit_of_measurement: "°F"
+        device_class: temperature
+        state_class: measurement
+        icon: mdi:thermometer
+        state: "{{ states('input_number.bedroom_temp_avg_lastnight') | float(0) | round(1) }}"
+
+      - name: "Bedroom Temp at Wake (recorded)"
+        unique_id: bedroom_temp_at_wake_recorded
+        unit_of_measurement: "°F"
+        device_class: temperature
+        state_class: measurement
+        icon: mdi:thermometer-alert
+        state: "{{ states('input_number.bedroom_temp_at_wake_lastnight') | float(0) | round(1) }}"
+
       - name: "Bedroom Sleep Wake Summary"
         unique_id: bedroom_sleep_wake_summary
         icon: mdi:weather-sunset-up
@@ -294,6 +473,57 @@ template:
           bed_exits_last_night: "{{ states('input_number.bedroom_bed_exits_lastnight') | int(0) }}"
           out_of_bed_min_last_night: "{{ states('input_number.bedroom_out_of_bed_min_lastnight') | float(0) | round(1) }}"
           bed_exit_times: "{{ states('input_text.bedroom_night_bed_exit_log') }}"
+          oura_sleep_start: >-
+            {% set bs = states('sensor.oura_ring_bedtime_start') %}
+            {{ as_local(as_datetime(bs)).strftime('%-I:%M %p') if bs not in ['unknown','unavailable',''] else 'n/a' }}
+          in_bed_time: >-
+            {% set ts = state_attr('input_datetime.bedroom_night_start','timestamp') | float(0) %}
+            {{ ts | timestamp_custom('%-I:%M %p', true) if ts > 1577923200 else 'n/a' }}
+          couch_doze_captured_today: >-
+            {% set ts = state_attr('input_datetime.bedroom_couch_doze_captured','timestamp') | float(0) %}
+            {{ ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') }}
+          couch_doze: >-
+            {% set ts = state_attr('input_datetime.bedroom_couch_doze_captured','timestamp') | float(0) %}
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {{ ('yes' if is_state('input_boolean.bedroom_couch_doze_lastnight','on') else 'no') if captured else 'pending' }}
+          couch_sleep_min: >-
+            {% set ts = state_attr('input_datetime.bedroom_couch_doze_captured','timestamp') | float(0) %}
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {{ (states('input_number.bedroom_couch_sleep_min_lastnight') | float(0) | round(0) | int) if captured else 'pending' }}
+          temp_at_bedtime_f: "{{ states('input_number.bedroom_temp_at_bedtime') | float(0) | round(1) }}"
+          temp_night_min_f: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {{ (states('input_number.bedroom_temp_min_lastnight') | float(0) | round(1)) if captured else 'pending' }}
+          temp_night_max_f: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {{ (states('input_number.bedroom_temp_max_lastnight') | float(0) | round(1)) if captured else 'pending' }}
+          temp_night_avg_f: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {{ (states('input_number.bedroom_temp_avg_lastnight') | float(0) | round(1)) if captured else 'pending' }}
+          temp_at_wake_f: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {{ (states('input_number.bedroom_temp_at_wake_lastnight') | float(0) | round(1)) if captured else 'pending' }}
+          temp_min_time: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {% set mt = state_attr('input_datetime.bedroom_temp_min_time_lastnight','timestamp') | float(0) %}
+            {{ (mt | timestamp_custom('%-I:%M %p', true)) if (captured and mt > 1577923200) else 'pending' }}
+          temp_cooldown_f: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {% set bed = states('input_number.bedroom_temp_at_bedtime') | float(0) %}
+            {% set mn = states('input_number.bedroom_temp_min_lastnight') | float(0) %}
+            {{ ((bed - mn) | round(1)) if captured else 'pending' }}
+          temp_drift_overnight_f: >-
+            {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+            {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
+            {% set bed = states('input_number.bedroom_temp_at_bedtime') | float(0) %}
+            {% set wk = states('input_number.bedroom_temp_at_wake_lastnight') | float(0) %}
+            {{ ((wk - bed) | round(1)) if captured else 'pending' }}
 
 # ---------------------------------------------------------------------------
 # Automations
@@ -447,6 +677,72 @@ automation:
     mode: queued
     max: 30
 
+  - id: sleep_temp_accrue
+    alias: "Sleep Temp: Accrue Overnight Trajectory"
+    description: >-
+      While in bed, on every change of the Hue bedroom temperature channel: add the
+      left-Riemann area since the last sample to the temp dose (previous °F x minutes
+      elapsed, because the Hue sensor holds its value between change reports), lower
+      the running minimum / raise the running maximum if crossed (stamping the time
+      of a new minimum), then store the new level and sample time. Accumulators are
+      seeded at bedtime by "Sleep Wake: Reset Night Counters at Bedtime"; the final
+      partial segment is booked at wake by "Sleep Wake: Capture ...". Queued so
+      consecutive temp reports are all integrated.
+    triggers:
+      - trigger: state
+        entity_id: sensor.hue_motion_sensor_2_temperature
+        not_to:
+          - unknown
+          - unavailable
+    conditions:
+      - condition: state
+        entity_id: input_boolean.in_bed
+        state: "on"
+      - condition: state
+        entity_id: calendar.vacation
+        state: "off"
+    actions:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_night_temp_dose
+        data:
+          value: "{{ (states('input_number.bedroom_night_temp_dose')|float(0)) + (states('input_number.bedroom_night_temp_last')|float(0)) * ([ (now().timestamp() - (state_attr('input_datetime.bedroom_night_temp_last_ts','timestamp')|float(now().timestamp())))/60, 0]|max) }}"
+      - if:
+          - condition: template
+            value_template: "{{ (states('sensor.hue_motion_sensor_2_temperature')|float(999)) < (states('input_number.bedroom_night_temp_min')|float(0)) }}"
+        then:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.bedroom_night_temp_min
+            data:
+              value: "{{ states('sensor.hue_motion_sensor_2_temperature') | float(0) }}"
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: input_datetime.bedroom_night_temp_min_ts
+            data:
+              timestamp: "{{ now().timestamp() }}"
+      - if:
+          - condition: template
+            value_template: "{{ (states('sensor.hue_motion_sensor_2_temperature')|float(0)) > (states('input_number.bedroom_night_temp_max')|float(0)) }}"
+        then:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.bedroom_night_temp_max
+            data:
+              value: "{{ states('sensor.hue_motion_sensor_2_temperature') | float(0) }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_night_temp_last
+        data:
+          value: "{{ states('sensor.hue_motion_sensor_2_temperature') | float(0) }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_night_temp_last_ts
+        data:
+          timestamp: "{{ now().timestamp() }}"
+    mode: queued
+    max: 30
+
   - id: sleep_wake_capture
     alias: "Sleep Wake: Capture Morning Light and Wake Trigger at Wake"
     description: >-
@@ -463,7 +759,10 @@ automation:
       morning" in the text), woke before the music (1), woke to the music ramp (2),
       or woke to the classic beep (3 = still in bed 20 min after music start).
       Snapshots the overnight bed-exit count and out-of-bed minutes into the stable
-      *_lastnight holders so reports read one value per night. The summary sensor's
+      *_lastnight holders so reports read one value per night. Also closes the
+      overnight temperature trajectory (books the final Riemann segment, computes
+      the bedtime->wake time-weighted average, snapshots min/max/avg/at-wake temps
+      and the time of the minimum into *_lastnight holders). The summary sensor's
       wake_captured_today flag (wake-time is today) lets the daily note wait for this
       capture instead of reading yesterday's values.
     triggers:
@@ -586,6 +885,45 @@ automation:
           entity_id: input_number.bedroom_out_of_bed_min_lastnight
         data:
           value: "{{ states('input_number.bedroom_night_out_of_bed_min') | float(0) | round(1) }}"
+      # 4) Close the overnight temperature trajectory: book the final Riemann
+      #    segment, then snapshot min / max / time-weighted average / at-wake temp
+      #    (and the time of the minimum) into the stable *_lastnight holders.
+      #    Window for the average runs bedtime (night_start) -> now.
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_night_temp_dose
+        data:
+          value: "{{ (states('input_number.bedroom_night_temp_dose')|float(0)) + (states('input_number.bedroom_night_temp_last')|float(0)) * ([ (now().timestamp() - (state_attr('input_datetime.bedroom_night_temp_last_ts','timestamp')|float(now().timestamp())))/60, 0]|max) }}"
+      - variables:
+          temp_window_min: "{{ ([ (now_ts - (state_attr('input_datetime.bedroom_night_start','timestamp')|float(now_ts)))/60, 0]|max) }}"
+          temp_at_wake: >-
+            {{ states('sensor.hue_motion_sensor_2_temperature')
+               | float(states('input_number.bedroom_night_temp_last') | float(0)) }}
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_temp_avg_lastnight
+        data:
+          value: "{% set dose = states('input_number.bedroom_night_temp_dose')|float(0) %}{% set win = temp_window_min|float(0) %}{{ (dose/win)|round(2) if win > 0 else 0 }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_temp_min_lastnight
+        data:
+          value: "{{ states('input_number.bedroom_night_temp_min') | float(0) }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_temp_max_lastnight
+        data:
+          value: "{{ states('input_number.bedroom_night_temp_max') | float(0) }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_temp_at_wake_lastnight
+        data:
+          value: "{{ temp_at_wake | float(0) }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_temp_min_time_lastnight
+        data:
+          timestamp: "{{ state_attr('input_datetime.bedroom_night_temp_min_ts','timestamp') | float(now_ts) }}"
     mode: single
 
   - id: sleep_bed_exit_count
@@ -655,7 +993,13 @@ automation:
       tally, out-of-bed minutes and trip log, seed night_start and last_motion_ts to
       now (the 20-min settle window and cluster gap key off these), close any stale
       morning-light window, and clear the wake-alarm mirror flag so the next morning
-      starts fresh.
+      starts fresh. Also zeroes the couch-doze holders: their capture only runs when
+      Oura syncs, so without this reset a no-sync day would repeat the previous
+      night's couch minutes into the recorder's daily statistics. Also seeds the
+      overnight-temperature accumulators (min = max = last sample = current bedroom
+      temp, dose = 0, sample/min timestamps = now) so "Sleep Temp: Accrue Overnight
+      Trajectory" integrates from bedtime; if the Hue temp channel is unavailable at
+      bedtime the seed falls back to the previous last-sample value.
     triggers:
       - trigger: state
         entity_id: input_boolean.in_bed
@@ -695,4 +1039,123 @@ automation:
       - action: input_boolean.turn_off
         target:
           entity_id: input_boolean.wake_alarm_set
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_couch_sleep_min_lastnight
+        data:
+          value: 0
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.bedroom_couch_doze_lastnight
+      # Seed overnight-temperature accumulators for tonight
+      - variables:
+          seed_temp: >-
+            {{ states('sensor.hue_motion_sensor_2_temperature')
+               | float(states('input_number.bedroom_night_temp_last') | float(70)) }}
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_night_temp_min
+        data:
+          value: "{{ seed_temp }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_night_temp_max
+        data:
+          value: "{{ seed_temp }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_night_temp_last
+        data:
+          value: "{{ seed_temp }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_night_temp_dose
+        data:
+          value: 0
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_night_temp_last_ts
+        data:
+          timestamp: "{{ now().timestamp() }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_night_temp_min_ts
+        data:
+          timestamp: "{{ now().timestamp() }}"
+    mode: single
+
+  - id: sleep_couch_doze_capture
+    alias: "Sleep Wake: Capture Couch Doze from Oura Delta"
+    description: >-
+      Detects "fell asleep on the couch, then moved to actual bed" nights by
+      comparing where Oura says the sleep session began with when in_bed actually
+      flipped on. Oura records the session wherever she is, so on a couch night
+      sensor.oura_ring_bedtime_start sits well before
+      input_datetime.bedroom_night_start (stamped at in_bed on, held all night).
+      Gap >= input_number.bedroom_couch_doze_threshold_min (default 25 min,
+      tunable) flags the night and logs the gap as approximate couch minutes
+      (upper bound: includes the transfer walk and any still-awake couch time
+      inside Oura's session; clamped to the holder's 720-min max). Runs once per
+      morning on whichever lands LAST of (a) this morning's wake capture stamping
+      bedroom_morning_wake_time and (b) the Oura sync updating bedtime_end to
+      today's date; then stamps bedroom_couch_doze_captured so it never re-fires.
+      Consumers gate on the summary sensor's couch_doze_captured_today (fields
+      read 'pending' until then). LIMITATION: a couch stretch Oura files as a
+      separate nap makes the delta small/negative and the night reads "no".
+    triggers:
+      - trigger: state
+        entity_id: input_datetime.bedroom_morning_wake_time
+        id: wake_stamped
+      - trigger: state
+        entity_id: sensor.oura_ring_bedtime_end
+        not_to:
+          - unknown
+          - unavailable
+        id: oura_synced
+    conditions:
+      # This morning's wake has been captured (wake-time is today)
+      - condition: template
+        value_template: >-
+          {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
+          {{ ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') }}
+      # Oura has synced THIS morning's session (bedtime_end dated today)
+      - condition: template
+        value_template: >-
+          {% set be = states('sensor.oura_ring_bedtime_end') %}
+          {{ be not in ['unknown','unavailable',''] and as_local(as_datetime(be)).strftime('%Y-%m-%d') == now().strftime('%Y-%m-%d') }}
+      # Not already captured today
+      - condition: template
+        value_template: >-
+          {% set ts = state_attr('input_datetime.bedroom_couch_doze_captured','timestamp') | float(0) %}
+          {{ not (ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d')) }}
+    actions:
+      - variables:
+          oura_start_ts: >-
+            {% set bs = states('sensor.oura_ring_bedtime_start') %}
+            {{ (as_timestamp(as_datetime(bs)) | float(0)) if bs not in ['unknown','unavailable',''] else 0 }}
+          night_ts: "{{ state_attr('input_datetime.bedroom_night_start','timestamp') | float(0) }}"
+          delta_min: >-
+            {{ (((night_ts | float(0)) - (oura_start_ts | float(0))) / 60) | round(0) if ((oura_start_ts | float(0)) > 1577923200 and (night_ts | float(0)) > 1577923200) else 0 }}
+          is_doze: "{{ (delta_min | float(0)) >= (states('input_number.bedroom_couch_doze_threshold_min') | float(25)) }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_couch_sleep_min_lastnight
+        data:
+          value: "{{ ([delta_min | float(0), 720] | min) if is_doze else 0 }}"
+      - if:
+          - condition: template
+            value_template: "{{ is_doze }}"
+        then:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.bedroom_couch_doze_lastnight
+        else:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.bedroom_couch_doze_lastnight
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.bedroom_couch_doze_captured
+        data:
+          timestamp: "{{ now().timestamp() }}"
     mode: single
