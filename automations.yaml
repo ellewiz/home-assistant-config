@@ -1303,11 +1303,18 @@
     entity_id: sensor.total_pollen_index
     above: 200
     id: index_very_high
+  - platform: homeassistant
+    event: start
+    id: pollen_startup
   conditions:
   - condition: state
     entity_id: calendar.vacation
     state: 'off'
   actions:
+  - alias: Wait for the pollen index to have a real value (repopulates after a restart)
+    wait_template: '{{ states(''sensor.total_pollen_index'') | int(-1) >= 0 }}'
+    timeout: '00:03:00'
+    continue_on_timeout: true
   - choose:
     - conditions:
       - condition: numeric_state
@@ -1664,7 +1671,11 @@
     (falls back to current reading for today), so big day-to-day pollen sweeps are
     captured. Pollen penalty is magnitude-based (strong but non-vetoing, capped -55)
     with an extra surcharge for grass since mowing aerosolizes it. Wind alone is a
-    minor penalty; wind combined with elevated pollen compounds (interaction term).'
+    minor penalty; wind combined with elevated pollen compounds (interaction term). Air quality adds a per-day
+    penalty from sensor.air_quality_daily_forecast (Open-Meteo US AQI daytime-peak forecast,
+    aligned by date, current-reading fallback for today): none at or below 50, ramping through
+    Moderate/USG/Unhealthy, and effectively vetoing to 0 at Very Unhealthy (201+) since mowing
+    is heavy outdoor exertion that also aerosolizes particulates.'
   triggers:
   - platform: time_pattern
     hours: /3
@@ -1704,8 +1715,8 @@
         if C<120 else (28 if C<150 else (40 if C<200 else 50)))) %}{% set pp = pp
         + (8 if gv>=60 else (4 if gv>=40 else 0)) %}{% set pp = [pp,55]|min %}{% set
         wstd = 0 if wind<12 else (3 if wind<18 else 6) %}{% set wint = 0 if C<75 else
-        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{{ [100,[0,
-        r+c+t+30-pp-wstd-wint]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
+        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{% set af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'') or [] %}{% set avl = af|selectattr(''date'',''equalto'',wd|string)|map(attribute=''aqi'')|list %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|int(0) %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (25 if aq<=150 else (45 if aq<=200 else 100)))) %}{{ [100,[0,
+        r+c+t+30-pp-wstd-wint-aqp]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
     action: input_number.set_value
   - target:
       entity_id: input_text.mow_forecast_label_1_2
@@ -1744,8 +1755,8 @@
         if C<120 else (28 if C<150 else (40 if C<200 else 50)))) %}{% set pp = pp
         + (8 if gv>=60 else (4 if gv>=40 else 0)) %}{% set pp = [pp,55]|min %}{% set
         wstd = 0 if wind<12 else (3 if wind<18 else 6) %}{% set wint = 0 if C<75 else
-        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{{ [100,[0,
-        r+c+t+30-pp-wstd-wint]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
+        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{% set af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'') or [] %}{% set avl = af|selectattr(''date'',''equalto'',wd|string)|map(attribute=''aqi'')|list %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|int(0) %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (25 if aq<=150 else (45 if aq<=200 else 100)))) %}{{ [100,[0,
+        r+c+t+30-pp-wstd-wint-aqp]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
     action: input_number.set_value
   - target:
       entity_id: input_text.mow_forecast_label_2_2
@@ -1784,8 +1795,8 @@
         if C<120 else (28 if C<150 else (40 if C<200 else 50)))) %}{% set pp = pp
         + (8 if gv>=60 else (4 if gv>=40 else 0)) %}{% set pp = [pp,55]|min %}{% set
         wstd = 0 if wind<12 else (3 if wind<18 else 6) %}{% set wint = 0 if C<75 else
-        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{{ [100,[0,
-        r+c+t+30-pp-wstd-wint]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
+        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{% set af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'') or [] %}{% set avl = af|selectattr(''date'',''equalto'',wd|string)|map(attribute=''aqi'')|list %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|int(0) %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (25 if aq<=150 else (45 if aq<=200 else 100)))) %}{{ [100,[0,
+        r+c+t+30-pp-wstd-wint-aqp]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
     action: input_number.set_value
   - target:
       entity_id: input_text.mow_forecast_label_3_2
@@ -1824,8 +1835,8 @@
         if C<120 else (28 if C<150 else (40 if C<200 else 50)))) %}{% set pp = pp
         + (8 if gv>=60 else (4 if gv>=40 else 0)) %}{% set pp = [pp,55]|min %}{% set
         wstd = 0 if wind<12 else (3 if wind<18 else 6) %}{% set wint = 0 if C<75 else
-        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{{ [100,[0,
-        r+c+t+30-pp-wstd-wint]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
+        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{% set af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'') or [] %}{% set avl = af|selectattr(''date'',''equalto'',wd|string)|map(attribute=''aqi'')|list %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|int(0) %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (25 if aq<=150 else (45 if aq<=200 else 100)))) %}{{ [100,[0,
+        r+c+t+30-pp-wstd-wint-aqp]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
     action: input_number.set_value
   - target:
       entity_id: input_text.mow_forecast_label_4
@@ -2310,7 +2321,10 @@
     counter.living_room_light_flaps and stamps input_datetime.living_room_light_last_flap.
     At 04:00 it logs the 24h flap tally and resets the counter, building a day-by-day
     series. not_from/not_to unknown+unavailable filters HA-restart and Zigbee-dropout
-    noise. Same durable-logging pattern as the Corner Lamp Dropout Logger; retire
+    noise. The transition branch also guards trigger.from_state is not none, because a
+    light-group rebuild on reload_all can fire a state event with no prior state object
+    (None, which not_from cannot catch) and that used to raise a ''None has no attribute
+    last_changed'' template error. Same durable-logging pattern as the Corner Lamp Dropout Logger; retire
     once the fix is proven steady.'
   triggers:
   - id: transition
@@ -2331,6 +2345,9 @@
       conditions:
       - condition: trigger
         id: transition
+      - condition: template
+        value_template: '{{ trigger.from_state is not none and trigger.to_state is not
+          none }}'
       sequence:
       - action: logbook.log
         data:
@@ -3294,4 +3311,101 @@
     target:
       entity_id: switch.adaptive_lighting_living_room_lights
   mode: single
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+- id: '1784118690598'
+  alias: 'Meds: Mirror dashboard dose log to counter'
+  description: 'Mirrors a medication dose into the durable counter when the Oura dashboard
+    flag (input_boolean.*_taken) is toggled on WITHOUT the Orb button. CONTEXT: automation.meds_log_dose_from_orb_button
+    increments counter.med_*_doses inline AND calls script.log_* (which sets the flag
+    + writes the canonical ''Health Log'' logbook line). But tapping the input_boolean
+    directly on the dashboard only flips the flag: it never bumps the counter or writes
+    Health Log. Observed Jul 14 2026: a guanfacine dose logged from the laptop set
+    the flag but left counter.med_guanfacine_doses one short, so the LTS mirror sensor.med_*_doses_recorded
+    (read by the crossfactor report) under-counts any non-button dose. This closes
+    the gap for the 3 counter-tracked, flag-backed meds (Adderall/Lexapro/Guanfacine);
+    Zepbound is excluded (weekly med, no daily flag). DEDUPE: the button path ALSO
+    flips the flag off->on via script.log_*, which would trigger this automation and
+    double-count. Guard: after a 3s settle delay, only increment if the matching counter
+    has NOT changed in the last 30s. A button press bumps the counter within ms of
+    the flag flip (counter is incremented BEFORE the flag in that automation), so
+    its recent change suppresses this mirror; a manual/dashboard toggle leaves the
+    counter hours stale, so it proceeds. Relies on the daily model (one off->on per
+    flag per 4am-reset day) => at most one mirror per med per day. Known edge: a manual
+    toggle within ~30s of an unrelated counter change (e.g. right after an HA restart
+    that resets counter last_changed) could be skipped: rare, costs one count. mode
+    parallel so simultaneous morning Adderall+Lexapro toggles each process. NOT vacation-gated
+    (meds taken while traveling), matching the button automation. Also writes a ''Health
+    Log'' logbook line so dashboard-logged doses land in the same unified history
+    as button/script ones. Added Jul 15 2026.'
+  triggers:
+  - platform: state
+    id: adderall
+    entity_id: input_boolean.adderall_taken
+    from: 'off'
+    to: 'on'
+  - platform: state
+    id: lexapro
+    entity_id: input_boolean.lexapro_taken
+    from: 'off'
+    to: 'on'
+  - platform: state
+    id: guanfacine
+    entity_id: input_boolean.guanfacine_taken
+    from: 'off'
+    to: 'on'
+  actions:
+  - alias: Let any Orb-button counter increment land first
+    delay:
+      seconds: 3
+  - alias: Mirror to the matching counter only if the button didn't already do it
+    choose:
+    - alias: Adderall
+      conditions:
+      - condition: trigger
+        id: adderall
+      - condition: template
+        value_template: '{{ (as_timestamp(now()) - as_timestamp(states.counter.med_adderall_doses.last_changed))
+          > 30 }}'
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.med_adderall_doses
+      - action: logbook.log
+        data:
+          name: Health Log
+          message: Adderall taken (dashboard log, counter mirrored)
+          entity_id: input_boolean.adderall_taken
+    - alias: Lexapro
+      conditions:
+      - condition: trigger
+        id: lexapro
+      - condition: template
+        value_template: '{{ (as_timestamp(now()) - as_timestamp(states.counter.med_lexapro_doses.last_changed))
+          > 30 }}'
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.med_lexapro_doses
+      - action: logbook.log
+        data:
+          name: Health Log
+          message: Lexapro taken (dashboard log, counter mirrored)
+          entity_id: input_boolean.lexapro_taken
+    - alias: Guanfacine
+      conditions:
+      - condition: trigger
+        id: guanfacine
+      - condition: template
+        value_template: '{{ (as_timestamp(now()) - as_timestamp(states.counter.med_guanfacine_doses.last_changed))
+          > 30 }}'
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.med_guanfacine_doses
+      - action: logbook.log
+        data:
+          name: Health Log
+          message: Guanfacine taken (dashboard log, counter mirrored)
+          entity_id: input_boolean.guanfacine_taken
+  mode: parallel
+  max: 5
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
