@@ -1272,12 +1272,16 @@
     stored_traces: 25
 - id: '1777031240153'
   alias: Pollen Spike Alert
-  description: Sends an iPhone notification when pollen conditions worsen. Uses a
+  description: 'Sends an iPhone notification when pollen conditions worsen. Uses a
     daily tier tracker (input_number.pollen_alert_level_reached, 0-3) so alerts only
     fire when crossing into a HIGHER tier than already reached today — prevents re-alerts
     from unavailable/unknown blips and prevents lower re-alerts after a peak. Level
     sensors filter out unavailable/unknown transitions at the trigger level, and the
-    levels map uses 'moderate' (not 'medium') to match actual sensor states.
+    levels map uses ''moderate'' (not ''medium'') to match actual sensor states. 2026-07-19:
+    level_rose branch template now short-circuits (renders false) unless the trigger
+    is level_rose with a real from_state/to_state; previously the pollen_startup (homeassistant
+    start) trigger fell through branches 1-3 into this template every restart and
+    threw UndefinedError on trigger.from_state.'
   triggers:
   - platform: state
     entity_id:
@@ -1313,7 +1317,7 @@
   actions:
   - alias: Wait for the pollen index to have a real value (repopulates after a restart)
     wait_template: '{{ states(''sensor.total_pollen_index'') | int(-1) >= 0 }}'
-    timeout: '00:03:00'
+    timeout: 00:03:00
     continue_on_timeout: true
   - choose:
     - conditions:
@@ -1372,16 +1376,25 @@
           value: 1
     - conditions:
       - condition: template
-        value_template: '{% set levels = {''none'': 0, ''low'': 1, ''moderate'': 2,
-          ''high'': 3, ''very high'': 4, ''very_high'': 4} %}
+        value_template: '{% if trigger.id != ''level_rose'' or trigger.from_state
+          is not defined or trigger.from_state is none or trigger.to_state is none
+          %}
+
+          false
+
+          {% else %}
+
+          {% set levels = {''none'': 0, ''low'': 1, ''moderate'': 2, ''high'': 3,
+          ''very high'': 4, ''very_high'': 4} %}
 
           {% set old = trigger.from_state.state | lower %}
 
           {% set new = trigger.to_state.state | lower %}
 
-          {{ trigger.id == ''level_rose'' and old not in [''unknown'', ''unavailable'']
-          and new not in [''unknown'', ''unavailable''] and levels.get(new, 0) > levels.get(old,
-          0) }}'
+          {{ old not in [''unknown'', ''unavailable''] and new not in [''unknown'',
+          ''unavailable''] and levels.get(new, 0) > levels.get(old, 0) }}
+
+          {% endif %}'
       sequence:
       - action: notify.mobile_app_iphone
         data:
@@ -1671,11 +1684,12 @@
     (falls back to current reading for today), so big day-to-day pollen sweeps are
     captured. Pollen penalty is magnitude-based (strong but non-vetoing, capped -55)
     with an extra surcharge for grass since mowing aerosolizes it. Wind alone is a
-    minor penalty; wind combined with elevated pollen compounds (interaction term). Air quality adds a per-day
-    penalty from sensor.air_quality_daily_forecast (Open-Meteo US AQI daytime-peak forecast,
-    aligned by date, current-reading fallback for today): none at or below 50, ramping through
-    Moderate/USG/Unhealthy, and effectively vetoing to 0 at Very Unhealthy (201+) since mowing
-    is heavy outdoor exertion that also aerosolizes particulates.'
+    minor penalty; wind combined with elevated pollen compounds (interaction term).
+    Air quality adds a per-day penalty from sensor.air_quality_daily_forecast (Open-Meteo
+    US AQI daytime-peak forecast, aligned by date, current-reading fallback for today):
+    none at or below 50, ramping through Moderate/USG/Unhealthy, and effectively vetoing
+    to 0 at Very Unhealthy (201+) since mowing is heavy outdoor exertion that also
+    aerosolizes particulates.'
   triggers:
   - platform: time_pattern
     hours: /3
@@ -1715,8 +1729,13 @@
         if C<120 else (28 if C<150 else (40 if C<200 else 50)))) %}{% set pp = pp
         + (8 if gv>=60 else (4 if gv>=40 else 0)) %}{% set pp = [pp,55]|min %}{% set
         wstd = 0 if wind<12 else (3 if wind<18 else 6) %}{% set wint = 0 if C<75 else
-        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{% set af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'') or [] %}{% set avl = af|selectattr(''date'',''equalto'',wd|string)|map(attribute=''aqi'')|list %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|int(0) %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (25 if aq<=150 else (45 if aq<=200 else 100)))) %}{{ [100,[0,
-        r+c+t+30-pp-wstd-wint-aqp]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
+        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{% set
+        af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'') or []
+        %}{% set avl = af|selectattr(''date'',''equalto'',wd|string)|map(attribute=''aqi'')|list
+        %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|int(0)
+        %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (25
+        if aq<=150 else (45 if aq<=200 else 100)))) %}{{ [100,[0, r+c+t+30-pp-wstd-wint-aqp]|max]|min
+        }}{% endif %}{% else %}{{ 0 }}{% endif %}'
     action: input_number.set_value
   - target:
       entity_id: input_text.mow_forecast_label_1_2
@@ -1755,8 +1774,13 @@
         if C<120 else (28 if C<150 else (40 if C<200 else 50)))) %}{% set pp = pp
         + (8 if gv>=60 else (4 if gv>=40 else 0)) %}{% set pp = [pp,55]|min %}{% set
         wstd = 0 if wind<12 else (3 if wind<18 else 6) %}{% set wint = 0 if C<75 else
-        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{% set af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'') or [] %}{% set avl = af|selectattr(''date'',''equalto'',wd|string)|map(attribute=''aqi'')|list %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|int(0) %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (25 if aq<=150 else (45 if aq<=200 else 100)))) %}{{ [100,[0,
-        r+c+t+30-pp-wstd-wint-aqp]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
+        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{% set
+        af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'') or []
+        %}{% set avl = af|selectattr(''date'',''equalto'',wd|string)|map(attribute=''aqi'')|list
+        %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|int(0)
+        %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (25
+        if aq<=150 else (45 if aq<=200 else 100)))) %}{{ [100,[0, r+c+t+30-pp-wstd-wint-aqp]|max]|min
+        }}{% endif %}{% else %}{{ 0 }}{% endif %}'
     action: input_number.set_value
   - target:
       entity_id: input_text.mow_forecast_label_2_2
@@ -1795,8 +1819,13 @@
         if C<120 else (28 if C<150 else (40 if C<200 else 50)))) %}{% set pp = pp
         + (8 if gv>=60 else (4 if gv>=40 else 0)) %}{% set pp = [pp,55]|min %}{% set
         wstd = 0 if wind<12 else (3 if wind<18 else 6) %}{% set wint = 0 if C<75 else
-        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{% set af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'') or [] %}{% set avl = af|selectattr(''date'',''equalto'',wd|string)|map(attribute=''aqi'')|list %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|int(0) %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (25 if aq<=150 else (45 if aq<=200 else 100)))) %}{{ [100,[0,
-        r+c+t+30-pp-wstd-wint-aqp]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
+        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{% set
+        af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'') or []
+        %}{% set avl = af|selectattr(''date'',''equalto'',wd|string)|map(attribute=''aqi'')|list
+        %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|int(0)
+        %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (25
+        if aq<=150 else (45 if aq<=200 else 100)))) %}{{ [100,[0, r+c+t+30-pp-wstd-wint-aqp]|max]|min
+        }}{% endif %}{% else %}{{ 0 }}{% endif %}'
     action: input_number.set_value
   - target:
       entity_id: input_text.mow_forecast_label_3_2
@@ -1835,8 +1864,13 @@
         if C<120 else (28 if C<150 else (40 if C<200 else 50)))) %}{% set pp = pp
         + (8 if gv>=60 else (4 if gv>=40 else 0)) %}{% set pp = [pp,55]|min %}{% set
         wstd = 0 if wind<12 else (3 if wind<18 else 6) %}{% set wint = 0 if C<75 else
-        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{% set af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'') or [] %}{% set avl = af|selectattr(''date'',''equalto'',wd|string)|map(attribute=''aqi'')|list %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|int(0) %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (25 if aq<=150 else (45 if aq<=200 else 100)))) %}{{ [100,[0,
-        r+c+t+30-pp-wstd-wint-aqp]|max]|min }}{% endif %}{% else %}{{ 0 }}{% endif %}'
+        [((([wind-8,0]|max)*(0.8 if C>=150 else 0.4))|round(0)|int),20]|min %}{% set
+        af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'') or []
+        %}{% set avl = af|selectattr(''date'',''equalto'',wd|string)|map(attribute=''aqi'')|list
+        %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|int(0)
+        %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (25
+        if aq<=150 else (45 if aq<=200 else 100)))) %}{{ [100,[0, r+c+t+30-pp-wstd-wint-aqp]|max]|min
+        }}{% endif %}{% else %}{{ 0 }}{% endif %}'
     action: input_number.set_value
   - target:
       entity_id: input_text.mow_forecast_label_4
@@ -2321,11 +2355,11 @@
     counter.living_room_light_flaps and stamps input_datetime.living_room_light_last_flap.
     At 04:00 it logs the 24h flap tally and resets the counter, building a day-by-day
     series. not_from/not_to unknown+unavailable filters HA-restart and Zigbee-dropout
-    noise. The transition branch also guards trigger.from_state is not none, because a
-    light-group rebuild on reload_all can fire a state event with no prior state object
-    (None, which not_from cannot catch) and that used to raise a ''None has no attribute
-    last_changed'' template error. Same durable-logging pattern as the Corner Lamp Dropout Logger; retire
-    once the fix is proven steady.'
+    noise. The transition branch also guards trigger.from_state is not none, because
+    a light-group rebuild on reload_all can fire a state event with no prior state
+    object (None, which not_from cannot catch) and that used to raise a ''None has
+    no attribute last_changed'' template error. Same durable-logging pattern as the
+    Corner Lamp Dropout Logger; retire once the fix is proven steady.'
   triggers:
   - id: transition
     entity_id: light.living_room_lights
@@ -2346,8 +2380,8 @@
       - condition: trigger
         id: transition
       - condition: template
-        value_template: '{{ trigger.from_state is not none and trigger.to_state is not
-          none }}'
+        value_template: '{{ trigger.from_state is not none and trigger.to_state is
+          not none }}'
       sequence:
       - action: logbook.log
         data:
@@ -3408,4 +3442,3 @@
           entity_id: input_boolean.guanfacine_taken
   mode: parallel
   max: 5
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
