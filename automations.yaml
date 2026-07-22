@@ -3442,3 +3442,35 @@
           entity_id: input_boolean.guanfacine_taken
   mode: parallel
   max: 5
+- id: '1784689256636'
+  alias: Oura Sync Nudge on Wake (in_bed off)
+  description: When in_bed flips off during the morning window (group.morning on),
+    send a time-sensitive actionable notification to the iPhone. Tapping it opens
+    the Oura app to force the overnight ring sync so the sleep report has last night's
+    data. Built with Lara 2026-07-22; interruption-level time-sensitive so it surfaces
+    even if Sleep Focus is still on. URL scheme oura:// is provisional pending tap
+    test; fallback is shortcuts://run-shortcut.
+  triggers:
+  - entity_id: input_boolean.in_bed
+    from: 'on'
+    platform: state
+    to: 'off'
+  conditions:
+  - condition: state
+    entity_id: group.morning
+    state: 'on'
+  actions:
+  - action: notify.mobile_app_iphone
+    data:
+      data:
+        actions:
+        - action: URI
+          title: Open Oura
+          uri: oura://
+        push:
+          interruption-level: time-sensitive
+        tag: oura_sync_nudge
+        url: oura://
+      message: Tap to sync last night's sleep to the report.
+      title: Good morning, open Oura
+  mode: single
