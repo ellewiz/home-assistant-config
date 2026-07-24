@@ -1055,7 +1055,21 @@
   mode: single
 - id: '1764645467296'
   alias: Heat the car
-  description: ''
+  description: 'Year-round pre-conditioning nudge. Trigger UNCHANGED: 13 min before
+    an ''office'' calendar event ends, gated on binary_sensor.workday(on) + person.lara_wiz(home).
+    Fires when outdoor weather is notable in EITHER direction: OR(sensor.kttn_temperature
+    below 45F [cold], sensor.kttn_temperature above 80F [hot], sensor.kttn_dew_point
+    above 65F [muggy]). Cold branch restored 2026-07-24 per Lara so the nudge is useful
+    in winter AND summer. Dew point (not RH) for the muggy branch because this runs
+    in the morning when RH peaks. Two actions, both kept: (1) Sonos broadcast, neutral
+    wording ''It''s time to turn on the car!''; (2) actionable iPhone notification
+    (notify.mobile_app_iphone, time-sensitive, tag heat_the_car_precool). TAP TARGET:
+    mychevrolet:// was tap-tested 2026-07-24 and FAILED (opened Home Assistant, not
+    the app), so myChevrolet does not register that URL scheme. Switched to a Siri
+    Shortcut: shortcuts://run-shortcut?name=Start%20Car. Lara must create an iOS Shortcut
+    named exactly ''Start Car'' (Open App: myChevrolet, or a myChevrolet Remote Start
+    action to actually fire it). Pending her building the Shortcut + a re-test. Chevy
+    exposes no remote-start API.'
   triggers:
   - entity_id: calendar.master_calendar
     event: end
@@ -1073,22 +1087,45 @@
     entity_id: person.lara_wiz
     state:
     - home
-  - condition: numeric_state
-    entity_id: sensor.kttn_temperature
-    below: 45
+  - condition: or
+    conditions:
+    - below: 45
+      condition: numeric_state
+      entity_id: sensor.kttn_temperature
+    - above: 80
+      condition: numeric_state
+      entity_id: sensor.kttn_temperature
+    - above: 65
+      condition: numeric_state
+      entity_id: sensor.kttn_dew_point
   actions:
   - action: script.sonos_broadcast
-    metadata: {}
     data:
-      restore: true
-      ungroup: true
+      message: It's time to turn on the car!
       players:
       - media_player.bedroom
       - media_player.living_room_arc
       - media_player.minipod_2
       - media_player.bathroom
-      message: It's time to warm up the car!
+      restore: true
+      ungroup: true
       volume: 0.7
+    metadata: {}
+  - action: notify.mobile_app_iphone
+    data:
+      data:
+        actions:
+        - action: URI
+          title: Start the car
+          uri: shortcuts://run-shortcut?name=Start%20Car
+        push:
+          interruption-level: time-sensitive
+        tag: heat_the_car_precool
+        url: shortcuts://run-shortcut?name=Start%20Car
+      message: It's {{ states('sensor.kttn_temperature') | float(0) | round }}°F out{%
+        if states('sensor.kttn_dew_point') | float(0) > 65 %}, dew point {{ states('sensor.kttn_dew_point')
+        | float(0) | round }}°F{% endif %}. Tap to open myChevrolet and start it.
+      title: "\U0001F697 Turn on the car"
   mode: single
 - id: '1765403683258'
   alias: Living Room — Movie Lamp Dimmer (v2)
