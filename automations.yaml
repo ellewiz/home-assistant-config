@@ -833,18 +833,30 @@
   mode: restart
   max_exceeded: silent
 - id: '1763032936247'
-  alias: Living Room — Morning Lights (v2, Lux-Gated)
-  description: v2 of "Living room lights on - Morning". v1 had no lux condition, so
-    after the Ambient Manager's early_morning_ended branch turned the lights off at
-    8:00 (room bright by lux), the next motion re-lit them — observed 9/9 days May
-    28–Jun 5 2026. Sleep-mode clear stays unconditional so Adaptive Lighting never
+  alias: Living Room — Morning Lights (v3, Lux + Presence Gated)
+  description: 'v2 of "Living room lights on - Morning". v1 had no lux condition,
+    so after the Ambient Manager''s early_morning_ended branch turned the lights off
+    at 8:00 (room bright by lux), the next motion re-lit them — observed 9/9 days
+    May 28–Jun 5 2026. Sleep-mode clear stays unconditional so Adaptive Lighting never
     gets stuck dim; the relight is gated on the room actually being dark. Lux sensor
     unavailable is treated as dark (fail-bright for a wake-up light).
+
+
+    2026-07-23 (v3): relight branch now also requires binary_sensor.johnny_home_alone
+    to be off, so Johnny''s motion after Lara leaves no longer re-lights the empty
+    living room (observed that day: her 07:37 leave-home off was undone 24s later
+    by his motion and the LR burned ~9.7h in an empty house). Implements the house
+    rule that dog motion must not drive human-comfort lighting. Gate is on the relight
+    branch only; the Adaptive Lighting sleep-mode clear stays unconditional. Caveat:
+    johnny_home_alone keys on person.lara_wiz being not_home, which is still fed by
+    the MacBook and iPad trackers (they pin it home), so the plan is to reduce person.lara_wiz
+    to the iPhone tracker only, making this gate reliable on every away-day rather
+    than only when the Mac is asleep.'
   triggers:
-  - trigger: state
-    entity_id: binary_sensor.hue_motion_sensor_4_motion
+  - entity_id: binary_sensor.hue_motion_sensor_4_motion
     from: 'off'
     to: 'on'
+    platform: state
   conditions:
   - condition: state
     entity_id: group.morning
@@ -857,6 +869,9 @@
   - alias: Relight only if the room is actually dark
     choose:
     - conditions:
+      - condition: state
+        entity_id: binary_sensor.johnny_home_alone
+        state: 'off'
       - condition: or
         conditions:
         - condition: numeric_state
