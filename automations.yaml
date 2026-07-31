@@ -37,6 +37,16 @@
   mode: single
 - id: '1635902622080'
   alias: Turn off the lights when I leave home
+  description: 'Turns off lights in bedroom, kitchen, living room and office when
+    Lara leaves zone.home. Gated on group.morning being on OR living room lux above
+    input_number.living_room_lux_on, so it only fires on a bright/morning departure.
+
+
+    2026-07-30: the media_player.media_stop branch (bedroom_frame + bedroom) was REMOVED
+    from this automation and moved to ''Speakers - Stop All When I Leave Home''. Reason:
+    speaker shutoff was sitting behind this automation''s lighting condition, so a
+    dark-morning departure would leave audio running. Speaker shutoff now owns its
+    own automation with no lux gate. Do not re-add media actions here.'
   triggers:
   - entity_id: person.lara_wiz
     zone: zone.home
@@ -59,24 +69,6 @@
       - living_room
       - office
     action: light.turn_off
-  - choose:
-    - conditions:
-      - condition: or
-        conditions:
-        - condition: state
-          state: playing
-          entity_id: media_player.bedroom_frame
-        - condition: state
-          state: playing
-          entity_id: media_player.bedroom
-      sequence:
-      - action: media_player.media_stop
-        metadata: {}
-        data: {}
-        target:
-          entity_id:
-          - media_player.bedroom_frame
-          - media_player.bedroom
   mode: single
 - id: '1636163018564'
   alias: Night sound on living room TV
@@ -467,9 +459,9 @@
   alias: Low Battery Notification
   description: ''
   use_blueprint:
-    path: ellewiz/low_battery.yaml
     input:
-      notify_device: e09c6dfb1aa561536feed2bbdcadfbc9
+      notify_device: 5f746fe7526e883d4f1fa4679751e125
+    path: ellewiz/low_battery.yaml
 - id: '1758078170419'
   alias: TV Event Reminder
   description: 'Announce 15 minutes before an event on the watch party calendar starts
@@ -3911,3 +3903,58 @@
       title: '{{ trigger.json.title | default(''Sleep report ready'', true) }}'
   max: 5
   mode: queued
+- id: '1785466902792'
+  alias: Speakers — Stop All When I Leave Home
+  description: 'Stops every Sonos in the house except the Office when Lara leaves
+    zone.home.
+
+
+    WHY: Before this existed, nothing turned off house speakers on departure. The
+    only media shutoff lived inside ''Turn off the lights when I leave home'', and
+    it targeted just media_player.bedroom_frame + media_player.bedroom. On 2026-07-30
+    music started in the dining room at 07:24, she left at 07:28, and the dining room
+    / living room / living room Arc played for 10h06m until she got home at 17:28
+    and paused them by hand. The bedroom stop also sat behind that automation''s lux/group.morning
+    condition, so on a dark-morning departure even the bedroom would not have stopped.
+    Media shutoff must not be gated on a lighting condition, hence this standalone
+    automation.
+
+
+    SCOPE: Office (media_player.sonos_move) is deliberately EXCLUDED - that is where
+    the dog music for Johnny lives, and it should survive a departure. All other Sonos
+    are in scope.
+
+
+    ACTION: media_stop, not media_pause, matching the behavior the bedroom branch
+    had.
+
+
+    GATES: calendar.vacation off per house style, so a dog/house-sitter''s music is
+    not killed if Lara steps out during a vacation window.
+
+
+    continue_on_error is set because a flapping or unavailable Sonos should not abort
+    the stop for the remaining speakers.'
+  triggers:
+  - entity_id: person.lara_wiz
+    event: leave
+    trigger: zone
+    zone: zone.home
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - action: media_player.media_stop
+    alias: Stop all in-scope Sonos (Office deliberately excluded)
+    continue_on_error: true
+    target:
+      entity_id:
+      - media_player.dining_room
+      - media_player.living_room
+      - media_player.living_room_arc
+      - media_player.bedroom_frame
+      - media_player.bedroom
+      - media_player.bathroom
+      - media_player.basement
+  mode: single
