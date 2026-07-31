@@ -23,7 +23,6 @@ trigger:
 action:
   - variables:
       threshold: !input threshold
-      notify_device: !input notify_device
       low_batteries: >
         {% set t = threshold | int %}
         {% set ns = namespace(list=[]) %}
@@ -38,8 +37,7 @@ action:
   - choose:
       - conditions: "{{ low_batteries | length > 0 }}"
         sequence:
-          - service: notify.mobile_app_{{ device_attr(notify_device, 'name') | slugify }}
+          - service: notify.mobile_app_{{ device_attr(notify_device, 'name')|lower|replace(' ', '_') }}
             data:
               title: "Low Batteries"
-              message: >-
-                {% for e in low_batteries %}{{ state_attr(e, 'friendly_name') or e }} {{ states(e) }}%{{ ", " if not loop.last }}{% endfor %}
+              message: "{{ low_batteries | join(', ') }}"
