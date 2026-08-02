@@ -18,11 +18,9 @@ recurring Claude triage pass for anything that needs judgment.
 |---|---|
 | Read Later | Low-priority, non-actionable |
 | Older / Older than 3 months ago | Age-based archive tiers |
-| Car / Honda | Vehicle-related |
+| Car | Vehicle-related |
 | Finance | Financial mail |
 | Alerts | Security/account notices (Apple ID, Google account, subscription renewals) |
-| Misc | Catch-all |
-| Moved | Marker for "already processed out of inbox" |
 | Action Needed | High-priority, requires a response/decision |
 | Medium | Mid-priority tier |
 | 🗑️ Review-Delete | Staged for deletion |
@@ -30,9 +28,17 @@ recurring Claude triage pass for anything that needs judgment.
 | f/forwards, f/attachment(/pdf,/image,/office doc), f/not to me, f/social networks | Structural filters (attachment type, forwarded, not-to-me, social) |
 | Flagged by Guardio | Set by the Guardio browser extension, not Gmail — leave alone |
 
-Label added but not currently used: **Real Estate** — an existing filter
-already routes the `+realestate` alias to "Claude searches" instead; keeping
-that as-is (see below).
+"Misc" and "Moved" no longer exist (removed at some point during the
+2026-08-02 cleanup session, presumably by hand in the Gmail UI). "Honda" and
+"Real Estate" were removed 2026-08-02 (see Part 3) — car sold 3 years ago,
+and the real estate alias routes to "Claude searches" instead, so the
+"Real Estate" label was never actually used.
+
+"Claude searches" currently has 0 messages but is left alone — the real
+estate alias filter still points at it, so an empty count doesn't mean it's
+unused. "DOJ Case 2022R00513" also shows 0 messages now (it had 10 at the
+start of this project) — left alone pending confirmation, since deleting a
+legal-case label without checking felt like the wrong default.
 
 ## Part 1 — Native Gmail filters (set these up manually)
 
@@ -70,7 +76,7 @@ Active: a "Gmail Daily Triage" Routine runs daily at 8am ET. It:
 1. Searches `in:inbox has:nouserlabels newer_than:2d` (mail that arrived and
    wasn't caught by a filter above).
 2. Applies judgment to sort it into the existing label taxonomy
-   (Action Needed / Medium / Read Later / Misc / etc.), the same way MailSynth did.
+   (Action Needed / Medium / Read Later / etc.), the same way MailSynth did.
 3. Reports back with a short digest of anything landing in "Action Needed" or
    anything that looked like phishing/a scam.
 
@@ -114,3 +120,14 @@ reported via Malwarebytes ScamGuard. Catch-all search for these senders:
 | Recurring retail/beauty marketing | `ursamajorvt.com, zulily.com, pinchme.com, hello.us.mercari.com` | Label Shopping, skip inbox |
 | Car-dealer lead-gen spam | `alstspecials.com, edealerhub.com, truecarmail.com` | Label Review-Delete, skip inbox — third-party marketing platforms, not real dealership/manufacturer mail |
 | Today's reported scam senders | `yourconcpway.cyou, zenbflowlink.cyou, gorainarmweb.rest, scalemetricproleaddevelop.xyz, onlineprivacytoday.xyz, marketselectgroupbasiscommand.xyz, worthcorefirmbeaconshield.xyz, stakerefinedportalsignalvertex.xyz` | Label Review-Delete or Spam, skip inbox |
+
+### Label cleanup
+
+- Deleted **Honda** — car sold 3 years ago, all 12 messages were stale
+  (State Farm bills, Princeton Honda service notices, old trade-in offers).
+- Deleted **Real Estate** — created earlier this session but never actually
+  used; the `+realestate` alias already routes to "Claude searches."
+- Left **Claude searches** and **DOJ Case 2022R00513** alone despite showing
+  0 messages — the former still has an active filter pointed at it, the
+  latter is a legal-case label that shouldn't be removed without checking
+  in first.
