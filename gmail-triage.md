@@ -48,14 +48,14 @@ instead.
   "Real Estate" filter.
 
 ### 2. Known low-quality marketing → Review-Delete — done
-- **Search:** `from:(uphubroad.work)`
+- **From field:** `uphubroad.work`
 - **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
 - `update@uphubroad.work` ("home insurance quotes") came back **suspicious**
   on a threat-intelligence check. Already manually marked as spam; filter
   added to catch future mail from the same domain automatically.
 
 ### 3. Account/security alerts → Alerts — still to do
-- **Search:** `from:(id.apple.com) OR from:(email.apple.com) OR from:(accounts.google.com)`
+- **From field:** `id.apple.com, email.apple.com, accounts.google.com`
 - **Action:** Apply label "Alerts" (leave in Inbox — these can be
   time-sensitive, e.g. password-reset or account-recovery notices)
 
@@ -108,9 +108,9 @@ reported via Malwarebytes ScamGuard. Catch-all search for these senders:
 
 ### Filter candidates identified but not yet added
 
-| Filter | Search | Action |
+| Filter | From field | Action |
 |---|---|---|
-| Political fundraising blasts | `from:(shared1.ccsend.com) OR from:(moody.senate.gov) OR from:(cbcpac.org)` | Label Review-Delete, skip inbox — confirm intent first, this is a content judgment call rather than a clear spam/vendor domain |
-| Recurring retail/beauty marketing | `from:(ursamajorvt.com) OR from:(zulily.com) OR from:(pinchme.com) OR from:(hello.us.mercari.com)` | Label Shopping, skip inbox |
-| Car-dealer lead-gen spam | `from:(alstspecials.com) OR from:(edealerhub.com) OR from:(truecarmail.com)` | Label Review-Delete, skip inbox — third-party marketing platforms, not real dealership/manufacturer mail |
-| Today's reported scam senders | the 8-domain query above | Label Review-Delete or Spam, skip inbox |
+| Political fundraising blasts | `shared1.ccsend.com, moody.senate.gov, cbcpac.org` | Label Review-Delete, skip inbox — confirm intent first, this is a content judgment call rather than a clear spam/vendor domain |
+| Recurring retail/beauty marketing | `ursamajorvt.com, zulily.com, pinchme.com, hello.us.mercari.com` | Label Shopping, skip inbox |
+| Car-dealer lead-gen spam | `alstspecials.com, edealerhub.com, truecarmail.com` | Label Review-Delete, skip inbox — third-party marketing platforms, not real dealership/manufacturer mail |
+| Today's reported scam senders | `yourconcpway.cyou, zenbflowlink.cyou, gorainarmweb.rest, scalemetricproleaddevelop.xyz, onlineprivacytoday.xyz, marketselectgroupbasiscommand.xyz, worthcorefirmbeaconshield.xyz, stakerefinedportalsignalvertex.xyz` | Label Review-Delete or Spam, skip inbox |
