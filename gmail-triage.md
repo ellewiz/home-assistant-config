@@ -30,7 +30,9 @@ recurring Claude triage pass for anything that needs judgment.
 | f/forwards, f/attachment(/pdf,/image,/office doc), f/not to me, f/social networks | Structural filters (attachment type, forwarded, not-to-me, social) |
 | Flagged by Guardio | Set by the Guardio browser extension, not Gmail — leave alone |
 
-New label added: **Real Estate** (for the `+realestate` alias — see below).
+Label added but not currently used: **Real Estate** — an existing filter
+already routes the `+realestate` alias to "Claude searches" instead; keeping
+that as-is (see below).
 
 ## Part 1 — Native Gmail filters (set these up manually)
 
@@ -40,20 +42,19 @@ Addresses → Create a new filter**. Only deterministic, sender-based rules
 belong here — anything requiring judgment about importance goes to Part 2
 instead.
 
-### 1. Real estate alias → own label, out of the inbox
-- **Search:** `to:(lwizinski+realestate@gmail.com)`
-- **Action:** Apply label "Real Estate", Skip Inbox (Archive it)
-- Covers Zillow saved-home alerts, LandSearch updates, and anything else sent
-  to that alias.
+### 1. Real estate alias → ~~own label~~ — skipped, already handled
+- An existing filter already routes `to:(lwizinski+realestate@gmail.com)` to
+  "Claude searches." Leaving it alone rather than creating a competing
+  "Real Estate" filter.
 
-### 2. Known low-quality marketing → Review-Delete
+### 2. Known low-quality marketing → Review-Delete — done
 - **Search:** `from:(uphubroad.work)`
 - **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
 - `update@uphubroad.work` ("home insurance quotes") came back **suspicious**
-  on a threat-intelligence check — not confirmed malicious, but not worth
-  inbox space. Add other one-off marketing domains here as they show up.
+  on a threat-intelligence check. Already manually marked as spam; filter
+  added to catch future mail from the same domain automatically.
 
-### 3. Account/security alerts → Alerts
+### 3. Account/security alerts → Alerts — still to do
 - **Search:** `from:(id.apple.com) OR from:(email.apple.com) OR from:(accounts.google.com)`
 - **Action:** Apply label "Alerts" (leave in Inbox — these can be
   time-sensitive, e.g. password-reset or account-recovery notices)
@@ -65,11 +66,14 @@ Part 2 is for.
 
 ## Part 2 — Going-forward triage (replaces the daily digest)
 
-Recommended: a recurring Claude Routine (e.g. daily) that:
-1. Searches `in:inbox has:nouserlabels newer_than:1d` (mail that arrived and
+Active: a "Gmail Daily Triage" Routine runs daily at 8am ET. It:
+1. Searches `in:inbox has:nouserlabels newer_than:2d` (mail that arrived and
    wasn't caught by a filter above).
 2. Applies judgment to sort it into the existing label taxonomy
    (Action Needed / Medium / Read Later / Misc / etc.), the same way MailSynth did.
-3. Sends a short digest of anything landing in "Action Needed."
+3. Reports back with a short digest of anything landing in "Action Needed" or
+   anything that looked like phishing/a scam.
 
-This hasn't been activated yet — say the word and I'll set up the schedule.
+It's bound to this Claude session (fires as a new turn here each morning)
+rather than a fresh session, since this org doesn't currently support
+granting Gmail connector access to fresh-session Routines.
