@@ -83,6 +83,10 @@ It's bound to this Claude session (fires as a new turn here each morning)
 rather than a fresh session, since this org doesn't currently support
 granting Gmail connector access to fresh-session Routines.
 
+**Standing authorization (2026-08-02):** free rein to restructure the
+triage logic, labels, or Routine as judgment calls prove wrong in practice —
+just report whatever changes get made rather than asking first each time.
+
 ## Part 3 — Backlog cleanup (2026-08-02 session)
 
 The "🗑️ Review-Delete" label had ballooned to ~7,800 messages. Worked through
