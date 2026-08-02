@@ -77,3 +77,40 @@ Active: a "Gmail Daily Triage" Routine runs daily at 8am ET. It:
 It's bound to this Claude session (fires as a new turn here each morning)
 rather than a fresh session, since this org doesn't currently support
 granting Gmail connector access to fresh-session Routines.
+
+## Part 3 — Backlog cleanup (2026-08-02 session)
+
+The "🗑️ Review-Delete" label had ballooned to ~7,800 messages. Worked through
+identifying what's safe to bulk-delete via Gmail's own "select all matching /
+Trash" UI (no bulk-delete API available here). Segmentation used:
+
+- **Safe to bulk-trash:** `label:"🗑️ Review-Delete" -is:starred -label:Finance -label:Passwords -label:"Tax receipts" -has:attachment`
+- **Hold back for manual review:** starred threads (6), Finance-labeled (~200+,
+  includes real subscription records), Passwords-labeled (~200+, mostly stale
+  Apple ID reset notices), anything with attachments (real receipts — vet
+  invoices, Paddle payment receipts, TSA PreCheck renewal), Tax receipts (1).
+
+Additional bulk-delete queries used for other big buckets (Shopping, Older
+than 3 months, general newsletter cleanup via "unsubscribe" keyword) — same
+exclusion pattern each time.
+
+**Confirmed scams, reported to threat intel:** a "homeowner stimulus/mortgage
+relief" scam cluster on throwaway domains — `yourconcpway.cyou`,
+`zenbflowlink.cyou`, `gorainarmweb.rest` — plus a "debt relief/refinance"
+cluster of five `.xyz` domains (`scalemetricproleaddevelop.xyz`,
+`onlineprivacytoday.xyz`, `marketselectgroupbasiscommand.xyz`,
+`worthcorefirmbeaconshield.xyz`, `stakerefinedportalsignalvertex.xyz`). All 8
+reported via Malwarebytes ScamGuard. Catch-all search for these senders:
+
+```
+{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz}
+```
+
+### Filter candidates identified but not yet added
+
+| Filter | Search | Action |
+|---|---|---|
+| Political fundraising blasts | `from:(shared1.ccsend.com) OR from:(moody.senate.gov) OR from:(cbcpac.org)` | Label Review-Delete, skip inbox — confirm intent first, this is a content judgment call rather than a clear spam/vendor domain |
+| Recurring retail/beauty marketing | `from:(ursamajorvt.com) OR from:(zulily.com) OR from:(pinchme.com) OR from:(hello.us.mercari.com)` | Label Shopping, skip inbox |
+| Car-dealer lead-gen spam | `from:(alstspecials.com) OR from:(edealerhub.com) OR from:(truecarmail.com)` | Label Review-Delete, skip inbox — third-party marketing platforms, not real dealership/manufacturer mail |
+| Today's reported scam senders | the 8-domain query above | Label Review-Delete or Spam, skip inbox |
