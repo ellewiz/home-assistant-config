@@ -16,7 +16,6 @@ recurring Claude triage pass for anything that needs judgment.
 
 | Label | Apparent purpose |
 |---|---|
-| Read Later | Low-priority, non-actionable |
 | Older / Older than 3 months ago | Age-based archive tiers |
 | Car | Vehicle-related |
 | Finance | Financial mail |
@@ -76,7 +75,7 @@ Active: a "Gmail Daily Triage" Routine runs daily at 8am ET. It:
 1. Searches `in:inbox has:nouserlabels newer_than:2d` (mail that arrived and
    wasn't caught by a filter above).
 2. Applies judgment to sort it into the existing label taxonomy
-   (Action Needed / Medium / Read Later / etc.), the same way MailSynth did.
+   (Action Needed / Medium / etc.), the same way MailSynth did.
 3. Reports back with a short digest of anything landing in "Action Needed" or
    anything that looked like phishing/a scam.
 
@@ -130,4 +129,6 @@ reported via Malwarebytes ScamGuard. Catch-all search for these senders:
 - Left **Claude searches** and **DOJ Case 2022R00513** alone despite showing
   0 messages — the former still has an active filter pointed at it, the
   latter is a legal-case label that shouldn't be removed without checking
-  in first.
+  in first. (Turned out the DOJ Case mail was sent to a different address —
+  not missing, just never in this mailbox to begin with.)
+- **Read Later** removed by hand, now that Review-Delete covers that role.
