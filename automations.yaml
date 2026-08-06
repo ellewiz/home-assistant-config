@@ -3921,3 +3921,61 @@
             if trigger.calendar_event is defined else 'untitled' }}).
           name: Guests
   mode: single
+- id: '1786045679175'
+  alias: Manual Bedroom Alarm (One-Off)
+  description: Manual one-off alarm for days off work. Set input_datetime.manual_alarm_time
+    and flip input_boolean.manual_alarm on via the iPhone dashboard card. At that
+    time, isolates the bedroom Sonos (unjoins media_player.bedroom_frame so it doesn't
+    wake the bathroom speaker), then blares alarm-clock.mp3 on media_player.bedroom
+    only, escalating volume every 12s. Flipping input_boolean.manual_alarm off silences
+    it immediately. Auto-caps at 50 escalation cycles (~10 min) and turns itself off
+    so it won't re-fire the same time the next day if left armed. Created 2026-08-06
+    for a 5am wake-up.
+  triggers:
+  - at: input_datetime.manual_alarm_time
+    id: manual_alarm_time
+    platform: time
+  conditions:
+  - condition: state
+    entity_id: input_boolean.manual_alarm
+    state: 'on'
+  actions:
+  - action: media_player.unjoin
+    alias: Phase 0 — Unjoin bedroom Sonos so it plays solo
+    continue_on_error: true
+    target:
+      entity_id: media_player.bedroom_frame
+  - alias: Phase 0 — Settle before playback
+    delay: 00:00:01
+  - action: media_player.volume_set
+    alias: Phase 1 — Punchy starting volume
+    data:
+      volume_level: 0.35
+    target:
+      entity_id: media_player.bedroom
+  - alias: Phase 2 — Escalating alarm loop until switched off (or 50 cycles / ~10
+      min)
+    repeat:
+      sequence:
+      - action: music_assistant.play_announcement
+        continue_on_error: true
+        data:
+          announce_volume: '{{ [35 + (repeat.index - 1) * 10, 100] | min | int }}'
+          url: http://homeassistant.local:8123/local/alarm-clock.mp3
+          use_pre_announce: false
+        target:
+          entity_id: media_player.bedroom
+      - delay: 00:00:12
+      until:
+      - condition: or
+        conditions:
+        - condition: state
+          entity_id: input_boolean.manual_alarm
+          state: 'off'
+        - condition: template
+          value_template: '{{ repeat.index >= 50 }}'
+  - action: input_boolean.turn_off
+    alias: Phase 3 — Auto-disarm so it doesn't repeat tomorrow
+    target:
+      entity_id: input_boolean.manual_alarm
+  mode: single
