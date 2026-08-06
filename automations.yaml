@@ -2798,185 +2798,6 @@
         runs. Your phone's earbud→in_bed trigger likely missed (check Low Power Mode
         / Shortcuts).
   mode: single
-- id: living_room_lights_backstop_reassert
-  alias: Living Room — Lights Backstop (Re-assert After External Off) (v4)
-  description: 'Backstop so an external command can never leave the living room dark.
-    2026-06-22: diagnosed an external, non-HA source turning light.living_room_lights
-    off (all three Hue bulbs in the same instant, no HA automation trace, no HA user).
-    Source still unconfirmed (HomeKit/Hue-bridge/Shortcuts under investigation via
-    debug logging) but it recurs ~5:09pm and hit early at 1:49pm once. The Ambient
-    Manager only turns the group ON on a falling lux crossing, so an external OFF
-    while the room is already dark left no recovery and Lara came home to a dark room.
-    This re-asserts the group ON whenever it goes off while it should be lit. GATES:
-    (1) early_morning off (mirrors Ambient Manager); (2) smoothed lux below the lux_on
-    helper, so it only fires when genuinely dark — this also prevents fighting the
-    Ambient Manager''s own off-branches, which only fire when lux is ABOVE lux_off
-    (bright); (3) the off had no HA user_id, i.e. it was external/auto, so a deliberate
-    off from the HA UI is respected and NOT overridden; (4) not actively watching
-    Apple TV (TCL TV on + source Apple TV), so it won''t pop the room bright mid-movie.
-    Logs the off-event context (user_id/parent_id) to the logbook to aid the ongoing
-    source hunt. NOT vacation-gated on purpose: matches the Ambient Manager''s deliberate
-    occupied-look behavior (lights coming on while away is wanted). Pairs with the
-    keep_last_sample fix in living_room_lux_smoothing.yaml (which stops the smoothed
-    lux going ''unknown'' in a dark, stable room). Retire or tighten once the external
-    source is found and killed. 2026-07-07: tightened condition 3 to also require
-    a null parent_id after a regression the night before — a button-started shut_down_bedtime
-    chain carries no user_id anywhere, so the user-only check passed and the backstop
-    re-asserted the lights ON 10s after the intentional bedtime off, leaving them
-    on all night. The classic phantom''s signature is null user_id AND null parent_id
-    (no context chain at all); every internal HA automation/script off carries a parent_id,
-    so this now excludes bedtime, leave-home, ambient-manager and restart-recovery
-    offs regardless of how the chain started. 2026-07-27 (v2): added two conditions
-    after a false positive left the living room burning ~9.5h in an empty house (she
-    left 07:46 EDT, backstop re-lit at 08:00, she returned 17:33). (a) PRESENCE GATE
-    - person.lara_wiz must be home. This deliberately reverses the original ''NOT
-    vacation-gated on purpose / occupied look is wanted'' note above: an all-day empty-house
-    burn is not worth the occupied look, and the failure this backstop was actually
-    built for (coming home to a dark room) is now covered anyway by the Ambient Manager''s
-    presence_arrived dark->on branch, which relights on arrival. Uses person.lara_wiz
-    directly rather than binary_sensor.johnny_home_alone, per the house rule that
-    comfort lighting keys off human presence, never the dog. (b) ALL-THREE-OFF SIGNATURE
-    - every member must currently be off AND all three must have last_changed within
-    120s, i.e. they went off together. This kills the group-rollup false positive
-    seen 2026-07-22 and again 2026-07-27: light.living_room_lights is a group whose
-    state reads ''on'' if ANY member is on, so when the chronic Zigbee flapper light.next_to_couch
-    rejoins reporting ''on'' while corner and torchiere are already off, then flaps
-    to ''unavailable'', the group rolls to ''off'' as a passive derivation carrying
-    null user_id AND null parent_id - indistinguishable from the phantom by condition
-    3 alone. NOTE a plain ''corner and torchiere are off'' test would NOT have caught
-    2026-07-27, because both were legitimately off from the 07:46 leave-home automation
-    14 minutes earlier; the real discriminator is that they went off AT THE SAME MOMENT
-    as the group, hence the last_changed window rather than a state test. Trade-off
-    accepted: if only two of the three bulbs are killed (one already off for unrelated
-    reasons) the backstop declines. That is deliberate - the hunted phantom''s documented
-    signature is all three bulbs in the same ~4ms instant. 2026-07-27 (v3, same evening
-    as v2): REPLACED the v2 hard presence gate with presence-aware brightness, matching
-    Ambient Manager v2. The v2 gate was the wrong instrument: it made the backstop
-    useless for the very thing it hunts (the phantom fires ~5:09pm on AWAY days, so
-    a home-only backstop can never catch it), and it did not actually protect against
-    the empty-house burn anyway, because the occupied look lives in the Ambient Manager''s
-    lux_below_on branch, which is documented as intentionally ungated and was still
-    going to full brightness in an empty house. So the presence condition is removed
-    and the re-assert now branches: home = normal Adaptive Lighting brightness, away
-    = brightness_pct 20 (pins AL manual_control; Ambient Manager v2''s person_arrived_home
-    branch clears the pin on arrival). Net effect: the backstop is live on away-days
-    again for the hunt, a genuine external off no longer leaves the room dark, and
-    the worst case is three bulbs at 20 percent rather than full. The v2 all-three-off
-    signature condition is unchanged and remains the real defence against the group-rollup
-    false positive that caused the 2026-07-27 burn. 2026-07-28 (v4): overnight burn
-    on the night of Jul 27->28, and it is the Jul 7 2026 regression recurring by a
-    NEW mechanism. The off was NOT external - it was the intentional script.shut_down_bedtime
-    (run 03:16:00.140 -> 03:37:00.636 UTC, a 21-minute draw from its random 10-25
-    min delay), whose final step turned the LR group off. But the three bulbs reported
-    off one at a time: End table 03:37:00.556, Torchiere 03:37:01.570, and Corner
-    lamp not until 03:37:14.220 - a 13.7s lag consistent with the known living_room_corner
-    dropout/latency. Because light.living_room_lights reads ''on'' if ANY member is
-    on, the group did not roll to ''off'' until the Corner lamp finally reported,
-    at 03:37:14.221, and that transition is a PASSIVE GROUP DERIVATION (logbook confirms
-    context_entity_id=light.living_room_corner) carrying null user_id AND null parent_id.
-    The script''s own parent_id never reached the group state. So condition 3''s null/null
-    test - added Jul 7 precisely to exclude bedtime offs - was defeated by a slow
-    member breaking the context chain, exactly the same class as the Jul 22 and Jul
-    27 rollup false positives, just driven by latency rather than an unavailable flap.
-    This backstop then re-asserted at 03:37:24 and the lamps burned ~6.7h: AL sleep
-    mode held them near 10% until Late-Night Sleep Dim released sleep mode at 05:30,
-    after which AL ramped all three to 100%. Nothing could undo it - the Ambient Manager''s
-    two auto-off branches both require lux ABOVE lux_off and the room sat at 2 lx
-    all night, so once this backstop lights the group after dark there is no off-path
-    until daylight or leave-home. Two fixes. (a) IN_BED GATE (primary, robust) - input_boolean.in_bed
-    must be off. This was the only living room automation ignoring in_bed; the Ambient
-    Manager already gates both its presence branches on it, and script.shut_down_bedtime
-    sets in_bed on as its FIRST step, so the flag is reliably up before the delayed
-    LR off lands. The only time gate here was early_morning off, vacuously true 20:00-05:30,
-    and the lux gate is trivially true all night, so overnight was exactly when this
-    was most eager to fire and least able to be undone. (b) ALL-THREE-OFF WINDOW TIGHTENED
-    120s -> 15s (secondary, partial). The v2 condition was documented as detecting
-    the phantom''s ''all three bulbs in the same ~4ms instant'' but was implemented
-    with a 120-second tolerance, which admits almost any staggered off. With trigger
-    for: 00:00:10, a genuine simultaneous off evaluates at oldest ~10.0s; last night
-    evaluated at 23.7s and is now declined. NOTE this is only a partial guard: had
-    the Corner lamp lagged 3s instead of 13.7s, oldest would be ~13s and would still
-    pass. The in_bed gate is what actually closes the bedtime case; the window tightening
-    only narrows the general rollup hole. Remaining exposure: a member-lag rollup
-    outside the in_bed window (e.g. a leave-home off where one bulb reports late)
-    can still be misread if the lag is under ~5s.'
-  triggers:
-  - entity_id: light.living_room_lights
-    from: 'on'
-    to: 'off'
-    for: 00:00:10
-    id: group_off
-    platform: state
-  conditions:
-  - condition: state
-    entity_id: input_boolean.in_bed
-    state: 'off'
-    alias: Not in bed - never re-light the living room overnight
-  - condition: state
-    entity_id: binary_sensor.early_morning
-    state: 'off'
-  - condition: numeric_state
-    entity_id: sensor.living_room_illuminance_smoothed
-    below: input_number.living_room_lux_on
-  - condition: template
-    alias: Only re-assert truly external offs — null user_id AND null parent_id (internal
-      HA chains always carry a parent_id)
-    value_template: '{{ trigger.to_state.context.user_id is none and trigger.to_state.context.parent_id
-      is none }}'
-  - condition: template
-    alias: 'Real all-three-off signature - every member off AND all moved within ~5s
-      of each other (trigger for: 10s means a genuine simultaneous off evaluates at
-      oldest ~10.0s)'
-    value_template: "{% set members = ['light.living_room_corner', 'light.torchiere',
-      'light.next_to_couch'] %}\n{% set ns = namespace(all_off=true, oldest=0) %}\n{%
-      for m in members %}\n  {% if not is_state(m, 'off') %}{% set ns.all_off = false
-      %}{% endif %}\n  {% set age = (now() - states[m].last_changed).total_seconds()
-      %}\n  {% if age > ns.oldest %}{% set ns.oldest = age %}{% endif %}\n{% endfor
-      %}\n{{ ns.all_off and ns.oldest <= 15 }}"
-  - condition: not
-    alias: Skip while actively watching Apple TV (movie mode)
-    conditions:
-    - condition: and
-      conditions:
-      - condition: state
-        entity_id: media_player.55_tcl_roku_tv
-        state: 'on'
-      - condition: state
-        entity_id: media_player.55_tcl_roku_tv
-        attribute: source
-        state: Apple TV
-  actions:
-  - alias: Re-assert the group — brightness depends on whether anyone is home
-    choose:
-    - alias: Home — normal Adaptive Lighting brightness
-      conditions:
-      - condition: state
-        entity_id: person.lara_wiz
-        state: home
-      sequence:
-      - action: light.turn_on
-        target:
-          entity_id: light.living_room_lights
-        data:
-          transition: 5
-    default:
-    - alias: Away — occupied look at low brightness (pins AL manual_control until
-        arrival)
-      action: light.turn_on
-      target:
-        entity_id: light.living_room_lights
-      data:
-        brightness_pct: 20
-        transition: 5
-  - action: logbook.log
-    data:
-      name: LR Lights Backstop
-      entity_id: light.living_room_lights
-      message: Re-asserted living room lights after an external off ({{ 'normal' if
-        is_state('person.lara_wiz','home') else 'away-dim 20%' }}, smoothed {{ states('sensor.living_room_illuminance_smoothed')
-        }} lx). Off-event context user_id={{ trigger.to_state.context.user_id }} parent_id={{
-        trigger.to_state.context.parent_id }}.
-  mode: single
 - id: meds_guanfacine_tv_nudge
   alias: 'Meds — Guanfacine: TV nudge until logged'
   description: 'Evening nudge to take Guanfacine (resets off daily at 4am; normally
@@ -3957,4 +3778,146 @@
       - media_player.bedroom
       - media_player.bathroom
       - media_player.basement
+  mode: single
+- id: living_room_late_night_off_no_bedtime
+  alias: Living Room — Late-Night Off (No-Bedtime Fallback) (v1)
+  description: 'Third and last living-room off-path, for the case neither of the other
+    two can see: a night where input_boolean.in_bed is NEVER raised at all. Built
+    2026-08-03 after the night of Aug 1->2 2026 burned ~36h (lit 06:48 EDT Saturday
+    by Morning Lights v3 on motion, never turned off). Both existing layers - automation.living_room_scheduled_off_bedtime_wind_down_v1
+    and automation.living_room_lights_off_while_in_bed_v1 - gate on in_bed being ON,
+    so a night where the bedtime ritual is simply skipped (typical on a weekend) arms
+    neither of them. The Ambient Manager''s auto-off branches need smoothed lux ABOVE
+    input_number.living_room_lux_off (57) and the room sits at ~2-3 lx overnight,
+    so there is no lux path after dark either, and the 03:30 in_bed fallback (automation.sonos_wake_alarm_in_bed_fallback)
+    is workday-gated so it does not cover Saturday nights. WHY NOT EXTEND THE 03:30
+    FALLBACK TO WEEKENDS INSTEAD: in_bed feeds packages/sleep_wake_metrics.yaml, the
+    couch-doze detection and the overnight temp trajectory. Raising it on a night
+    she did not actually go to bed then would corrupt the health data to fix a lighting
+    problem. Keep the concerns separate. WINDOW: 02:00-05:00 local. Late enough to
+    clear any real bedtime (observed range in the week of Jul 27 2026 was 22:56-00:48)
+    plus script.shut_down_bedtime''s intentional random 10-25 min gap; early enough
+    to finish before the 05:30 sleep-dim release and well before Morning Lights v3
+    relights the room around 06:00-06:50. IN_BED MUST BE OFF: this automation deliberately
+    owns ONLY the in_bed-never-set case. When in_bed is on, automation.living_room_lights_off_while_in_bed_v1
+    owns it - that one has a 30-minute dwell specifically to protect the bedtime script''s
+    random gap, and overlapping here would cut that gap off. OCCUPANCY: motion AND
+    the SNZB-06P presence sensor must both be clear, same principle as the safety
+    net. If she is up at 2am on the couch, the room stays lit. Guests gate mirrors
+    Late-Night Sleep Dim. Deliberately NOT vacation-gated - if the room is lit at
+    2am while she is away, off is still the right answer; this is an energy safety
+    net, not occupancy theater. SWEEP NOT ONE-SHOT: time_pattern is used instead of
+    a state trigger with for: because the group flaps to unavailable constantly (chronic
+    light.next_to_couch, laggy light.living_room_corner) and every flap would restart
+    a for: timer. BACKSTOP: automation.living_room_lights_backstop_re_assert_after_external_off
+    was DELETED 2026-08-03 (0 true positives, 5 false positives, ~35h burn), so there
+    is no longer anything that can re-assert this off. See /Volumes/config/lr-followups-2026-08-03.md
+    for the archived YAML and the decision record.'
+  triggers:
+  - trigger: time_pattern
+    minutes: /15
+    id: late_night_sweep
+  conditions:
+  - alias: Late-night window only — past any real bedtime, before the morning relight
+    condition: time
+    after: 02:00:00
+    before: 05:00:00
+  - alias: Something has left the living room lit
+    condition: state
+    entity_id: light.living_room_lights
+    state: 'on'
+  - alias: in_bed OFF only — when in_bed is on the In-Bed Safety Net owns this, and
+      its 30-min dwell protects the bedtime script's random gap
+    condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  - alias: No motion — never turn the lights off on top of someone
+    condition: state
+    entity_id: binary_sensor.hue_motion_sensor_4_motion
+    state: 'off'
+  - alias: No presence either (SNZB-06P) — covers sitting still on the couch
+    condition: state
+    entity_id: binary_sensor.living_room_presence
+    state: 'off'
+  - alias: Don't kill a room a guest may be using
+    condition: state
+    entity_id: input_boolean.guests
+    state: 'off'
+  actions:
+  - alias: Turn the living room off
+    action: light.turn_off
+    target:
+      entity_id: light.living_room_lights
+    data:
+      transition: 1
+  - alias: Log the catch so no-bedtime burns stay auditable
+    action: logbook.log
+    data:
+      name: LR Late-Night Fallback
+      entity_id: light.living_room_lights
+      message: Turned the living room off — no bedtime ritual tonight (in_bed off
+        for {{ ((now() - states.input_boolean.in_bed.last_changed).total_seconds()
+        / 3600) | round(1) }} h), room empty, smoothed {{ states('sensor.living_room_illuminance_smoothed')
+        }} lx.
+  mode: single
+  max_exceeded: silent
+- id: '1786035663980'
+  alias: 'Guests: Calendar-Driven Toggle'
+  description: 'Flips input_boolean.guests automatically from calendar.guests instead
+    of relying on a manual toggle (which risks getting left on after guests leave,
+    or forgotten before they arrive). Turns it on when a calendar.guests event starts,
+    off when it ends. Exact start/end, no buffer, per Lara''s preference (2026-08-06).
+    Downstream, input_boolean.guests still gates the same four automations it always
+    has: Living Room — Lights Off While In Bed, Living Room — Late-Night Off (No-Bedtime
+    Fallback), Living Room — Late-Night Sleep Dim, and Meds — Guanfacine TV Nudge
+    — none of those were touched. The manual toggle on input_boolean.guests still
+    works too, for ad hoc guests with no calendar event; this automation only adds
+    the calendar as a second way to set it, it doesn''t replace manual control. Add/remove
+    guest stays by adding events named anything to the calendar.guests calendar (event
+    summary isn''t checked, presence of any event is what matters, matching how calendar.vacation
+    works).'
+  triggers:
+  - entity_id: calendar.guests
+    event: start
+    id: guest_event_start
+    platform: calendar
+  - entity_id: calendar.guests
+    event: end
+    id: guest_event_end
+    platform: calendar
+  conditions: []
+  actions:
+  - choose:
+    - alias: Guest event started — turn guest mode on
+      conditions:
+      - condition: trigger
+        id: guest_event_start
+      sequence:
+      - action: input_boolean.turn_on
+        alias: Turn on Guests
+        target:
+          entity_id: input_boolean.guests
+      - action: logbook.log
+        alias: Log the auto-arm
+        data:
+          entity_id: input_boolean.guests
+          message: Turned on automatically — calendar.guests event started ({{ trigger.calendar_event.summary
+            if trigger.calendar_event is defined else 'untitled' }}).
+          name: Guests
+    - alias: Guest event ended — turn guest mode off
+      conditions:
+      - condition: trigger
+        id: guest_event_end
+      sequence:
+      - action: input_boolean.turn_off
+        alias: Turn off Guests
+        target:
+          entity_id: input_boolean.guests
+      - action: logbook.log
+        alias: Log the auto-release
+        data:
+          entity_id: input_boolean.guests
+          message: Turned off automatically — calendar.guests event ended ({{ trigger.calendar_event.summary
+            if trigger.calendar_event is defined else 'untitled' }}).
+          name: Guests
   mode: single

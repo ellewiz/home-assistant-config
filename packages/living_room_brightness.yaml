@@ -1,0 +1,69 @@
+# Living Room — Brightness Mirror
+#
+# Mirrors the three living room bulbs' brightness into RECORDED sensors.
+#
+# WHY: the light integration tells the recorder to drop the high-churn light
+# attributes (brightness, color_temp, hs_color, rgb_color, xy_color, effect_list,
+# supported_color_modes), so light history carries only mode / dynamics /
+# friendly_name and there is no way to ask after the fact what level a bulb was
+# actually at. This is NOT fixable from a recorder: block - recorder's include /
+# exclude options filter ENTITIES and DOMAINS, not attributes, and the exclusion is
+# declared by the integration itself. Confirmed 2026-08-03: this config has no
+# recorder: block at all (running defaults), history for light.torchiere carries only
+# mode/dynamics/friendly_name, while state_attr('light.torchiere','brightness')
+# returns 255 live. The attribute exists, it just is not recorded. A template sensor
+# is the supported workaround.
+#
+# MOTIVATING CASE: automation.living_room_ambient_manager (v2) sets brightness_pct 20
+# on its away branch and normal Adaptive Lighting brightness when home. As of the Jul
+# 2026 review that 20% had never once been verified from the record - the automation
+# trace buffer holds only 5 runs and the 12:00 UTC away run had always rolled off by
+# the time anyone looked. These sensors make the away-dim claim checkable after the
+# fact. See project memory "LR away-dim (presence-aware brightness)".
+#
+# DESIGN NOTES:
+#   - state_class: measurement so these land in long-term statistics and survive past
+#     the recorder's ~10-day raw window. Same reasoning as the Oura duration sensors.
+#   - Reports 0 when the bulb is off rather than going unknown, so the series stays
+#     continuous and an away-window average is meaningful.
+#   - availability drops the sensor while the bulb is unavailable, so the End table's
+#     chronic Zigbee dropouts (~143/week as of 2026-08-02) are not recorded as genuine
+#     0% readings. See project memory "Hue LR reachability flapping".
+#   - Values are only captured at the moments a bulb reports a change. If Adaptive
+#     Lighting is nudging levels continuously the series is dense; if not, sparse.
+#     Either is enough to answer "was it at 20% while she was out".
+#
+# LOADING: this is a package file, so it needs a FULL RESTART to load, not a reload.
+# Same constraint as packages/air_quality.yaml.
+
+template:
+  - sensor:
+      - name: "Living Room Corner Brightness"
+        unique_id: living_room_corner_brightness
+        unit_of_measurement: "%"
+        state_class: measurement
+        state: >-
+          {% set b = state_attr('light.living_room_corner', 'brightness') %}
+          {{ 0 if b is none else (b | float / 255 * 100) | round(0) }}
+        availability: >-
+          {{ states('light.living_room_corner') not in ['unknown', 'unavailable'] }}
+
+      - name: "Torchiere Brightness"
+        unique_id: torchiere_brightness
+        unit_of_measurement: "%"
+        state_class: measurement
+        state: >-
+          {% set b = state_attr('light.torchiere', 'brightness') %}
+          {{ 0 if b is none else (b | float / 255 * 100) | round(0) }}
+        availability: >-
+          {{ states('light.torchiere') not in ['unknown', 'unavailable'] }}
+
+      - name: "End Table Brightness"
+        unique_id: next_to_couch_brightness
+        unit_of_measurement: "%"
+        state_class: measurement
+        state: >-
+          {% set b = state_attr('light.next_to_couch', 'brightness') %}
+          {{ 0 if b is none else (b | float / 255 * 100) | round(0) }}
+        availability: >-
+          {{ states('light.next_to_couch') not in ['unknown', 'unavailable'] }}
