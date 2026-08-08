@@ -3,11 +3,17 @@ graceful_tv_exit:
   description: >
     Cleanly leaves whatever is on the living-room TV: if a program is playing it
     is paused first, the device is returned to its home screen, then after a
-    short settle delay the TV is powered off. Two branches cover the source in
-    use — the Apple TV 4K (device-based, select_source "Home") and the TCL Roku
-    (remote "home" command). The settle delay between returning home and
-    power-off keeps the exit from cutting off before the home screen lands;
-    without it the turn_off raced the home command.
+    short settle delay the TV is powered off.
+
+
+    ARCHIVED 2026-08-08: the TCL Roku TV was physically removed from the
+    living room. Its branch below (pause + remote "home" command, and its
+    entry in the final turn_off target) is commented out rather than deleted
+    — not dropped, just parked. When the new TV is set up: figure out what
+    entity/domain it uses (media_player + remote, if it's another smart TV;
+    just media_player if not), uncomment and adapt the branch below, and add
+    its media_player entity_id back to the "Power off the TV" target list.
+    Label on this script in the entity registry: TV Replacement Pending.
   mode: single
   sequence:
     - alias: Pause and return the active source to its home screen
@@ -30,24 +36,27 @@ graceful_tv_exit:
                 device_id: 0a28965692f7fead801299fd184f7f4e
               data:
                 source: Home
-        - alias: TCL Roku — pause then go Home
-          conditions:
-            - condition: state
-              entity_id: media_player.55_tcl_roku_tv
-              state: playing
-          sequence:
-            - action: media_player.media_pause
-              target:
-                entity_id: media_player.55_tcl_roku_tv
-            - delay:
-                seconds: 2
-            - action: remote.send_command
-              target:
-                entity_id: remote.55_tcl_roku_tv
-              data:
-                num_repeats: 1
-                delay_secs: 0.4
-                command: home
+        # ARCHIVED 2026-08-08 — TCL Roku TV removed from the living room.
+        # Kept for reference; swap entity_ids for the new TV once it's set
+        # up, or delete this branch outright if the new TV doesn't need it.
+        # - alias: TCL Roku — pause then go Home
+        #   conditions:
+        #     - condition: state
+        #       entity_id: media_player.55_tcl_roku_tv
+        #       state: playing
+        #   sequence:
+        #     - action: media_player.media_pause
+        #       target:
+        #         entity_id: media_player.55_tcl_roku_tv
+        #     - delay:
+        #         seconds: 2
+        #     - action: remote.send_command
+        #       target:
+        #         entity_id: remote.55_tcl_roku_tv
+        #       data:
+        #         num_repeats: 1
+        #         delay_secs: 0.4
+        #         command: home
     - alias: Let the home screen settle before powering off
       delay:
         seconds: 2
@@ -56,4 +65,6 @@ graceful_tv_exit:
       target:
         entity_id:
           - media_player.living_room_4k_2
-          - media_player.55_tcl_roku_tv
+          # ARCHIVED 2026-08-08 — media_player.55_tcl_roku_tv removed along
+          # with the TV. Add the new TV's media_player entity_id here once
+          # it's set up.

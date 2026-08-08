@@ -1225,18 +1225,27 @@
   mode: single
 - id: '1765403683258'
   alias: Living Room — Movie Lamp Dimmer (v2)
-  description: 'Dim the end-table lamp when the Apple TV is in use after sunset. v2
-    (2026-06-07): added Frndly support. Frndly publishes no now-playing metadata to
-    tvOS, so while it plays the ATV entity sits at state ''idle'' with app_id ''''
-    (verified live; all other apps — Tubi, Infuse, HBO Max, Shudder, WNBA, VidHub
-    — report normally). Fingerprint for ''ATV in use by an HA-blind app'': TCL TV
-    on + TV source ''Apple TV'' + ATV idle with empty app_id. The ATV home screen
-    matches the same fingerprint and is indistinguishable, so browsing the home screen
-    after sunset also dims — accepted tradeoff (hybrid design, chosen over session-based).
-    The app_id attribute trigger covers entering Frndly/home screen without a state-value
-    change (e.g. exit Tubi menu → home → Frndly). Companion automation ''Living Room
-    — Movie Lamp Restore (v2)'' skips restoring while the fingerprint holds, so the
-    lamp won''t pop bright mid-Frndly.'
+  description: '⚠️ ARCHIVED 2026-08-08 — the Roku TV was physically removed. media_player.55_tcl_roku_tv
+    now resolves to nothing, so the ''Blind-app fingerprint'' branch (which checked
+    the Roku''s reported HDMI source to catch Frndly/home-screen on the ATV) is inert.
+    The ''ATV actively playing'' and general sunset branches still work fine on Apple
+    TV alone. When a new TV is set up: swap media_player.55_tcl_roku_tv for its entity_id
+    (or drop the branch if the new TV can''t report HDMI source). Label: TV Replacement
+    Pending.
+
+
+    Dim the end-table lamp when the Apple TV is in use after sunset. v2 (2026-06-07):
+    added Frndly support. Frndly publishes no now-playing metadata to tvOS, so while
+    it plays the ATV entity sits at state ''idle'' with app_id '''' (verified live;
+    all other apps — Tubi, Infuse, HBO Max, Shudder, WNBA, VidHub — report normally).
+    Fingerprint for ''ATV in use by an HA-blind app'': TCL TV on + TV source ''Apple
+    TV'' + ATV idle with empty app_id. The ATV home screen matches the same fingerprint
+    and is indistinguishable, so browsing the home screen after sunset also dims —
+    accepted tradeoff (hybrid design, chosen over session-based). The app_id attribute
+    trigger covers entering Frndly/home screen without a state-value change (e.g.
+    exit Tubi menu → home → Frndly). Companion automation ''Living Room — Movie Lamp
+    Restore (v2)'' skips restoring while the fingerprint holds, so the lamp won''t
+    pop bright mid-Frndly.'
   triggers:
   - entity_id:
     - media_player.living_room_4k_2
@@ -1345,15 +1354,25 @@
     stored_traces: 25
 - id: '1765403998807'
   alias: Living Room — Movie Lamp Restore (v2)
-  description: 'When the Apple TV stops after sunset, hand the end-table lamp back
-    to Adaptive Lighting. v1 history: used adaptive_lighting.apply, which pushed adapted
-    values once but left manual_control set (autoreset is 0), so the lamp froze for
-    the rest of the night. set_manual_control: false clears the flag and AL re-adapts
-    immediately and keeps adapting. v2 (2026-06-07): ''idle'' no longer always restores,
-    because Frndly is invisible to the ATV integration (entity sits idle with app_id
-    '''' while Frndly plays — verified live). On idle we restore only when the new
-    state still carries an app_id (sitting in a visible app''s menu, movie over) or
-    the TCL TV is off / not on the Apple TV input. ATV ''off'' always restores. Counterpart
+  description: '⚠️ ARCHIVED 2026-08-08 — the Roku TV was physically removed. media_player.55_tcl_roku_tv
+    now resolves to nothing, so the safety check in the ''Idle outside the Frndly/home-screen
+    blind spot'' branch (states(''media_player.55_tcl_roku_tv'') != ''on'') is now
+    ALWAYS true — meaning every ATV idle restores the lamp, including true Frndly
+    blind-spot cases (the protection this branch existed for is currently not applied).
+    Not a new bug from this edit: it''s been behaving this way since the Roku went
+    unavailable. When a new TV is set up: swap media_player.55_tcl_roku_tv for its
+    entity_id to restore the blind-spot protection. Label: TV Replacement Pending.
+
+
+    When the Apple TV stops after sunset, hand the end-table lamp back to Adaptive
+    Lighting. v1 history: used adaptive_lighting.apply, which pushed adapted values
+    once but left manual_control set (autoreset is 0), so the lamp froze for the rest
+    of the night. set_manual_control: false clears the flag and AL re-adapts immediately
+    and keeps adapting. v2 (2026-06-07): ''idle'' no longer always restores, because
+    Frndly is invisible to the ATV integration (entity sits idle with app_id ''''
+    while Frndly plays — verified live). On idle we restore only when the new state
+    still carries an app_id (sitting in a visible app''s menu, movie over) or the
+    TCL TV is off / not on the Apple TV input. ATV ''off'' always restores. Counterpart
     of ''Living Room — Movie Lamp Dimmer (v2)'', which dims on the same blind-app
     fingerprint.'
   triggers:
@@ -2335,18 +2354,24 @@
   mode: single
 - id: movie_lamp_observer_snapshot_log
   alias: Living Room — Movie Lamp Observer
-  description: 'Diagnostic logging for the Movie Lamp Dimmer/Restore v2 automations
-    (Frndly blind-spot validation, added 2026-06-07). Whenever either automation fires,
-    write a logbook entry snapshotting the decision inputs at trigger time: ATV state
-    + app_id, TCL TV plug watts, Roku source, Arc state, and lamp state/brightness.
-    Lamp brightness reflects the state BEFORE the fired automation''s action completes
-    — that''s intentional (we want the inputs, not the outcome). Added 2026-06-08:
-    a /5-minute periodic_sample trigger that logs lamp brightness only while the lamp
-    is on, after sunset, and under AL manual_control (proxy for movie-dim active)
-    — this fills the gap where brightness isn''t recorded and the snapshot only samples
-    on automation fires, so we can confirm the 20% dim holds steady across a Frndly
-    evening. Same durable-logging pattern as the Good Night Johnny button. Remove
-    once the v2 logic is proven out.'
+  description: '⚠️ ARCHIVED 2026-08-08 — the Roku TV was physically removed. The ''Roku:
+    {{ states(...) }}'' field in both logbook snapshot messages will just read ''unavailable''
+    going forward — harmless, purely diagnostic. When a new TV is set up, swap media_player.55_tcl_roku_tv
+    for its entity_id in both templates if you want that field meaningful again. Label:
+    TV Replacement Pending.
+
+
+    Diagnostic logging for the Movie Lamp Dimmer/Restore v2 automations (Frndly blind-spot
+    validation, added 2026-06-07). Whenever either automation fires, write a logbook
+    entry snapshotting the decision inputs at trigger time: ATV state + app_id, TCL
+    TV plug watts, Roku source, Arc state, and lamp state/brightness. Lamp brightness
+    reflects the state BEFORE the fired automation''s action completes — that''s intentional
+    (we want the inputs, not the outcome). Added 2026-06-08: a /5-minute periodic_sample
+    trigger that logs lamp brightness only while the lamp is on, after sunset, and
+    under AL manual_control (proxy for movie-dim active) — this fills the gap where
+    brightness isn''t recorded and the snapshot only samples on automation fires,
+    so we can confirm the 20% dim holds steady across a Frndly evening. Same durable-logging
+    pattern as the Good Night Johnny button. Remove once the v2 logic is proven out.'
   triggers:
   - event_type: automation_triggered
     event_data:
@@ -2800,22 +2825,30 @@
   mode: single
 - id: meds_guanfacine_tv_nudge
   alias: 'Meds — Guanfacine: TV nudge until logged'
-  description: 'Evening nudge to take Guanfacine (resets off daily at 4am; normally
-    logged ~9-10pm, so at 8:10pm it''s usually still un-logged). At 8:10pm, if Guests
-    is off and the dose isn''t logged and we''re not on vacation: HOME -> immediately
-    snapshot the living-room lights, pause whatever is actively playing on the TV,
-    and raise the lights to 70%. AWAY at 8:10 -> wait until Lara is home AND living-room
-    presence is detected, then 10 min later run the same nudge (re-checking it isn''t
-    logged yet). Then HOLD (no timeout, per Lara) until input_boolean.guanfacine_taken
-    turns on, at which point: restore the lights to their exact prior state, hand
-    them back to Adaptive Lighting, and resume the paused player. ''Whatever is playing''
-    = Apple TV (media_player.living_room_4k_2) if playing/buffering, else TCL Roku
-    (media_player.55_tcl_roku_tv) if playing, else nothing (lights-only nudge). KNOWN
-    LIMITATION: Frndly is invisible to the ATV integration (sits idle, app_id '''')
-    so it can''t be paused via HA — lights still brighten. mode: restart so a new
-    evening''s 8:10 trigger supersedes any instance left waiting from an away night.
-    Guests = input_boolean.guests (created Jun 2026). NOTE no in_bed safety-release:
-    Lara explicitly chose hold-until-logged with no timeout.'
+  description: '⚠️ ARCHIVED 2026-08-08 — the Roku TV was physically removed. The tv_player
+    variable''s Roku fallback (''elif media_player.55_tcl_roku_tv playing'') is inert,
+    so this nudge can only detect/pause/resume Apple TV playback now — anything playing
+    natively on the TV''s own apps won''t get paused or auto-resumed. Lights-only
+    nudge still fires regardless. When a new TV is set up: swap media_player.55_tcl_roku_tv
+    for its entity_id in the tv_player template. Label: TV Replacement Pending.
+
+
+    Evening nudge to take Guanfacine (resets off daily at 4am; normally logged ~9-10pm,
+    so at 8:10pm it''s usually still un-logged). At 8:10pm, if Guests is off and the
+    dose isn''t logged and we''re not on vacation: HOME -> immediately snapshot the
+    living-room lights, pause whatever is actively playing on the TV, and raise the
+    lights to 70%. AWAY at 8:10 -> wait until Lara is home AND living-room presence
+    is detected, then 10 min later run the same nudge (re-checking it isn''t logged
+    yet). Then HOLD (no timeout, per Lara) until input_boolean.guanfacine_taken turns
+    on, at which point: restore the lights to their exact prior state, hand them back
+    to Adaptive Lighting, and resume the paused player. ''Whatever is playing'' =
+    Apple TV (media_player.living_room_4k_2) if playing/buffering, else TCL Roku (media_player.55_tcl_roku_tv)
+    if playing, else nothing (lights-only nudge). KNOWN LIMITATION: Frndly is invisible
+    to the ATV integration (sits idle, app_id '''') so it can''t be paused via HA
+    — lights still brighten. mode: restart so a new evening''s 8:10 trigger supersedes
+    any instance left waiting from an away night. Guests = input_boolean.guests (created
+    Jun 2026). NOTE no in_bed safety-release: Lara explicitly chose hold-until-logged
+    with no timeout.'
   triggers:
   - at: '20:10:00'
     id: evening_check
