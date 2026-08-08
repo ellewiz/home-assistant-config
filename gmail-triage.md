@@ -35,9 +35,17 @@ and the real estate alias routes to "Claude searches" instead, so the
 
 "Claude searches" currently has 0 messages but is left alone — the real
 estate alias filter still points at it, so an empty count doesn't mean it's
-unused. "DOJ Case 2022R00513" also shows 0 messages now (it had 10 at the
-start of this project) — left alone pending confirmation, since deleting a
-legal-case label without checking felt like the wrong default.
+unused. "DOJ Case 2022R00513" turned out to be active (see Part 3/routine
+log) — a real VNS notification landed 2026-08-05, confirming the case is
+live; leave this label alone going forward.
+
+**"House purchase Ewing 2021"** — added by hand 2026-08-08, filter added by
+the user to group the 2021 house-closing correspondence (the >10MB
+attachment threads found during the storage-usage check: inspection report,
+offer/escalation clause, insurance setup, roof flashing). Not expected to
+receive new mail (house purchase was 5+ years ago) — this is a static
+archive label, not part of the ongoing triage taxonomy. The daily Routine
+doesn't need to do anything with it.
 
 ## Part 1 — Native Gmail filters (set these up manually)
 
