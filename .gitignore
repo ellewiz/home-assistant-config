@@ -43,3 +43,6 @@ _newtest.txt
 .HA_VERSION
 lr-phantom-off-hunt-log.md
 code-review-*.md
+*.bak
+*.bak-*
+lr-*.md
