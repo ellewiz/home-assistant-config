@@ -1,0 +1,136 @@
+# Oura daily snapshots
+#
+# WHY THIS EXISTS
+# Recorder keeps ~10 days of raw states (HA default purge_keep_days: 10) but keeps
+# long-term statistics forever. For a sensor with state_class: total, statistics
+# retain the exact end-of-period `state`, so every Oura DURATION sensor already has
+# an exact nightly value going back to day one. Nothing to fix there.
+#
+# For state_class: measurement, statistics only keep mean / min / max. The Oura score
+# and contributor sensors step once a day when the ring syncs (09:50-11:02 local), so
+# a daily mean BLENDS two nights. That is what made the Aug 8 2026 analysis wrong:
+# the live latency sensor read 127.5 min while the daily statistic read 37.4.
+#
+# These snapshot sensors capture each measurement-class value once a day and then hold
+# it steady for the full local day, so mean == min == max == the true value and the
+# daily statistic becomes exact and permanent.
+#
+# WHY 23:55 AND NOT MIDNIGHT
+# At 00:05 the Oura sensors still hold the PREVIOUS day's data, because sync happens
+# mid-morning. Capturing then would label every night with the wrong date. Firing at
+# 23:55 puts today's synced data in today's bucket. Each sensor also carries the
+# source's `data_date` as an attribute so any later analysis can join on the real date
+# rather than trusting the bucket boundary.
+#
+# NOTE: forward-looking only. History before deployment stays in Oura CSV exports.
+
+template:
+  - trigger:
+      - trigger: time
+        at: "23:55:00"
+    condition:
+      - condition: template
+        value_template: >-
+          {{ has_value('sensor.oura_ring_hrv_balance_score')
+             and state_attr('sensor.oura_ring_hrv_balance_score', 'data_date')
+                 == now().date() | string }}
+    sensor:
+      - name: "Oura Daily HRV Balance"
+        unique_id: oura_daily_hrv_balance
+        state: "{{ states('sensor.oura_ring_hrv_balance_score') | int(0) }}"
+        state_class: measurement
+        icon: mdi:scale-balance
+        attributes:
+          data_date: "{{ state_attr('sensor.oura_ring_hrv_balance_score', 'data_date') }}"
+
+      - name: "Oura Daily Sleep Score"
+        unique_id: oura_daily_sleep_score
+        state: "{{ states('sensor.oura_ring_sleep_score') | int(0) }}"
+        state_class: measurement
+        icon: mdi:sleep
+        attributes:
+          data_date: "{{ state_attr('sensor.oura_ring_sleep_score', 'data_date') }}"
+
+      - name: "Oura Daily Readiness Score"
+        unique_id: oura_daily_readiness_score
+        state: "{{ states('sensor.oura_ring_readiness_score') | int(0) }}"
+        state_class: measurement
+        icon: mdi:heart-pulse
+        attributes:
+          data_date: "{{ state_attr('sensor.oura_ring_readiness_score', 'data_date') }}"
+
+      - name: "Oura Daily Sleep Efficiency"
+        unique_id: oura_daily_sleep_efficiency
+        state: "{{ states('sensor.oura_ring_sleep_efficiency') | int(0) }}"
+        state_class: measurement
+        unit_of_measurement: "%"
+        icon: mdi:chart-donut
+        attributes:
+          data_date: "{{ state_attr('sensor.oura_ring_sleep_efficiency', 'data_date') }}"
+
+      - name: "Oura Daily Sleep Latency"
+        unique_id: oura_daily_sleep_latency
+        state: "{{ states('sensor.oura_ring_sleep_latency') | float(0) | round(1) }}"
+        state_class: measurement
+        unit_of_measurement: "min"
+        icon: mdi:timer-sand
+        attributes:
+          data_date: "{{ state_attr('sensor.oura_ring_sleep_latency', 'data_date') }}"
+
+      - name: "Oura Daily Restfulness"
+        unique_id: oura_daily_restfulness
+        state: "{{ states('sensor.oura_ring_restfulness') | int(0) }}"
+        state_class: measurement
+        icon: mdi:emoticon-neutral-outline
+        attributes:
+          data_date: "{{ state_attr('sensor.oura_ring_restfulness', 'data_date') }}"
+
+      - name: "Oura Daily Sleep Recovery Score"
+        unique_id: oura_daily_sleep_recovery_score
+        state: "{{ states('sensor.oura_ring_sleep_recovery_score') | float(0) | round(1) }}"
+        state_class: measurement
+        icon: mdi:bed-clock
+        attributes:
+          data_date: "{{ state_attr('sensor.oura_ring_sleep_recovery_score', 'data_date') }}"
+
+      - name: "Oura Daily Sleep Regularity"
+        unique_id: oura_daily_sleep_regularity
+        state: "{{ states('sensor.oura_ring_sleep_regularity_score') | int(0) }}"
+        state_class: measurement
+        icon: mdi:calendar-clock
+        attributes:
+          data_date: "{{ state_attr('sensor.oura_ring_sleep_regularity_score', 'data_date') }}"
+
+      - name: "Oura Daily Average Sleep HRV"
+        unique_id: oura_daily_average_sleep_hrv
+        state: "{{ states('sensor.oura_ring_average_sleep_hrv') | float(0) | round(1) }}"
+        state_class: measurement
+        unit_of_measurement: "ms"
+        icon: mdi:sine-wave
+        attributes:
+          data_date: "{{ state_attr('sensor.oura_ring_average_sleep_hrv', 'data_date') }}"
+
+      - name: "Oura Daily Lowest Sleep Heart Rate"
+        unique_id: oura_daily_lowest_sleep_hr
+        state: "{{ states('sensor.oura_ring_lowest_sleep_heart_rate') | int(0) }}"
+        state_class: measurement
+        unit_of_measurement: "bpm"
+        icon: mdi:heart-minus
+        attributes:
+          data_date: "{{ state_attr('sensor.oura_ring_lowest_sleep_heart_rate', 'data_date') }}"
+
+      - name: "Oura Daily Temperature Deviation"
+        unique_id: oura_daily_temperature_deviation
+        state: "{{ states('sensor.oura_ring_temperature_deviation') | float(0) | round(2) }}"
+        state_class: measurement
+        unit_of_measurement: "°C"
+        icon: mdi:thermometer
+        attributes:
+          data_date: "{{ state_attr('sensor.oura_ring_temperature_deviation', 'data_date') }}"
+
+      - name: "Oura Daily Resilience Level"
+        unique_id: oura_daily_resilience_level
+        state: "{{ states('sensor.oura_ring_resilience_level') }}"
+        icon: mdi:shield-heart
+        attributes:
+          data_date: "{{ state_attr('sensor.oura_ring_hrv_balance_score', 'data_date') }}"
