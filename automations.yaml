@@ -4012,4 +4012,185 @@
     target:
       entity_id: input_boolean.manual_alarm
   mode: single
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+- id: '1786331338110'
+  alias: Living Room — Air Quality Spike Alert (v1)
+  description: 'Sends an iPhone notification when the AirGuard Coffee Table sensor''s
+    PM2.5 (µg/m³) crosses into worse EPA air-quality bands, same tiered/anti-spam
+    pattern as ''Air Quality: Unhealthy Alert (v1)'' (outdoor, Open-Meteo) and ''Pollen
+    Spike Alert''. Tracks the highest tier reached today via input_number.living_room_air_quality_alert_level_reached
+    (0-4) so each band only alerts once per day, even if the reading bounces around
+    within it. Bands: 1=Elevated/USG (35 µg/m3), 2=Unhealthy (55), 3=Very Unhealthy
+    (150), 4=Hazardous (250) — matches the EPA PM2.5 breakpoints already used for
+    the outdoor AQI alert, applied to the indoor reading. Good/Moderate (below 35)
+    intentionally silent to avoid noise. Vacation-gated like other personal comfort
+    alerts. Startup recheck (homeassistant-start trigger + wait_template) catches
+    a spike already present across a restart, since numeric_state ''above'' only fires
+    on the crossing — same fix applied to the pollen and outdoor-AQI alerts after
+    a wildfire smoke event was missed.'
+  triggers:
+  - above: 35
+    entity_id: sensor.living_room_airguard_coffee_table_pm2_5
+    id: usg
+    trigger: numeric_state
+  - above: 55
+    entity_id: sensor.living_room_airguard_coffee_table_pm2_5
+    id: unhealthy
+    trigger: numeric_state
+  - above: 150
+    entity_id: sensor.living_room_airguard_coffee_table_pm2_5
+    id: very_unhealthy
+    trigger: numeric_state
+  - above: 250
+    entity_id: sensor.living_room_airguard_coffee_table_pm2_5
+    id: hazardous
+    trigger: numeric_state
+  - event: start
+    id: startup_recheck
+    trigger: homeassistant
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - alias: Wait for PM2.5 to have a real value (repopulates after a restart)
+    continue_on_timeout: true
+    timeout: 00:03:00
+    wait_template: '{{ states(''sensor.living_room_airguard_coffee_table_pm2_5'')
+      | is_number }}'
+  - choose:
+    - conditions:
+      - above: 250
+        condition: numeric_state
+        entity_id: sensor.living_room_airguard_coffee_table_pm2_5
+      - below: 4
+        condition: numeric_state
+        entity_id: input_number.living_room_air_quality_alert_level_reached
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          message: PM2.5 just crossed 250 µg/m³ (currently {{ states('sensor.living_room_airguard_coffee_table_pm2_5')
+            }}). Close windows / consider an air purifier now.
+          title: "\U0001F6A8 Living Room Air Quality: Hazardous"
+      - action: input_number.set_value
+        data:
+          value: 4
+        target:
+          entity_id: input_number.living_room_air_quality_alert_level_reached
+    - conditions:
+      - above: 150
+        condition: numeric_state
+        entity_id: sensor.living_room_airguard_coffee_table_pm2_5
+      - below: 3
+        condition: numeric_state
+        entity_id: input_number.living_room_air_quality_alert_level_reached
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          message: PM2.5 just crossed 150 µg/m³ (currently {{ states('sensor.living_room_airguard_coffee_table_pm2_5')
+            }}).
+          title: "\U0001F6A8 Living Room Air Quality: Very Unhealthy"
+      - action: input_number.set_value
+        data:
+          value: 3
+        target:
+          entity_id: input_number.living_room_air_quality_alert_level_reached
+    - conditions:
+      - above: 55
+        condition: numeric_state
+        entity_id: sensor.living_room_airguard_coffee_table_pm2_5
+      - below: 2
+        condition: numeric_state
+        entity_id: input_number.living_room_air_quality_alert_level_reached
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          message: PM2.5 just crossed 55 µg/m³ (currently {{ states('sensor.living_room_airguard_coffee_table_pm2_5')
+            }}).
+          title: '⚠️ Living Room Air Quality: Unhealthy'
+      - action: input_number.set_value
+        data:
+          value: 2
+        target:
+          entity_id: input_number.living_room_air_quality_alert_level_reached
+    - conditions:
+      - above: 35
+        condition: numeric_state
+        entity_id: sensor.living_room_airguard_coffee_table_pm2_5
+      - below: 1
+        condition: numeric_state
+        entity_id: input_number.living_room_air_quality_alert_level_reached
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          message: PM2.5 just crossed 35 µg/m³ (currently {{ states('sensor.living_room_airguard_coffee_table_pm2_5')
+            }}). Sensitive individuals may notice.
+          title: "\U0001F33F Living Room Air Quality: Elevated"
+      - action: input_number.set_value
+        data:
+          value: 1
+        target:
+          entity_id: input_number.living_room_air_quality_alert_level_reached
+  max_exceeded: silent
+  mode: single
+- id: '1786331395226'
+  alias: Living Room — Air Quality Alert Level Daily Reset
+  description: Resets input_number.living_room_air_quality_alert_level_reached to
+    0 at midnight so the Living Room air quality spike alert starts fresh each day.
+  triggers:
+  - at: 00:00:00
+    trigger: time
+  actions:
+  - action: input_number.set_value
+    data:
+      value: 0
+    target:
+      entity_id: input_number.living_room_air_quality_alert_level_reached
+  mode: single
+- id: '1786334541854'
+  alias: Office — Heat Alert for Johnny (v1)
+  description: 'Warns when the office runs hot enough to matter for Johnny. He naps
+    in there during the day with the door OPEN (crate or pillow nearby, free to leave)
+    and is shut in the crate overnight with the door CLOSED.
+
+
+    THRESHOLD RATIONALE: the office''s measured profile (Aug 7-9 2026, recorder window)
+    is a 73.2-77.7F band, peaking roughly 4:30-8:30pm and then COOLING overnight to
+    ~73.4F by early morning. So the heat risk lives in the late-afternoon door-OPEN
+    window, not the overnight crate window. 80F sustained for 30 min is therefore
+    genuinely abnormal for this room rather than a normal summer afternoon. Caveat:
+    that band is a MILD August only, so retune after a real heat wave.
+
+
+    SOURCE CAVEAT: sensor.hue_office_motion_sensor_temperature is WALL-mounted and
+    cannot see inside the crate at floor level. In the bedroom, a bedside sensor ran
+    ~+3.6F warmer than the Hue wall sensor, so crate level may be warmer than this
+    trigger implies.
+
+
+    NOT vacation-gated, deliberately — same reasoning as the Johnny geofence alert.
+    This is a dog-safety alert, and a false ping while a sitter has him is cheaper
+    than a missed one.
+
+
+    V2 PLANS: (a) retune threshold against real heat-wave data; (b) add a tiered alert-level
+    tracker per the Pollen Spike Alert / input_number.*_alert_level_reached pattern;
+    (c) once a floor-level sensor exists in the office, repoint this trigger at it
+    and add a separate CO2 branch scoped to the overnight crate window.'
+  triggers:
+  - above: 80
+    entity_id: sensor.hue_office_motion_sensor_temperature
+    for: 00:30:00
+    id: office_hot
+    trigger: numeric_state
+  conditions:
+  - condition: template
+    value_template: '{{ states(''sensor.hue_office_motion_sensor_temperature'') not
+      in [''unknown'', ''unavailable'', ''none'', ''''] }}'
+  actions:
+  - action: notify.mobile_app_iphone
+    alias: Push heat warning to iPhone
+    data:
+      message: Office has been above 80°F for 30 minutes (now {{ states('sensor.hue_office_motion_sensor_temperature')
+        }}°F). Wall sensor reading, so crate level may be warmer.
+      title: ⚠️ Office is hot — Johnny
+  mode: single
