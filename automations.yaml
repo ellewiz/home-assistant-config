@@ -2363,15 +2363,17 @@
 
     Diagnostic logging for the Movie Lamp Dimmer/Restore v2 automations (Frndly blind-spot
     validation, added 2026-06-07). Whenever either automation fires, write a logbook
-    entry snapshotting the decision inputs at trigger time: ATV state + app_id, TCL
-    TV plug watts, Roku source, Arc state, and lamp state/brightness. Lamp brightness
+    entry snapshotting the decision inputs at trigger time: ATV state + app_id, Living
+    room TV plug watts, Roku source, Arc state, and lamp state/brightness. Lamp brightness
     reflects the state BEFORE the fired automation''s action completes — that''s intentional
     (we want the inputs, not the outcome). Added 2026-06-08: a /5-minute periodic_sample
     trigger that logs lamp brightness only while the lamp is on, after sunset, and
     under AL manual_control (proxy for movie-dim active) — this fills the gap where
     brightness isn''t recorded and the snapshot only samples on automation fires,
     so we can confirm the 20% dim holds steady across a Frndly evening. Same durable-logging
-    pattern as the Good Night Johnny button. Remove once the v2 logic is proven out.'
+    pattern as the Good Night Johnny button. Remove once the v2 logic is proven out.
+    | 2026-08-10: TCL TV plug renamed to Living room TV; both snapshot templates now
+    read sensor.living_room_tv_current_consumption.'
   triggers:
   - event_type: automation_triggered
     event_data:
@@ -2401,7 +2403,7 @@
           entity_id: light.next_to_couch
           message: '{{ trigger.event.data.name }} fired | ATV: {{ states(''media_player.living_room_4k_2'')
             }} (app: {{ state_attr(''media_player.living_room_4k_2'', ''app_id'')
-            or ''none'' }}) | TV plug: {{ states(''sensor.tcl_tv_current_consumption'')
+            or ''none'' }}) | TV plug: {{ states(''sensor.living_room_tv_current_consumption'')
             }} W | Roku: {{ states(''media_player.55_tcl_roku_tv'') }}/{{ state_attr(''media_player.55_tcl_roku_tv'',
             ''source'') or ''n/a'' }} | Arc: {{ states(''media_player.living_room_arc'')
             }} | Lamp before: {{ states(''light.next_to_couch'') }}{% if is_state(''light.next_to_couch'',
@@ -2430,7 +2432,7 @@
             }}{% if is_state(''light.next_to_couch'', ''on'') %} @ {{ ((state_attr(''light.next_to_couch'',
             ''brightness'') or 0) / 2.55) | round }}%{% endif %} | ATV: {{ states(''media_player.living_room_4k_2'')
             }} (app: {{ state_attr(''media_player.living_room_4k_2'', ''app_id'')
-            or ''none'' }}) | TV plug: {{ states(''sensor.tcl_tv_current_consumption'')
+            or ''none'' }}) | TV plug: {{ states(''sensor.living_room_tv_current_consumption'')
             }} W | Roku: {{ states(''media_player.55_tcl_roku_tv'') }}/{{ state_attr(''media_player.55_tcl_roku_tv'',
             ''source'') or ''n/a'' }} | Arc: {{ states(''media_player.living_room_arc'')
             }}'
@@ -3113,7 +3115,7 @@
           entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
   mode: single
 - id: bedroom_heat_alert_v2
-  alias: Bedroom — Heat Alert (v2, Vacation-Gated + Anti-Spam)
+  alias: Bedroom — Heat Alert (v3, Now Actually Cools)
   description: 'v2 consolidating "Bedroom temp too hot" (id 1654570339244) and "Bedroom
     too hot when Lara comes home" (id 1691671531217), both deleted 2026-07-13 (superseded).
     Two branches: sustained warm (>75F for 15 min while home and awake, not at work)
@@ -3124,7 +3126,16 @@
     ordinary arrival re-armed the 3h suppression and could swallow a real sustained-warm
     alert.) Arrival trigger filters unknown/unavailable so tracker blips don''t count
     as arrivals. Alert-only: no controllable bedroom AC exists yet (Kasa plug pending)
-    - upgrade to actually cool when installed. Installed at Lara''s request.'
+    - upgrade to actually cool when installed. Installed at Lara''s request.
+
+
+    2026-08-11 (v3): climate.bedroom_ac now exists (Midea integration added). Added
+    an actual cooling action to both branches alongside the existing push notification
+    - forces hvac_mode cool + preset boost on climate.bedroom_ac, fulfilling the v1/v2
+    TODO ("Alert-only... upgrade to actually cool when installed"). Safe against the
+    AC Sweet-Spot bedtime automation: both branches here already require input_boolean.in_bed
+    == off, and the sweet-spot automation only touches the AC when in_bed turns on,
+    so the two can never fire at the same time.'
   triggers:
   - entity_id: sensor.temp_in_bedroom
     above: 75
@@ -3172,6 +3183,18 @@
           entity_id: input_datetime.bedroom_heat_last_alerted
         data:
           timestamp: '{{ now().timestamp() }}'
+      - alias: Actually cool it now (v3)
+        action: climate.set_hvac_mode
+        target:
+          entity_id: climate.bedroom_ac
+        data:
+          hvac_mode: cool
+      - alias: Boost preset for faster recovery (v3)
+        action: climate.set_preset_mode
+        target:
+          entity_id: climate.bedroom_ac
+        data:
+          preset_mode: boost
     - conditions:
       - condition: trigger
         id: arrived_home
@@ -3189,6 +3212,18 @@
           entity_id: input_datetime.bedroom_heat_last_alerted
         data:
           timestamp: '{{ now().timestamp() }}'
+      - alias: Actually cool it now (v3)
+        action: climate.set_hvac_mode
+        target:
+          entity_id: climate.bedroom_ac
+        data:
+          hvac_mode: cool
+      - alias: Boost preset for faster recovery (v3)
+        action: climate.set_preset_mode
+        target:
+          entity_id: climate.bedroom_ac
+        data:
+          preset_mode: boost
   mode: single
 - id: '1783335318996'
   alias: 'Sonos Wake Alarm: Speaker Failsafe (v1)'
@@ -4193,4 +4228,878 @@
       message: Office has been above 80°F for 30 minutes (now {{ states('sensor.hue_office_motion_sensor_temperature')
         }}°F). Wall sensor reading, so crate level may be warmer.
       title: ⚠️ Office is hot — Johnny
+  mode: single
+- id: '1786400794867'
+  alias: Laundry — Dryer Cycle Finished (v2)
+  description: 'v2 (2026-08-10): added in_bed deferral. Lara sometimes starts a load
+    overnight and does not want a push waking her, but does want to know the load
+    is sitting there when she gets up.
+
+
+    Fires when binary_sensor.laundry_dryer_running (Threshold helper on sensor.dryer_current_consumption,
+    upper 20 / hysteresis 5) drops to idle for 3 minutes. The Dryer KP115 idles at
+    0.0-0.3 W and a running gas dryer pulls hundreds of watts, so the threshold needs
+    no tuning.
+
+
+    Anti-spam guard: the run must have lasted at least 10 minutes. End-of-cycle wrinkle-guard
+    tumbles re-spin the drum for well under a minute and would otherwise fire a second
+    and third ''finished'' push for the same load. The 10-minute floor discards them
+    without needing a tier tracker.
+
+
+    Deferral: if input_boolean.in_bed is on, the push is held. The finish time is
+    stamped into input_datetime.laundry_dryer_finished_at and input_boolean.laundry_done_pending_dryer
+    is raised. ''Laundry — Deferred Done Notice (v1)'' delivers it when in_bed clears.
+    Helper-based rather than an overnight wait_for_trigger on purpose: a wait would
+    not survive an HA restart, and this one has to hold for hours.
+
+
+    Replaces the LUMI vibration sensor, confirmed dead 2026-08-10.
+
+
+    TODO: mirror this whole structure for the washer once 192.168.1.242 authenticates,
+    then add the wet-clothes nag (never overnight - nag clock starts at wake).
+
+
+    2026-08-10 FIX: the finish-time stamp used to live ONLY in the in-bed branch,
+    so a cycle finishing while awake never recorded a finish time and the Laundry
+    dashboard showed a stale value. Stamping is now unconditional, matching the washer
+    automation. Lara caught this on the dashboard.'
+  triggers:
+  - entity_id: binary_sensor.laundry_dryer_running
+    for: 00:03:00
+    from: 'on'
+    to: 'off'
+    platform: state
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: template
+    value_template: '{{ (as_timestamp(trigger.to_state.last_changed) - as_timestamp(trigger.from_state.last_changed))
+      >= 600 }}'
+  actions:
+  - variables:
+      run_min: '{{ ((as_timestamp(trigger.to_state.last_changed) - as_timestamp(trigger.from_state.last_changed))
+        / 60) | round(0) }}'
+  - action: input_datetime.set_datetime
+    alias: Stamp the finish time - always, not just when deferring
+    data:
+      datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
+    target:
+      entity_id: input_datetime.laundry_dryer_finished_at
+  - choose:
+    - alias: Awake - notify immediately
+      conditions:
+      - condition: state
+        entity_id: input_boolean.in_bed
+        state: 'off'
+      sequence:
+      - action: script.notify_lara
+        data:
+          message: Cycle ran {{ run_min }} min and the dryer is back to idle.
+          title: "\U0001F9FA Dryer finished"
+    default:
+    - action: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.laundry_done_pending_dryer
+  mode: single
+- id: '1786401912246'
+  alias: Laundry — Deferred Done Notice (v2)
+  description: 'v2 (2026-08-10): now covers BOTH washer and dryer. Delivers laundry
+    ''finished'' notifications held back because Lara was in bed.
+
+
+    Why this exists: she sometimes starts a load overnight. She does not want a push
+    at 2am, but does want to know a load is sitting when she gets up. The finishing
+    automations stamp their datetime helper and raise their pending flag instead of
+    pushing; this one drains whichever flags are set when input_boolean.in_bed clears.
+    If both are pending it sends both messages.
+
+
+    Deliberately helper-based rather than a wait_for_trigger in the finishing automations,
+    because a wait would be lost on an HA restart and this hold can run for hours.
+
+
+    Note it does NOT clear input_datetime.laundry_washer_finished_at - that timestamp
+    stays live so ''Laundry — Wet Clothes Nag'' can start its clock now that she is
+    awake. Per Lara: the nag clock starts at wake, never overnight.'
+  triggers:
+  - entity_id: input_boolean.in_bed
+    from: 'on'
+    id: woke_up
+    to: 'off'
+    platform: state
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: or
+    conditions:
+    - condition: state
+      entity_id: input_boolean.laundry_done_pending_washer
+      state: 'on'
+    - condition: state
+      entity_id: input_boolean.laundry_done_pending_dryer
+      state: 'on'
+  actions:
+  - alias: Washer branch
+    if:
+    - condition: state
+      entity_id: input_boolean.laundry_done_pending_washer
+      state: 'on'
+    then:
+    - action: script.notify_lara
+      data:
+        message: It wrapped up at {{ (state_attr('input_datetime.laundry_washer_finished_at','timestamp')
+          | float(0)) | timestamp_custom('%-I:%M %p', true) }}, about {{ ((as_timestamp(now())
+          - (state_attr('input_datetime.laundry_washer_finished_at','timestamp') |
+          float(0))) / 3600) | round(1) }} h ago. Wet clothes are still in there.
+        title: "\U0001F9FC Washer finished overnight"
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.laundry_done_pending_washer
+  - alias: Dryer branch
+    if:
+    - condition: state
+      entity_id: input_boolean.laundry_done_pending_dryer
+      state: 'on'
+    then:
+    - action: script.notify_lara
+      data:
+        message: It wrapped up at {{ (state_attr('input_datetime.laundry_dryer_finished_at','timestamp')
+          | float(0)) | timestamp_custom('%-I:%M %p', true) }}, about {{ ((as_timestamp(now())
+          - (state_attr('input_datetime.laundry_dryer_finished_at','timestamp') |
+          float(0))) / 3600) | round(1) }} h ago. Clothes are still in there.
+        title: "\U0001F9FA Dryer finished overnight"
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.laundry_done_pending_dryer
+  mode: single
+- id: '1786402948315'
+  alias: Bedroom — Vanity Mirror Off When I Leave Home (v1)
+  description: 'v1 (2026-08-10): the vanity mirror on switch.vanity_plug (KP303 outlet,
+    Bedroom Power Strip) has no physical button, so its only off switch is cutting
+    power. If Lara forgets it on when she leaves, it burns all day. This power-cycles
+    the outlet on departure: off, hold 15 s, back on. The mirror ends up dark and
+    the outlet is left live so it works normally when she gets home.
+
+
+    VERIFIED BEHAVIOUR, do not assume: on 2026-08-10 we cut the outlet for 12 s with
+    the mirror lit and it came back DARK. That is the whole basis for this design.
+    If the mirror is ever replaced, RE-TEST before trusting this - a fixture that
+    resumes ON at power-up would make this automation switch the mirror on at every
+    departure, the exact opposite of the intent. The KP303 has NO energy metering,
+    so HA cannot detect the mirror''s state and cannot catch that regression on its
+    own.
+
+
+    Deliberately a separate automation rather than an addition to ''Turn off the lights
+    when I leave home''. That one is gated on group.morning OR living-room lux, so
+    it skips dark departures - precisely when a forgotten mirror is most likely. Same
+    reasoning that split ''Speakers - Stop All When I Leave Home'' out on 2026-07-30.
+
+
+    Not vacation-gated on purpose. calendar.vacation mutes personal comfort automations
+    for the house-sitter, but this only ever triggers on Lara''s own departure, and
+    a forgotten mirror matters MORE on a long absence, not less. Same exception class
+    as the fridge and power-outage alerts.'
+  triggers:
+  - entity_id: person.lara_wiz
+    event: leave
+    trigger: zone
+    zone: zone.home
+  conditions: []
+  actions:
+  - action: switch.turn_off
+    alias: Cut power to the vanity outlet
+    target:
+      entity_id: switch.vanity_plug
+  - alias: Hold long enough for the mirror to fully de-energize (tested at 12 s)
+    delay:
+      seconds: 15
+  - action: switch.turn_on
+    alias: Restore the outlet so it is live when she gets home
+    target:
+      entity_id: switch.vanity_plug
+  mode: single
+- id: '1786409326281'
+  alias: Laundry — Washer Cycle Finished (v1)
+  description: 'v1 (2026-08-10): mirrors ''Laundry — Dryer Cycle Finished''. Fires
+    when binary_sensor.washer_running (Threshold helper on sensor.washer_current_consumption,
+    upper 10 / hysteresis 5) drops to idle. The Washer KP115 reads 0.0 W at rest.
+
+
+    DEBOUNCE IS 5 MIN, LONGER THAN THE DRYER''S 3. Washers pause mid-cycle (soak,
+    drain, between fill and agitate) in a way dryers do not, and a short debounce
+    would fire ''finished'' partway through a load. THRESHOLDS AND DEBOUNCE ARE PROVISIONAL
+    - they were set without a measured cycle because the washer plug only came online
+    after the load had finished. Verify against the first real cycle: pull sensor.washer_current_consumption
+    history and check that no mid-cycle pause exceeded 5 minutes. Adjust rather than
+    assume.
+
+
+    Anti-spam guard: the run must have lasted at least 10 minutes, same reasoning
+    as the dryer.
+
+
+    Always stamps input_datetime.laundry_washer_finished_at, which is what the wet-clothes
+    nag keys off. If in_bed is on, the push is deferred via input_boolean.laundry_done_pending_washer
+    and delivered by ''Laundry — Deferred Done Notice'' when she gets up. Helper-based
+    rather than wait_for_trigger because a wait would not survive an HA restart.
+
+
+    The plug reached HA by being added via its IP address, NOT via the discovery card
+    - its discovery beacon falsely advertises that it requires authentication. See
+    project memory before ever re-adding it.'
+  triggers:
+  - entity_id: binary_sensor.washer_running
+    for: 00:05:00
+    from: 'on'
+    to: 'off'
+    platform: state
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: template
+    value_template: '{{ (as_timestamp(trigger.to_state.last_changed) - as_timestamp(trigger.from_state.last_changed))
+      >= 600 }}'
+  actions:
+  - variables:
+      run_min: '{{ ((as_timestamp(trigger.to_state.last_changed) - as_timestamp(trigger.from_state.last_changed))
+        / 60) | round(0) }}'
+  - action: input_datetime.set_datetime
+    alias: Stamp the finish time - drives the wet-clothes nag
+    data:
+      datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
+    target:
+      entity_id: input_datetime.laundry_washer_finished_at
+  - choose:
+    - alias: Awake - notify immediately
+      conditions:
+      - condition: state
+        entity_id: input_boolean.in_bed
+        state: 'off'
+      sequence:
+      - action: script.notify_lara
+        data:
+          message: Cycle ran {{ run_min }} min. Clothes are ready to move over.
+          title: "\U0001F9FC Washer finished"
+    default:
+    - action: input_boolean.turn_on
+      alias: In bed - defer the push until she is up
+      target:
+        entity_id: input_boolean.laundry_done_pending_washer
+  mode: single
+- id: '1786409377851'
+  alias: Laundry — Wet Clothes Nag (v1)
+  description: 'v1 (2026-08-10): repeat reminder that a finished load is still sitting
+    wet in the washer.
+
+
+    Lara''s explicit ruling: NEVER nag overnight. The nag clock starts at wake, not
+    at the actual finish time. That is enforced by the in_bed condition rather than
+    by any time window - if a load finishes at 2am she gets one ''finished overnight''
+    note from ''Laundry — Deferred Done Notice'' when she gets up, and the nag only
+    begins counting from whenever she is actually awake and the clothes are still
+    sitting.
+
+
+    Fires every 30 min once the load has been sitting 45+ min. Repeat rather than
+    single-shot because Lara asked for a repeat reminder. It stops on its own when
+    ''Laundry — Wet Clothes Cleared'' blanks the timestamp, which happens the moment
+    the dryer or the washer starts.
+
+
+    The ''nothing has moved'' signal is the dryer not running, per the design agreed
+    with Lara. Also skipped if the washer itself is running again, so restarting a
+    load does not nag.
+
+
+    The timestamp sentinel: input_datetime.laundry_washer_finished_at is blanked to
+    1970-01-01, so the template requires ts > 1000000000 (i.e. a real date after 2001)
+    before nagging. Do not compare to 0 - a 1970 local-midnight timestamp is a negative
+    or non-zero offset depending on timezone.'
+  triggers:
+  - minutes: /30
+    platform: time_pattern
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  - condition: state
+    entity_id: binary_sensor.laundry_dryer_running
+    state: 'off'
+  - condition: state
+    entity_id: binary_sensor.washer_running
+    state: 'off'
+  - condition: template
+    value_template: '{% set ts = state_attr(''input_datetime.laundry_washer_finished_at'',''timestamp'')
+      | float(0) %}{{ ts > 1000000000 and (as_timestamp(now()) - ts) >= 2700 }}'
+  actions:
+  - action: script.notify_lara
+    alias: Nag
+    data:
+      message: Finished at {{ (state_attr('input_datetime.laundry_washer_finished_at','timestamp')
+        | float(0)) | timestamp_custom('%-I:%M %p', true) }}, sitting {{ ((as_timestamp(now())
+        - (state_attr('input_datetime.laundry_washer_finished_at','timestamp') | float(0)))
+        / 60) | round(0) }} min now.
+      title: "\U0001F9FC Wet clothes still in the washer"
+  max_exceeded: silent
+  mode: single
+- id: '1786409383726'
+  alias: Laundry — Wet Clothes Cleared (v1)
+  description: 'v1 (2026-08-10): stops the wet-clothes nag by blanking input_datetime.laundry_washer_finished_at
+    back to the 1970 sentinel.
+
+
+    The ''clothes have moved'' signal is the dryer starting. Also clears when the
+    washer starts again, since a new load means the previous one is out. Both are
+    inferred from the KP115 power thresholds rather than any sensor on the machines
+    themselves.
+
+
+    Also drops the washer pending flag, so a load that finished overnight and was
+    then moved before she woke up does not produce a stale ''finished overnight''
+    push.
+
+
+    Sentinel is 1970-01-01 00:00:00. The nag automation tests ts > 1000000000 rather
+    than ts > 0, because a 1970 local-midnight timestamp is not zero in a non-UTC
+    timezone.'
+  triggers:
+  - entity_id: binary_sensor.laundry_dryer_running
+    from: 'off'
+    id: dryer_started
+    to: 'on'
+    trigger: state
+  - entity_id: binary_sensor.washer_running
+    from: 'off'
+    id: washer_restarted
+    to: 'on'
+    trigger: state
+  conditions: []
+  actions:
+  - action: input_datetime.set_datetime
+    alias: Blank the finish timestamp
+    data:
+      datetime: '1970-01-01 00:00:00'
+    target:
+      entity_id: input_datetime.laundry_washer_finished_at
+  - action: input_boolean.turn_off
+    alias: Drop any undelivered washer notice
+    target:
+      entity_id: input_boolean.laundry_done_pending_washer
+  mode: single
+- id: '1786413195406'
+  alias: 'AC Sweet-Spot: Bedroom Bedtime Set (v3, 7pm Prime Floor)'
+  description: 'Replaces the manual dial-guessing step of the bedroom AC sweet-spot
+    sleep-temp test. Before the Midea climate entity existed, Lara turned a physical
+    dial and logged her best guess of the setting into input_number.ac_sweet_spot_dial_setting.
+    Now that climate.bedroom_ac gives exact digital control, this automation reads
+    input_select.ac_sweet_spot_test_block at bedtime and applies the block''s exact
+    target temperature via climate.set_temperature, then overwrites the dial-setting
+    helper with the real applied value so her tracking data is precise instead of
+    eyeballed.
+
+
+    WHY preset_mode is forced to ''none'' during an active test block: several of
+    this unit''s presets (especially ''sleep'') are documented as having their own
+    internal setpoint drift/curve over the night. That''s exactly the kind of confound
+    the sweet-spot test is trying to isolate, so during a real test block this automation
+    deliberately avoids any preset that could quietly move the temperature away from
+    the block''s target. hvac_mode is forced to ''cool'' (not ''auto'') for the same
+    reason - predictable, direct control.
+
+
+    When the test block is ''Not testing'' or ''Done'', this instead just switches
+    to the Sleep preset and leaves whatever target temperature is already set alone
+    - this is the everyday behavior once the experiment wraps, not part of the test.
+
+
+    Two triggers: the normal bedtime moment (in_bed turns on), and a same-night input_select
+    change (in case Lara switches test blocks mid-experiment while already in bed)
+    - the second trigger''s branch additionally requires in_bed to already be on,
+    so a daytime block change doesn''t touch the AC.
+
+
+    Gated on calendar.vacation off per house style section 8 (personal comfort automation).
+
+
+    FUTURE: input_boolean.ac_sweet_spot_confound_tonight (e.g. alcohol) is intentionally
+    NOT read here - that''s Lara''s own manual flag for her own analysis, not something
+    this automation should act on.
+
+
+    2026-08-11 (v2): Added a third trigger, work_night_prime, at 21:00 on workdays
+    (binary_sensor.workday on) - primes the room to the same target ahead of Laras
+    usual 9-10pm work-night bedtime instead of waiting reactively for in_bed to actually
+    flip on, per her request. Non-work nights and off-schedule bedtimes still rely
+    on the in_bed-on trigger as before.
+
+
+    2026-08-11 (v3): Lara asked whether 21:00 primes AT 9pm or has the room READY
+    BY 9pm - it was the former. Checked real history: bedroom temp was only dropping
+    ~1F/hour under normal eco-modulated cycling that evening, so waiting until 21:00
+    to start a 10+ degree pull-down (typical evening temp ~75F down to a 62-65F test
+    target) would not remotely be ready by a 9-10pm bedtime. Added a fourth trigger,
+    work_night_prime_early, at 19:00 on workdays AND only when person.lara_wiz is
+    home (so it does not blast an empty house before she is back) - this is a floor,
+    not a precise calculation, since the actual pull-down rate in cool/none-preset
+    mode (full power, not eco-throttled) has not been measured yet - the 21:00 trigger
+    stays as an unconditional fallback in case she gets home later than 7pm. Revisit
+    the 19:00 floor once a few real cool-mode nights give an actual measured rate.'
+  triggers:
+  - entity_id: input_boolean.in_bed
+    id: bedtime
+    platform: state
+    to: 'on'
+  - entity_id: input_select.ac_sweet_spot_test_block
+    id: block_changed
+    platform: state
+  - platform: time
+    at: '21:00:00'
+    id: work_night_prime
+  - platform: time
+    at: '19:00:00'
+    id: work_night_prime_early
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: or
+    conditions:
+    - condition: trigger
+      id: bedtime
+    - condition: and
+      conditions:
+      - condition: trigger
+        id: block_changed
+      - condition: state
+        entity_id: input_boolean.in_bed
+        state: 'on'
+    - condition: and
+      conditions:
+      - condition: trigger
+        id: work_night_prime
+      - condition: state
+        entity_id: binary_sensor.workday
+        state: 'on'
+    - condition: and
+      conditions:
+      - condition: trigger
+        id: work_night_prime_early
+      - condition: state
+        entity_id: binary_sensor.workday
+        state: 'on'
+      - condition: state
+        entity_id: person.lara_wiz
+        state: home
+  actions:
+  - choose:
+    - conditions:
+      - condition: state
+        entity_id: input_select.ac_sweet_spot_test_block
+        state:
+        - Block 1 - aim 65F
+        - Block 2 - aim 62F
+      sequence:
+      - variables:
+          target_temp: '{{ {''Block 1 - aim 65F'': 65, ''Block 2 - aim 62F'': 62}[states(''input_select.ac_sweet_spot_test_block'')]
+            }}'
+      - action: climate.set_hvac_mode
+        alias: Direct cool mode for predictable control
+        data:
+          hvac_mode: cool
+        target:
+          entity_id: climate.bedroom_ac
+      - action: climate.set_preset_mode
+        alias: No preset curve during a real test night
+        data:
+          preset_mode: none
+        target:
+          entity_id: climate.bedroom_ac
+      - action: climate.set_temperature
+        alias: Apply the block's exact target temperature
+        data:
+          temperature: '{{ target_temp }}'
+        target:
+          entity_id: climate.bedroom_ac
+      - action: input_number.set_value
+        alias: Replace the manual dial guess with the exact applied setpoint
+        data:
+          value: '{{ target_temp }}'
+        target:
+          entity_id: input_number.ac_sweet_spot_dial_setting
+      - action: logbook.log
+        alias: Log it for auditability
+        data:
+          entity_id: climate.bedroom_ac
+          message: Applied {{ target_temp }}°F ({{ states('input_select.ac_sweet_spot_test_block')
+            }}) to Bedroom AC.
+          name: AC Sweet-Spot
+    default:
+    - action: climate.set_preset_mode
+      alias: Not testing — Sleep preset, leave target temp alone
+      data:
+        preset_mode: sleep
+      target:
+        entity_id: climate.bedroom_ac
+  mode: single
+- id: '1786413232913'
+  alias: AC — Away Eco / Restore on Presence (v1)
+  description: 'Energy-saving setback for both Midea AC units when nobody human is
+    home, restoring to the everyday eco preset when Lara gets back. Mirrors the trigger
+    pattern of ''Turn off the lights when I leave home'' and, most importantly, the
+    vacation gate from ''Speakers - Stop All When I Leave Home'' - GATED on calendar.vacation
+    == off for exactly the same reason documented there: if a dog/house-sitter is
+    staying during an actual vacation window, this should not quietly setback the
+    AC on them just because binary_sensor.johnny_home_alone reads off-pattern (no
+    person.* tracker exists for a sitter, so without this gate a sitter-covered vacation
+    would look identical to ''house empty'' and get the deeper away preset).
+
+
+    Depth of setback depends on binary_sensor.johnny_home_alone: if Johnny is home
+    alone (no sitter, no Lara), use the milder ''eco'' preset so the house doesn''t
+    get too warm for the dog. If the house is fully empty, use the deeper ''away''
+    preset. On arrival home, both units are restored to ''eco'', which is their normal
+    everyday steady-state preset (observed default on both units when the Midea integration
+    was first added 2026-08-11).
+
+
+    Does not touch climate.bedroom_ac during an active AC Sweet-Spot test block -
+    moot in practice since she can''t be both away and in bed, so the two never overlap
+    in time anyway.
+
+
+    2026-08-11: left_home branch now also forces climate.bedroom_ac back to hvac_mode
+    cool, to cancel any lingering Dry mode from ''Bedroom AC - Dry Mode While Getting
+    Ready'' if she leaves before that automation would otherwise be superseded.'
+  triggers:
+  - entity_id: person.lara_wiz
+    event: leave
+    id: left_home
+    platform: zone
+    zone: zone.home
+  - entity_id: person.lara_wiz
+    id: arrived_home
+    not_from:
+    - unknown
+    - unavailable
+    platform: state
+    to: home
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - choose:
+    - conditions:
+      - condition: trigger
+        id: left_home
+      sequence:
+      - choose:
+        - conditions:
+          - condition: state
+            entity_id: binary_sensor.johnny_home_alone
+            state: 'on'
+          sequence:
+          - action: climate.set_preset_mode
+            alias: Johnny's home alone — mild eco setback
+            data:
+              preset_mode: eco
+            target:
+              entity_id:
+              - climate.bedroom_ac
+              - climate.living_room_ac
+        default:
+        - action: climate.set_preset_mode
+          alias: House is fully empty — deeper away setback
+          data:
+            preset_mode: away
+          target:
+            entity_id:
+            - climate.bedroom_ac
+            - climate.living_room_ac
+      - alias: Also cancel any lingering Dry mode from the getting-ready automation
+        action: climate.set_hvac_mode
+        target:
+          entity_id: climate.bedroom_ac
+        data:
+          hvac_mode: cool
+      - action: logbook.log
+        alias: Log the setback depth chosen
+        data:
+          entity_id: climate.bedroom_ac
+          message: Left home — set AC preset to {{ 'eco (Johnny home alone)' if is_state('binary_sensor.johnny_home_alone',
+            'on') else 'away (house empty)' }}.
+          name: AC Away Eco
+    - conditions:
+      - condition: trigger
+        id: arrived_home
+      sequence:
+      - action: climate.set_preset_mode
+        alias: Restore everyday eco preset
+        data:
+          preset_mode: eco
+        target:
+          entity_id:
+          - climate.bedroom_ac
+          - climate.living_room_ac
+      - action: logbook.log
+        alias: Log the restore
+        data:
+          entity_id: climate.bedroom_ac
+          message: Back home — restored AC preset to eco.
+          name: AC Away Eco
+  mode: single
+- id: '1786413800292'
+  alias: Bedroom AC — Gradual Warm Before Alarm (v1)
+  description: 'Warms the bedroom by 3°F over the 30 minutes before wake, in three
+    1°F steps 15 minutes apart, landing the final step exactly at wake time - so the
+    room isn''t cold enough to make staying in bed tempting. Mirrors the Sonos Wake
+    Alarm''s calendar trigger pattern (calendar.master_calendar ''wake up'' event,
+    offset before start) and its same guard rails: workday, in_bed on, calendar.vacation
+    off, and a ''wake up'' summary filter so other early calendar events (flights,
+    appointments) don''t trigger it.
+
+
+    DELIBERATELY SKIPPED during an active AC Sweet-Spot test block (input_select.ac_sweet_spot_test_block
+    in Block 1/Block 2) - Lara''s call, to avoid the ramp perturbing that test''s
+    morning data. Only runs when the test is ''Not testing'' or ''Done''.
+
+
+    Captures the target temperature at trigger time into a variable (base_temp) rather
+    than reading it fresh at each step, so a stray change mid-ramp can''t compound.
+    Skips entirely if the AC is off (nothing to warm from).'
+  triggers:
+  - entity_id: calendar.master_calendar
+    event: start
+    id: wake_prep
+    offset: -0:30:00
+    platform: calendar
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.workday
+    state: 'on'
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'on'
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: input_select.ac_sweet_spot_test_block
+    state:
+    - Not testing
+    - Done
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: climate.bedroom_ac
+      state: 'off'
+  - alias: Only 'Wake up' calendar events
+    condition: template
+    value_template: '{{ ''wake up'' in (trigger.calendar_event.summary | lower | trim)
+      }}'
+  actions:
+  - variables:
+      base_temp: '{{ state_attr(''climate.bedroom_ac'', ''temperature'') | float }}'
+  - action: climate.set_temperature
+    alias: Step 1 of 3 — +1°F
+    data:
+      temperature: '{{ base_temp + 1 }}'
+    target:
+      entity_id: climate.bedroom_ac
+  - delay: 00:15:00
+  - action: climate.set_temperature
+    alias: Step 2 of 3 — +2°F
+    data:
+      temperature: '{{ base_temp + 2 }}'
+    target:
+      entity_id: climate.bedroom_ac
+  - delay: 00:10:00
+  - action: climate.set_temperature
+    alias: Step 3 of 3 — +3°F, lands at wake time
+    data:
+      temperature: '{{ base_temp + 3 }}'
+    target:
+      entity_id: climate.bedroom_ac
+  - action: logbook.log
+    alias: Log it
+    data:
+      entity_id: climate.bedroom_ac
+      message: Gradual wake warm-up complete — {{ base_temp }}°F → {{ base_temp +
+        3 }}°F over 30 min.
+      name: Bedroom AC
+  mode: single
+- id: '1786413806767'
+  alias: Living Room AC — Bedtime Setback (Unless Guests) (v1)
+  description: 'At bedtime (in_bed on), sets the living room AC to eco preset and
+    relaxes its target temperature up 3°F, so it''s not working to hold a full daytime-comfort
+    temperature all night in an empty room - just enough to keep it from getting too
+    warm. Entirely skipped if input_boolean.guests is on, so a guest still up in the
+    living room isn''t left in a warming room.
+
+
+    Captures the target temperature at trigger time into base_temp so repeated triggers
+    (e.g. in_bed flapping) don''t compound the +3°F relaxation. Gated on calendar.vacation
+    off per house style section 8.'
+  triggers:
+  - entity_id: input_boolean.in_bed
+    platform: state
+    to: 'on'
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.guests
+    state: 'off'
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: climate.living_room_ac
+      state: 'off'
+  actions:
+  - variables:
+      base_temp: '{{ state_attr(''climate.living_room_ac'', ''temperature'') | float
+        }}'
+  - action: climate.set_preset_mode
+    alias: Eco preset for the overnight setback
+    data:
+      preset_mode: eco
+    target:
+      entity_id: climate.living_room_ac
+  - action: climate.set_temperature
+    alias: Relax target +3°F — just enough, not full daytime comfort
+    data:
+      temperature: '{{ base_temp + 3 }}'
+    target:
+      entity_id: climate.living_room_ac
+  - action: logbook.log
+    alias: Log it
+    data:
+      entity_id: climate.living_room_ac
+      message: Bedtime setback — eco preset, {{ base_temp }}°F → {{ base_temp + 3
+        }}°F.
+      name: Living Room AC
+  mode: single
+- id: '1786413813332'
+  alias: Living Room AC — Precool Before Arriving Home (v1)
+  description: 'When Lara leaves zone.work, releases the living room AC''s deeper
+    ''away'' setback back to the everyday ''eco'' preset early - rather than waiting
+    for the arrival-home trigger in ''AC — Away Eco / Restore on Presence'' - so the
+    unit has the whole drive home to recover instead of starting cold at the front
+    door. A single preset change is enough: unlike the wake-alarm volume ramp (which
+    needs literal steps because volume jumps are jarring), cooling a room is inherently
+    gradual once a real target is set, so no artificial multi-step ramp is needed
+    here - the drive itself is the ramp.
+
+
+    Uses sensor.waze_travel_time for the log message only (context on how long the
+    recovery window is) - note this is technically the home-to-work route, HA has
+    no work-to-home sensor configured, but it''s the closest live duration signal
+    available and the roads are the same either direction.
+
+
+    Converges cleanly with the arrival-home branch of ''AC — Away Eco / Restore on
+    Presence'', which also sets eco - no fight between the two, this one just gets
+    there earlier. If the house was never in the deeper ''away'' preset (e.g. Johnny
+    was home alone, already on eco), this is a harmless no-op repeat.
+
+
+    Gated on calendar.vacation off per house style section 8.'
+  triggers:
+  - entity_id: person.lara_wiz
+    event: leave
+    id: left_work
+    platform: zone
+    zone: zone.work
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - action: climate.set_preset_mode
+    alias: Release the away setback early
+    data:
+      preset_mode: eco
+    target:
+      entity_id: climate.living_room_ac
+  - action: climate.set_hvac_mode
+    alias: Direct cool mode so it actually recovers on the drive
+    data:
+      hvac_mode: cool
+    target:
+      entity_id: climate.living_room_ac
+  - action: logbook.log
+    alias: Log it
+    data:
+      entity_id: climate.living_room_ac
+      message: Left work, ~{{ states('sensor.waze_travel_time') }} min out (home→work
+        route, used as an estimate) — releasing away setback to eco now.
+      name: Living Room AC
+  mode: single
+- id: '1786413963544'
+  alias: Bedroom AC — Dry Mode While Getting Ready (v1)
+  description: 'On waking on a workday (in_bed turns off, 04:30-08:00 window matching
+    the other morning automations'' guard), switches climate.bedroom_ac to hvac_mode:
+    dry for the getting-ready stretch, rather than continuing to cool normally - Lara''s
+    request, to keep the room from feeling muggy while showering/dressing. Leaves
+    fan/target alone, just changes the mode.
+
+
+    Schedule-based, not humidity-reactive, per her plain phrasing (''keep bedroom
+    dry while getting ready'') - sensor.airguard_humidity exists in the bedroom if
+    she''d rather make this conditional on an actual humidity reading later.
+
+
+    Does NOT include its own revert step - relies on ''AC — Away Eco / Restore on
+    Presence'', which now also resets climate.bedroom_ac back to hvac_mode: cool on
+    the left_home branch, so dry mode never lingers once she actually leaves for work.
+    On a day she doesn''t leave (e.g. staying home), dry mode would keep running -
+    acceptable for a v1, revisit if that''s ever actually annoying.
+
+
+    Gated on calendar.vacation off per house style section 8; skips if the AC is already
+    off.'
+  triggers:
+  - entity_id: input_boolean.in_bed
+    id: woke
+    platform: state
+    to: 'off'
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.workday
+    state: 'on'
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - after: 04:30:00
+    before: 08:00:00
+    condition: time
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: climate.bedroom_ac
+      state: 'off'
+  actions:
+  - action: climate.set_hvac_mode
+    alias: Dry mode for the getting-ready window
+    data:
+      hvac_mode: dry
+    target:
+      entity_id: climate.bedroom_ac
+  - action: logbook.log
+    alias: Log it
+    data:
+      entity_id: climate.bedroom_ac
+      message: Switched to Dry mode for the getting-ready window.
+      name: Bedroom AC
   mode: single
