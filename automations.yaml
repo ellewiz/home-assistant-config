@@ -984,22 +984,36 @@
     which routes to the same now-solo speaker. [2026-07-13] ''Wake up'' summary check
     hoisted to top-level conditions and the no-wake-event fallback branch deleted:
     any other early calendar event (appointment, flight) in the 04:30-08:00 window
-    used to fall through to it and create a spurious ''Alarm Skipped'' notification.'
+    used to fall through to it and create a spurious ''Alarm Skipped'' notification.
+    [2026-08-11] media_id swapped from library://playlist/53 to library://playlist/100.
+    The Apple Music provider (instance apple_music--RVs6ewM4) was re-added or re-authenticated
+    at some point, which gave it a new instance id and made Music Assistant re-import
+    the whole library as fresh items: 32 of 68 playlist names now appear twice, old
+    copies at library ids ~3-68 and new copies at ~78-111. Playlist 53 is an orphan
+    whose provider mapping points at the dead old instance, so play_media returned
+    ''No playable items found'' on both Aug 10 and Aug 11. Because that step is continue_on_error,
+    the full 20-minute volume ramp ran against silence and the trace looked normal.
+    Playlist 100 is the live copy of the same playlist. [2026-08-11] Also added a
+    Phase 1 alert that fires when wait.completed is false, so a playlist that never
+    reaches playing pushes to iPhone instead of failing silently. This covers the
+    case the Speaker Failsafe (v1) automation lists as its TODO v2: MA player present
+    and not unavailable, but playback never actually starts. If the library is ever
+    re-imported again, re-check this media_id before assuming the wake music works.'
   triggers:
-  - platform: calendar
-    entity_id: calendar.master_calendar
+  - entity_id: calendar.master_calendar
     event: start
-    offset: -0:20:00
     id: wake_up_time
+    offset: -0:20:00
+    platform: calendar
   conditions:
-  - condition: time
-    after: 04:30:00
+  - after: 04:30:00
     before: 08:00:00
+    condition: time
   - condition: state
     entity_id: calendar.vacation
     state: 'off'
-  - condition: template
-    alias: Only 'Wake up' events (hoisted from branch 1, 2026-07-13)
+  - alias: Only 'Wake up' events (hoisted from branch 1, 2026-07-13)
+    condition: template
     value_template: '{{ ''wake up'' in (trigger.calendar_event.summary | lower | trim)
       }}'
   actions:
@@ -1012,96 +1026,108 @@
         entity_id: binary_sensor.workday
         state: 'on'
       sequence:
-      - alias: Phase 0 — Unjoin bedroom Sonos so wake audio stays out of the bathroom
+      - action: media_player.unjoin
+        alias: Phase 0 — Unjoin bedroom Sonos so wake audio stays out of the bathroom
           (Johnny)
-        action: media_player.unjoin
+        continue_on_error: true
         target:
           entity_id: media_player.bedroom_frame
-        continue_on_error: true
       - alias: 'Phase 0 — Settle: let the Sonos group dissolve before playback'
         delay: 00:00:01
-      - alias: Phase 1 — Set initial low volume
-        action: media_player.volume_set
-        target:
-          entity_id: media_player.bedroom
+      - action: media_player.volume_set
+        alias: Phase 1 — Set initial low volume
         data:
           volume_level: 0.03
-      - alias: Phase 1 — Play Lofi Sleep playlist shuffled
-        action: music_assistant.play_media
         target:
           entity_id: media_player.bedroom
-        data:
-          media_id: library://playlist/53
-          media_type: playlist
-          enqueue: replace
-          radio_mode: false
+      - action: music_assistant.play_media
+        alias: Phase 1 — Play Lofi Sleep playlist shuffled
         continue_on_error: true
-      - wait_for_trigger:
-        - trigger: state
-          entity_id: media_player.bedroom
-          to: playing
-        timeout: 00:00:15
-        continue_on_timeout: true
-      - action: media_player.shuffle_set
+        data:
+          enqueue: replace
+          media_id: library://playlist/100
+          media_type: playlist
+          radio_mode: false
         target:
           entity_id: media_player.bedroom
+      - continue_on_timeout: true
+        timeout: 00:00:15
+        wait_for_trigger:
+        - entity_id: media_player.bedroom
+          to: playing
+          trigger: state
+      - alias: Phase 1 — Alert if the wake playlist never started
+        if:
+        - condition: template
+          value_template: '{{ not wait.completed }}'
+        then:
+        - action: notify.mobile_app_iphone
+          data:
+            message: The Lofi Sleep playlist did not reach playing on the bedroom
+              speaker within 15s, so the volume ramp is running against silence. The
+              alarm at wake time will still sound. Check the Music Assistant library
+              for an orphaned playlist id.
+            title: ⚠️ Wake lofi never started
+      - action: media_player.shuffle_set
+        continue_on_error: true
         data:
           shuffle: true
-        continue_on_error: true
-      - delay: 00:02:00
-      - action: media_player.volume_set
         target:
           entity_id: media_player.bedroom
+      - delay: 00:02:00
+      - action: media_player.volume_set
         data:
           volume_level: 0.04
-      - delay: 00:02:00
-      - action: media_player.volume_set
         target:
           entity_id: media_player.bedroom
+      - delay: 00:02:00
+      - action: media_player.volume_set
         data:
           volume_level: 0.05
-      - delay: 00:02:00
-      - action: media_player.volume_set
         target:
           entity_id: media_player.bedroom
+      - delay: 00:02:00
+      - action: media_player.volume_set
         data:
           volume_level: 0.07
-      - delay: 00:02:00
-      - action: media_player.volume_set
         target:
           entity_id: media_player.bedroom
+      - delay: 00:02:00
+      - action: media_player.volume_set
         data:
           volume_level: 0.09
-      - delay: 00:02:00
-      - action: media_player.volume_set
         target:
           entity_id: media_player.bedroom
+      - delay: 00:02:00
+      - action: media_player.volume_set
         data:
           volume_level: 0.11
-      - delay: 00:02:00
-      - action: media_player.volume_set
         target:
           entity_id: media_player.bedroom
+      - delay: 00:02:00
+      - action: media_player.volume_set
         data:
           volume_level: 0.13
-      - delay: 00:02:00
-      - action: media_player.volume_set
         target:
           entity_id: media_player.bedroom
+      - delay: 00:02:00
+      - action: media_player.volume_set
         data:
           volume_level: 0.15
-      - delay: 00:02:00
-      - action: media_player.volume_set
         target:
           entity_id: media_player.bedroom
+      - delay: 00:02:00
+      - action: media_player.volume_set
         data:
           volume_level: 0.18
-      - delay: 00:02:00
-      - action: media_player.volume_set
         target:
           entity_id: media_player.bedroom
+      - delay: 00:02:00
+      - action: media_player.volume_set
         data:
           volume_level: 0.2
+        target:
+          entity_id: media_player.bedroom
       - delay: 00:02:00
       - alias: Phase 2 — Skip if already out of bed
         condition: state
@@ -1109,27 +1135,27 @@
         state: 'on'
       - alias: Phase 2 — Alarm escalation loop
         repeat:
+          sequence:
+          - action: music_assistant.play_announcement
+            continue_on_error: true
+            data:
+              announce_volume: '{{ [42 + (repeat.index - 1) * 8, 100] | min | int
+                }}'
+              url: http://homeassistant.local:8123/local/alarm-clock.mp3
+              use_pre_announce: false
+            target:
+              entity_id: media_player.bedroom
+          - delay: 00:00:12
           until:
           - condition: state
             entity_id: input_boolean.in_bed
             state: 'off'
-          sequence:
-          - action: music_assistant.play_announcement
-            target:
-              entity_id: media_player.bedroom
-            data:
-              url: http://homeassistant.local:8123/local/alarm-clock.mp3
-              announce_volume: '{{ [42 + (repeat.index - 1) * 8, 100] | min | int
-                }}'
-              use_pre_announce: false
-            continue_on_error: true
-          - delay: 00:00:12
-      - alias: Phase 3 — Gentle light fade-in once up
-        action: light.turn_on
-        target:
-          entity_id: light.bedroom
+      - action: light.turn_on
+        alias: Phase 3 — Gentle light fade-in once up
         data:
           transition: 300
+        target:
+          entity_id: light.bedroom
     - conditions:
       - condition: state
         entity_id: input_boolean.in_bed
@@ -1137,8 +1163,8 @@
       sequence:
       - action: persistent_notification.create
         data:
-          title: Alarm Skipped
           message: Skipped — you were not in bed.
+          title: Alarm Skipped
     - conditions:
       - condition: state
         entity_id: binary_sensor.workday
@@ -1146,8 +1172,8 @@
       sequence:
       - action: persistent_notification.create
         data:
-          title: Alarm Skipped
           message: Skipped — not a workday.
+          title: Alarm Skipped
   mode: single
 - id: '1764645467296'
   alias: Heat the car
@@ -1561,31 +1587,70 @@
   max_exceeded: silent
 - id: '1777633648574'
   alias: Power Outage / Restoration Alert
-  description: 'v1.1 (2026-07-07): Detects whole-home power loss via Hue Bridge unavailable
+  description: 'v1.3 (2026-08-11). Detects whole-home power loss via Hue Bridge unavailable
     for 2+ min (filters normal brief drops). Two restoration paths: (a) hue_restored
     fires an all-clear when sensor.bedroom_power returns from unavailable after a
     2+ min outage, duration-gated to match the outage trigger so brief Hue blips do
     not emit a spurious ''restored''; added after the 2026-07-07 network-gear outage
     tripped the outage alert with no all-clear because the Z-Wave fridge never dropped.
-    (b) fridge_surge fires a bonus surge notice when the Fibaro fridge plug returns
-    from unavailable (true whole-home power loss only). Coverage split: outage + hue_restored
-    ride the NETWORK-dependent Hue proxy; fridge_surge rides the network-INDEPENDENT
-    Z-Wave fridge. When a voltage sensor is added, rewrite to v2 with brownout/sag
-    detection.'
+    (b) fridge_surge fires a bonus notice when the Fibaro fridge plug returns from
+    unavailable. Coverage split: outage + hue_restored ride the NETWORK-dependent
+    Hue proxy; fridge_surge rides the network-INDEPENDENT Z-Wave fridge. When a voltage
+    sensor is added, rewrite to v2 with brownout/sag detection. [2026-08-11 v1.2]
+    FIXED a false-positive: fridge_surge had NO duration gate and NO condition beyond
+    its trigger id, so ANY event that made the Z-Wave entities go unavailable and
+    come back fired a ''Power Restored - Fridge Surge'' push. That includes Z-Wave
+    JS add-on updates, HA restarts and ordinary Z-Wave dropouts, not just real power
+    loss. Confirmed firing falsely on 2026-08-10T23:34:26Z (trace a3ce40cadc4e11afa3898fc5693e250f):
+    unavailable -> 78.7W, and the message read ''spiked to 78.7W (normal max ~89W)'',
+    which is self-refuting since 78.7 is BELOW the normal max. The v1.1 note claiming
+    fridge_surge is ''true whole-home power loss only'' was simply wrong. Two gates
+    added: (1) the unavailable stretch must have lasted >= 120s, matching hue_restored;
+    (2) the Hue proxy must ALSO have recorded an outage within the last 60 minutes,
+    via input_datetime.last_power_outage_detected which the hue_unavailable branch
+    now stamps. Gate 2 is the load-bearing one, because during a Z-Wave-only restart
+    the Hue bridge never drops and the stamp stays stale. A TIMESTAMP was chosen over
+    an input_boolean flag deliberately: it self-expires after 60 min, so there is
+    no lingering-flag state to clear and no race between hue_restored clearing a flag
+    and fridge_surge reading it. The v1.2 gates were LIVE-FIRE VERIFIED by the Z-Wave
+    JS 1.7.0 install at 2026-08-11T15:44:17Z (trace f21122e127ed29c65c9e60a54bff0a6b):
+    unavailable -> 75.3, trigger-id condition true, duration gate false, no notification
+    sent. [2026-08-11 v1.2] DELIBERATELY NOT gated on wattage. A ''> 89W'' condition
+    was drafted and rejected: on a real restoration the plug''s FIRST reported value
+    can be standby draw before the compressor spins up, so a wattage gate risks a
+    false NEGATIVE on the one event this alert exists for. Instead the branch waits
+    20s for the reading to settle and the message adapts - it only claims the fridge
+    is running hard when the draw actually exceeds the ~89W normal max. [2026-08-11
+    v1.2] mode changed single -> parallel: on a real restoration hue_restored and
+    fridge_surge fire within milliseconds of each other, and under mode single the
+    second one was silently dropped. The branches are independent notifications with
+    no shared mutable state, so parallel is safe here. [2026-08-11 v1.3] All three
+    branches switched from notify.notify to notify.mobile_app_iphone. notify.notify
+    is NOT an alias for the phone: there is no notify: block in configuration.yaml,
+    so it is the service mobile_app auto-registers, and it FANS OUT to every registered
+    mobile_app device. This automation was the only user of it in the house, so every
+    outage alert was buzzing the iPhone, the MacBook and the iPad at once. It was
+    also the path that surfaced the duplicate iPad registration: the 2026-08-10 19:34:26
+    false fridge push fanned out and its delivery to the dead ''Lara''s iPad mini''
+    entry threw ''Error sending notification'' one second later, which is how that
+    stale registration was found and removed. Phone-only is the house convention per
+    reference_iphone_notify_service. If a future outage ever needs multi-device redundancy,
+    add the extra targets EXPLICITLY rather than reverting to notify.notify, so the
+    fan-out is visible in the config.'
   triggers:
-  - platform: state
-    entity_id: sensor.bedroom_power
-    to: unavailable
-    id: hue_unavailable
+  - entity_id: sensor.bedroom_power
     for: 00:02:00
-  - platform: state
-    entity_id: sensor.bedroom_power
+    id: hue_unavailable
+    platform: state
+    to: unavailable
+  - entity_id: sensor.bedroom_power
     from: unavailable
     id: hue_restored
-  - platform: state
-    entity_id: sensor.fibaro_wall_plug_for_fridge_electric_consumption_w
+    platform: state
+  - entity_id: sensor.fibaro_wall_plug_for_fridge_electric_consumption_w
     from: unavailable
     id: fridge_surge
+    platform: state
   conditions: []
   actions:
   - choose:
@@ -1593,11 +1658,18 @@
       - condition: trigger
         id: hue_unavailable
       sequence:
-      - data:
-          title: ⚡ Power Outage Detected
+      - action: input_datetime.set_datetime
+        alias: Stamp the outage so fridge_surge can tell a real outage from a Z-Wave
+          restart
+        data:
+          datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
+        target:
+          entity_id: input_datetime.last_power_outage_detected
+      - action: notify.mobile_app_iphone
+        data:
           message: Power appears to be out. Hue Bridge went offline at {{ now().strftime('%I:%M
             %p') }}.
-        action: notify.notify
+          title: ⚡ Power Outage Detected
     - conditions:
       - condition: trigger
         id: hue_restored
@@ -1605,22 +1677,38 @@
         value_template: '{{ (as_timestamp(trigger.to_state.last_changed) - as_timestamp(trigger.from_state.last_changed))
           | float(0) >= 120 }}'
       sequence:
-      - data:
-          title: ✅ Power / Network Restored
+      - action: notify.mobile_app_iphone
+        data:
           message: Hue Bridge back online at {{ now().strftime('%I:%M %p') }} after
             ~{{ ((as_timestamp(trigger.to_state.last_changed) - as_timestamp(trigger.from_state.last_changed))
             / 60) | round(0) }} min offline. Power/network looks restored.
-        action: notify.notify
+          title: ✅ Power / Network Restored
     - conditions:
       - condition: trigger
         id: fridge_surge
+      - alias: Gate 1 - the dropout must have lasted 2+ min, matching hue_restored
+        condition: template
+        value_template: '{{ (as_timestamp(trigger.to_state.last_changed) - as_timestamp(trigger.from_state.last_changed))
+          | float(0) >= 120 }}'
+      - alias: Gate 2 - the Hue proxy must have seen an outage in the last 60 min
+          (a Z-Wave-only restart leaves this stale)
+        condition: template
+        value_template: '{% set t = states(''input_datetime.last_power_outage_detected'')
+          %}{{ t not in [''unknown'',''unavailable'',''''] and (as_timestamp(now())
+          - as_timestamp(t, 0)) | float(99999) < 3600 }}'
       sequence:
-      - data:
-          title: "\U0001F50C Power Restored — Fridge Surge"
-          message: Power restored. Fridge spiked to {{ states('sensor.fibaro_wall_plug_for_fridge_electric_consumption_w')
-            }}W (normal max ~89W). It may run hard for 60–90 min to recover temp.
-        action: notify.notify
-  mode: single
+      - alias: Let the reading settle - first value back can be standby draw before
+          the compressor starts
+        delay: 00:00:20
+      - action: notify.mobile_app_iphone
+        data:
+          message: '{% set w = states(''sensor.fibaro_wall_plug_for_fridge_electric_consumption_w'')
+            | float(0) %}Power restored. Fridge is drawing {{ w }}W{% if w > 89 %},
+            above its ~89W normal max - it is running hard and may take 60-90 min
+            to recover temp.{% else %}, within its normal range.{% endif %}'
+          title: "\U0001F50C Power Restored — Fridge Back Online"
+  max: 10
+  mode: parallel
 - id: '1777680078909'
   alias: 'Alert: HA Unexpected Restart'
   description: Sends a phone notification whenever Home Assistant starts up, so unexpected
@@ -3115,7 +3203,7 @@
           entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
   mode: single
 - id: bedroom_heat_alert_v2
-  alias: Bedroom — Heat Alert (v3, Now Actually Cools)
+  alias: Bedroom — Heat Alert (v4, Cools Only If Reachable)
   description: 'v2 consolidating "Bedroom temp too hot" (id 1654570339244) and "Bedroom
     too hot when Lara comes home" (id 1691671531217), both deleted 2026-07-13 (superseded).
     Two branches: sustained warm (>75F for 15 min while home and awake, not at work)
@@ -3135,7 +3223,17 @@
     TODO ("Alert-only... upgrade to actually cool when installed"). Safe against the
     AC Sweet-Spot bedtime automation: both branches here already require input_boolean.in_bed
     == off, and the sweet-spot automation only touches the AC when in_bed turns on,
-    so the two can never fire at the same time.'
+    so the two can never fire at the same time.
+
+
+    2026-08-11 (v4): the cooling actions are now wrapped in an availability check
+    on climate.bedroom_ac, with an else-branch that logs the miss. WHY: on 2026-08-10
+    the bedroom AC went unavailable at 22:38 and HA''s climate services returned WITHOUT
+    error against the dead entity, so automations reported success while nothing reached
+    the unit. This automation is deliberately NOT guarded at the top level like the
+    other three bedroom-AC automations - the push notification must still fire when
+    the room is hot and the AC is unreachable, since that is exactly when Lara most
+    needs to know. Only the climate calls are conditional.'
   triggers:
   - entity_id: sensor.temp_in_bedroom
     above: 75
@@ -3183,18 +3281,36 @@
           entity_id: input_datetime.bedroom_heat_last_alerted
         data:
           timestamp: '{{ now().timestamp() }}'
-      - alias: Actually cool it now (v3)
-        action: climate.set_hvac_mode
-        target:
-          entity_id: climate.bedroom_ac
-        data:
-          hvac_mode: cool
-      - alias: Boost preset for faster recovery (v3)
-        action: climate.set_preset_mode
-        target:
-          entity_id: climate.bedroom_ac
-        data:
-          preset_mode: boost
+      - alias: Cool it now, but only if the AC is actually reachable (v4)
+        if:
+        - condition: not
+          conditions:
+          - condition: state
+            entity_id: climate.bedroom_ac
+            state:
+            - unavailable
+            - unknown
+        then:
+        - alias: Actually cool it now (v3)
+          action: climate.set_hvac_mode
+          target:
+            entity_id: climate.bedroom_ac
+          data:
+            hvac_mode: cool
+        - alias: Boost preset for faster recovery (v3)
+          action: climate.set_preset_mode
+          target:
+            entity_id: climate.bedroom_ac
+          data:
+            preset_mode: boost
+        else:
+        - action: logbook.log
+          alias: Record that cooling could not be applied
+          data:
+            entity_id: climate.bedroom_ac
+            message: Heat alert sent, but Bedroom AC is unreachable so no cooling
+              was applied.
+            name: Bedroom Heat Alert
     - conditions:
       - condition: trigger
         id: arrived_home
@@ -3212,18 +3328,36 @@
           entity_id: input_datetime.bedroom_heat_last_alerted
         data:
           timestamp: '{{ now().timestamp() }}'
-      - alias: Actually cool it now (v3)
-        action: climate.set_hvac_mode
-        target:
-          entity_id: climate.bedroom_ac
-        data:
-          hvac_mode: cool
-      - alias: Boost preset for faster recovery (v3)
-        action: climate.set_preset_mode
-        target:
-          entity_id: climate.bedroom_ac
-        data:
-          preset_mode: boost
+      - alias: Cool it now, but only if the AC is actually reachable (v4)
+        if:
+        - condition: not
+          conditions:
+          - condition: state
+            entity_id: climate.bedroom_ac
+            state:
+            - unavailable
+            - unknown
+        then:
+        - alias: Actually cool it now (v3)
+          action: climate.set_hvac_mode
+          target:
+            entity_id: climate.bedroom_ac
+          data:
+            hvac_mode: cool
+        - alias: Boost preset for faster recovery (v3)
+          action: climate.set_preset_mode
+          target:
+            entity_id: climate.bedroom_ac
+          data:
+            preset_mode: boost
+        else:
+        - action: logbook.log
+          alias: Record that cooling could not be applied
+          data:
+            entity_id: climate.bedroom_ac
+            message: Heat alert sent, but Bedroom AC is unreachable so no cooling
+              was applied.
+            name: Bedroom Heat Alert
   mode: single
 - id: '1783335318996'
   alias: 'Sonos Wake Alarm: Speaker Failsafe (v1)'
@@ -4700,6 +4834,13 @@
       - condition: state
         entity_id: person.lara_wiz
         state: home
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: climate.bedroom_ac
+      state:
+      - unavailable
+      - unknown
   actions:
   - choose:
     - conditions:
@@ -4752,7 +4893,7 @@
         entity_id: climate.bedroom_ac
   mode: single
 - id: '1786413232913'
-  alias: AC — Away Eco / Restore on Presence (v1)
+  alias: AC — Away Eco / Restore on Presence (v2)
   description: 'Energy-saving setback for both Midea AC units when nobody human is
     home, restoring to the everyday eco preset when Lara gets back. Mirrors the trigger
     pattern of ''Turn off the lights when I leave home'' and, most importantly, the
@@ -4779,7 +4920,21 @@
 
     2026-08-11: left_home branch now also forces climate.bedroom_ac back to hvac_mode
     cool, to cancel any lingering Dry mode from ''Bedroom AC - Dry Mode While Getting
-    Ready'' if she leaves before that automation would otherwise be superseded.'
+    Ready'' if she leaves before that automation would otherwise be superseded.
+
+
+    2026-08-11 (v2): availability handling for climate.bedroom_ac. This automation
+    is deliberately NOT guarded at the top level like the other bedroom-AC automations,
+    because it targets BOTH units - a bedroom guard would wrongly block the living-room
+    setback too. Instead: (a) the bedroom-only set_hvac_mode cool step is wrapped
+    in an availability check, and (b) both logbook messages now append a note when
+    the bedroom unit is unreachable, so the log stops claiming both units were set
+    when only the living room actually was. The two-entity set_preset_mode calls are
+    left targeting both on purpose - HA no-ops the unavailable one and the living
+    room still gets its setback, which is the desired behavior. Context: on 2026-08-10
+    the bedroom AC went unavailable and HA''s climate services returned WITHOUT error
+    against the dead entity, so automations logged success while nothing reached the
+    unit.'
   triggers:
   - entity_id: person.lara_wiz
     event: leave
@@ -4826,18 +4981,30 @@
             entity_id:
             - climate.bedroom_ac
             - climate.living_room_ac
-      - alias: Also cancel any lingering Dry mode from the getting-ready automation
-        action: climate.set_hvac_mode
-        target:
-          entity_id: climate.bedroom_ac
-        data:
-          hvac_mode: cool
+      - alias: Cancel lingering Dry mode, but only if the bedroom unit is reachable
+        if:
+        - condition: not
+          conditions:
+          - condition: state
+            entity_id: climate.bedroom_ac
+            state:
+            - unavailable
+            - unknown
+        then:
+        - alias: Also cancel any lingering Dry mode from the getting-ready automation
+          action: climate.set_hvac_mode
+          target:
+            entity_id: climate.bedroom_ac
+          data:
+            hvac_mode: cool
       - action: logbook.log
         alias: Log the setback depth chosen
         data:
           entity_id: climate.bedroom_ac
           message: Left home — set AC preset to {{ 'eco (Johnny home alone)' if is_state('binary_sensor.johnny_home_alone',
-            'on') else 'away (house empty)' }}.
+            'on') else 'away (house empty)' }}.{{ ' Bedroom AC was unreachable, so
+            this applied to the living room only.' if states('climate.bedroom_ac')
+            in ['unavailable','unknown'] else '' }}
           name: AC Away Eco
     - conditions:
       - condition: trigger
@@ -4855,7 +5022,9 @@
         alias: Log the restore
         data:
           entity_id: climate.bedroom_ac
-          message: Back home — restored AC preset to eco.
+          message: Back home — restored AC preset to eco.{{ ' Bedroom AC was unreachable,
+            so this applied to the living room only.' if states('climate.bedroom_ac')
+            in ['unavailable','unknown'] else '' }}
           name: AC Away Eco
   mode: single
 - id: '1786413800292'
@@ -4902,7 +5071,10 @@
     conditions:
     - condition: state
       entity_id: climate.bedroom_ac
-      state: 'off'
+      state:
+      - 'off'
+      - unavailable
+      - unknown
   - alias: Only 'Wake up' calendar events
     condition: template
     value_template: '{{ ''wake up'' in (trigger.calendar_event.summary | lower | trim)
@@ -4939,21 +5111,40 @@
       name: Bedroom AC
   mode: single
 - id: '1786413806767'
-  alias: Living Room AC — Bedtime Setback (Unless Guests) (v1)
+  alias: Living Room AC — Bedtime Setback (Unless Guests) (v2)
   description: 'At bedtime (in_bed on), sets the living room AC to eco preset and
     relaxes its target temperature up 3°F, so it''s not working to hold a full daytime-comfort
     temperature all night in an empty room - just enough to keep it from getting too
     warm. Entirely skipped if input_boolean.guests is on, so a guest still up in the
-    living room isn''t left in a warming room.
+    living room isn''t left in a warming room. Gated on calendar.vacation off per
+    house style section 8.
 
 
-    Captures the target temperature at trigger time into base_temp so repeated triggers
-    (e.g. in_bed flapping) don''t compound the +3°F relaxation. Gated on calendar.vacation
-    off per house style section 8.'
+    v2, 2026-08-11 — two fixes:
+
+
+    1. WRITES THE PRE-SETBACK TARGET to input_number.lr_ac_pre_setback_temp so its
+    counterpart, ''Living Room AC — Morning Restore After Bedtime Setback (v1)'',
+    can put the exact original value back in the morning. Before v2 nothing ever lowered
+    the target again: the only automation that restored it fired on ARRIVING HOME,
+    so on any day Lara did not leave and come back, the living room sat +3°F all day.
+    Observed 2026-08-11: raised at 23:42, still 78°F at 07:08.
+
+
+    2. NO LONGER COMPOUNDS. v1''s description claimed capturing base_temp into a variable
+    prevented repeated triggers from stacking the +3°F. It did not - the variable
+    is re-read from the entity on every run, so a second in_bed on would have gone
+    75 -> 78 -> 81. The real guard is the new condition that input_number.lr_ac_pre_setback_temp
+    is still 0, i.e. no setback is currently active. The morning restore zeroes it,
+    which is what re-arms this automation for the next night.
+
+
+    Also now skips if climate.living_room_ac is unavailable, which it and its bedroom
+    sibling have both been doing intermittently.'
   triggers:
   - entity_id: input_boolean.in_bed
-    platform: state
     to: 'on'
+    trigger: state
   conditions:
   - condition: state
     entity_id: calendar.vacation
@@ -4965,11 +5156,25 @@
     conditions:
     - condition: state
       entity_id: climate.living_room_ac
-      state: 'off'
+      state:
+      - 'off'
+      - unavailable
+      - unknown
+  - alias: Only arm if no setback is already active
+    below: 0.5
+    condition: numeric_state
+    entity_id: input_number.lr_ac_pre_setback_temp
   actions:
   - variables:
       base_temp: '{{ state_attr(''climate.living_room_ac'', ''temperature'') | float
         }}'
+  - action: input_number.set_value
+    alias: Remember the pre-setback target so the morning restore can put it back
+      exactly
+    data:
+      value: '{{ base_temp }}'
+    target:
+      entity_id: input_number.lr_ac_pre_setback_temp
   - action: climate.set_preset_mode
     alias: Eco preset for the overnight setback
     data:
@@ -4987,7 +5192,7 @@
     data:
       entity_id: climate.living_room_ac
       message: Bedtime setback — eco preset, {{ base_temp }}°F → {{ base_temp + 3
-        }}°F.
+        }}°F. Stored {{ base_temp }}°F for the morning restore.
       name: Living Room AC
   mode: single
 - id: '1786413813332'
@@ -5088,7 +5293,10 @@
     conditions:
     - condition: state
       entity_id: climate.bedroom_ac
-      state: 'off'
+      state:
+      - 'off'
+      - unavailable
+      - unknown
   actions:
   - action: climate.set_hvac_mode
     alias: Dry mode for the getting-ready window
@@ -5102,4 +5310,166 @@
       entity_id: climate.bedroom_ac
       message: Switched to Dry mode for the getting-ready window.
       name: Bedroom AC
+  mode: single
+- id: '1786446832933'
+  alias: Living Room AC — Morning Restore After Bedtime Setback (v1)
+  description: 'Closes the loop on ''Living Room AC — Bedtime Setback (Unless Guests)
+    (v2)'', which raised the living room target +3°F at bedtime and had no exit. Found
+    2026-08-11: the setback fired at 23:42 and the living room was still sitting at
+    78°F at 07:08 the next morning, because the only thing that ever lowered it was
+    ''AC — Away Eco / Restore on Presence (v1)'', which triggers on ARRIVING HOME
+    and had never fired once (last_triggered null). On any day Lara does not leave
+    the house and come back, the living room stayed on the overnight setback all day.
+
+
+    Restores the exact pre-setback target rather than subtracting 3°F, because a blind
+    -3 drifts if anything else touched the setpoint overnight. The setback writes
+    its pre-setback value into input_number.lr_ac_pre_setback_temp; this automation
+    reads it back and then zeroes it. A value of 0 in that helper means ''no setback
+    currently active'', which is also what re-arms tomorrow night''s setback.
+
+
+    Does NOT touch the preset. The setback sets eco, and eco is the everyday steady-state
+    preset on both units, so there is nothing to undo there.
+
+
+    Three triggers, all funnelling to the same restore: waking (the normal path),
+    a 10:00 backstop for days in_bed never clears, and unit-recovered for the case
+    where climate.living_room_ac was unavailable at wake time (it was unavailable
+    for hours on 2026-08-11) and the restore had to be skipped. Without that third
+    trigger a long outage would leave the helper stuck above 0 and permanently disarm
+    the setback.
+
+
+    Gated on calendar.vacation off per house style section 8. No guests gate needed:
+    if guests were on, the setback never ran, so the helper is 0 and this exits on
+    its own.'
+  triggers:
+  - entity_id: input_boolean.in_bed
+    from: 'on'
+    id: woke_up
+    to: 'off'
+    trigger: state
+  - at: '10:00:00'
+    id: backstop
+    trigger: time
+  - entity_id: climate.living_room_ac
+    from: unavailable
+    id: unit_recovered
+    trigger: state
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  - above: 0
+    condition: numeric_state
+    entity_id: input_number.lr_ac_pre_setback_temp
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: climate.living_room_ac
+      state:
+      - 'off'
+      - unavailable
+      - unknown
+  actions:
+  - variables:
+      restore_temp: '{{ states(''input_number.lr_ac_pre_setback_temp'') | float }}'
+      why: '{{ trigger.id | default(''manual'') }}'
+  - action: climate.set_temperature
+    alias: Put the target back exactly where it was before bedtime
+    data:
+      temperature: '{{ restore_temp }}'
+    target:
+      entity_id: climate.living_room_ac
+  - action: input_number.set_value
+    alias: Clear the marker so tonight's setback can arm again
+    data:
+      value: 0
+    target:
+      entity_id: input_number.lr_ac_pre_setback_temp
+  - action: logbook.log
+    alias: Log it
+    data:
+      entity_id: climate.living_room_ac
+      message: 'Morning restore — target back to {{ restore_temp }}°F (trigger: {{
+        why }}).'
+      name: Living Room AC
+  mode: single
+- id: alert_ac_unavailable
+  alias: 'Alert: AC Offline / Restored'
+  description: 'Fires when either Midea climate entity goes unreachable for 15 minutes,
+    and again when it comes back.
+
+
+    WHY THIS EXISTS: on 2026-08-10 at 22:38 climate.bedroom_ac went unavailable (midealocal
+    ''Unable to connect'', config entry stuck in setup_retry) and nothing caught it
+    for ~9 hours. Worse, the AC automations kept firing at the dead entity: HA''s
+    climate services return WITHOUT error against an unavailable entity, so ''AC Sweet-Spot:
+    Bedroom Bedtime Set'' logged ''Applied 65F to Bedroom AC'' and overwrote input_number.ac_sweet_spot_dial_setting
+    to 65 when nothing reached the unit. That silently invalidated a Block 1 sweet-spot
+    test night. The existing unavailable-entity monitor has buckets for sensor/binary_sensor/light/switch/button/zha/hue/mobile_app
+    but NO climate bucket, so there was no path by which this surfaced.
+
+
+    Three AC automations now carry an explicit ''not unavailable/unknown'' guard so
+    they skip rather than pretend (sweet-spot bedtime set, dry-mode getting-ready,
+    gradual warm before alarm). Those guards make the failure SILENT - this alert
+    is the other half of that trade, and the two are meant to ship together. Do not
+    remove one without revisiting the other.
+
+
+    NOT vacation-gated (mirrors the fridge and power-outage alerts): a dead AC matters
+    more when Lara is away and Johnny is home, not less.
+
+
+    Includes the restore branch deliberately - see the Power Outage / Restoration
+    Alert asymmetry, where the outage fired but the recovery never did.
+
+
+    15-minute ''for:'' absorbs the brief reconnect blips both units show; it is not
+    tuned to anything measured. If this turns out to be chatty, raise it rather than
+    deleting the automation.'
+  triggers:
+  - entity_id:
+    - climate.bedroom_ac
+    - climate.living_room_ac
+    for: 00:15:00
+    id: ac_offline
+    to: unavailable
+    trigger: state
+  - entity_id:
+    - climate.bedroom_ac
+    - climate.living_room_ac
+    from: unavailable
+    id: ac_restored
+    not_to:
+    - unknown
+    trigger: state
+  actions:
+  - choose:
+    - alias: Unit went dark
+      conditions:
+      - condition: trigger
+        id: ac_offline
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          message: '{{ trigger.to_state.attributes.friendly_name | default(''An AC'')
+            }} has been unreachable for 15 min. Its automations will skip instead
+            of firing at a dead entity.'
+          title: ⚠️ AC offline
+    - alias: Unit came back
+      conditions:
+      - condition: trigger
+        id: ac_restored
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          message: '{{ trigger.to_state.attributes.friendly_name | default(''An AC'')
+            }} reconnected — now {{ trigger.to_state.state }}.'
+          title: ✅ AC back online
   mode: single
