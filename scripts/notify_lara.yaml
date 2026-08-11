@@ -1,0 +1,53 @@
+notify_lara:
+  alias: Notify Lara (fan-out)
+  icon: mdi:bell-ring-outline
+  description: >
+    Single fan-out point for personal push notifications. Sends the same
+    title/message to every device listed in the sequence below. Created
+    2026-08-10 when Lara wanted laundry alerts on her MacBook as well as her
+    iPhone.
+
+    TO ADD OR REMOVE A DEVICE: add or delete a step in the sequence. That is the
+    whole point of this script - one edit here instead of hunting through every
+    automation. Available services as of 2026-08-10:
+    notify.mobile_app_iphone /
+    notify.mobile_app_lara_s_15_macbook_air /
+    notify.mobile_app_laras_ipad_mini /
+    notify.mobile_app_laras_mini_ipad.
+    Note the MacBook is mobile_app_lara_s_15_macbook_air, NOT
+    mobile_app_macbook_air.
+
+    Carries no gating of its own, so callers keep their own vacation / in_bed
+    conditions. mode parallel so two alerts firing close together (washer and
+    dryer finishing near each other) do not queue behind one another.
+
+    NOTE FOR FUTURE EDITS: this config loads scripts via
+    "script: !include_dir_merge_named scripts", so scripts live as one file per
+    script in scripts/. The HA scripts API writes to scripts.yaml, which nothing
+    includes - creating a script through the API silently does nothing here.
+  mode: parallel
+  max: 10
+  fields:
+    title:
+      description: Notification title
+      required: true
+      example: Dryer finished
+      selector:
+        text:
+    message:
+      description: Notification body
+      required: true
+      example: Cycle ran 52 min.
+      selector:
+        text:
+  sequence:
+    - alias: iPhone
+      action: notify.mobile_app_iphone
+      data:
+        title: "{{ title }}"
+        message: "{{ message }}"
+    - alias: MacBook Air
+      action: notify.mobile_app_lara_s_15_macbook_air
+      data:
+        title: "{{ title }}"
+        message: "{{ message }}"

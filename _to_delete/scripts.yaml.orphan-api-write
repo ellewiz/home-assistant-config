@@ -1,0 +1,43 @@
+notify_lara:
+  alias: Notify Lara (fan-out)
+  description: "Single fan-out point for personal push notifications. Sends the same
+    title/message to every device listed in the sequence below.\n\nWHY THIS EXISTS:
+    adding or removing a device should be ONE edit here, not a hunt through every
+    automation. Created 2026-08-10 when Lara wanted laundry alerts on her MacBook
+    as well as her iPhone.\n\nTO ADD OR REMOVE A DEVICE: add or delete a step in the
+    sequence. Available services as of 2026-08-10:\n  notify.mobile_app_iphone\n  notify.mobile_app_lara_s_15_macbook_air\n
+    \ notify.mobile_app_laras_ipad_mini\n  notify.mobile_app_laras_mini_ipad\n\nNote
+    the MacBook service is 'mobile_app_lara_s_15_macbook_air', NOT 'mobile_app_macbook_air'.\n\nDesign
+    note: an earlier version used a templated `action: {{ repeat.item }}` over a target
+    list, which failed to load. Explicit steps are used deliberately - do not re-clever
+    this.\n\nUsed by: the four Laundry automations. Safe to reuse elsewhere - it carries
+    no gating of its own, so callers keep their own vacation / in_bed conditions.\n\nmode:
+    parallel so two alerts firing close together (washer and dryer finishing near
+    each other) do not queue behind one another."
+  fields:
+    message:
+      description: Notification body
+      example: Cycle ran 52 min.
+      required: true
+      selector:
+        text: {}
+    title:
+      description: Notification title
+      example: Dryer finished
+      required: true
+      selector:
+        text: {}
+  icon: mdi:bell-ring-outline
+  max: 10
+  mode: parallel
+  sequence:
+  - action: notify.mobile_app_iphone
+    alias: iPhone
+    data:
+      message: '{{ message }}'
+      title: '{{ title }}'
+  - action: notify.mobile_app_lara_s_15_macbook_air
+    alias: MacBook Air
+    data:
+      message: '{{ message }}'
+      title: '{{ title }}'
