@@ -46,3 +46,6 @@ code-review-*.md
 *.bak
 *.bak-*
 lr-*.md
+
+# Cowork sandbox delete-workaround folder (can't unlink over SMB, so files get staged here instead of removed)
+_to_delete/
