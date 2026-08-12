@@ -1,0 +1,23 @@
+laundry_air_dry_clear:
+  alias: Laundry — Air Dry (Clear Wet Nag)
+  description: >
+    Manual equivalent of "Laundry — Wet Clothes Cleared". Blanks
+    input_datetime.laundry_washer_finished_at back to the 1970 sentinel and
+    turns off input_boolean.laundry_done_pending_washer, so
+    "Laundry — Wet Clothes Nag" stops firing on this load. The automatic
+    clear only triggers when the dryer or washer starts running again, so
+    this covers the air-dry case where neither will. Run it once you've
+    moved a load out to air dry. Added 2026-08-12.
+  icon: mdi:tshirt-crew-outline
+  mode: single
+  sequence:
+    - action: input_datetime.set_datetime
+      alias: Blank the finish timestamp
+      data:
+        datetime: "1970-01-01 00:00:00"
+      target:
+        entity_id: input_datetime.laundry_washer_finished_at
+    - action: input_boolean.turn_off
+      alias: Drop any undelivered washer notice
+      target:
+        entity_id: input_boolean.laundry_done_pending_washer
