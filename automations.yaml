@@ -89,7 +89,11 @@
   mode: single
 - id: '1637113982141'
   alias: Update in_bed when motion is detected
-  description: ''
+  description: 'UPDATE 2026-08-12: The ''stop music if playing'' check was still pointed
+    at media_player.bedroom (Music Assistant), which the wake alarm and other bedroom
+    automations no longer use as of the same-day migration to native Sonos. Retargeted
+    both the state check and the media_stop action to media_player.bedroom_frame so
+    this actually works again.'
   triggers:
   - entity_id: binary_sensor.hue_motion_sensor_2_motion
     from: 'off'
@@ -120,12 +124,12 @@
           transition: 3
       - if:
         - condition: state
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
           state: playing
         then:
         - action: media_player.media_stop
           target:
-            entity_id: media_player.bedroom
+            entity_id: media_player.bedroom_frame
       - delay:
           seconds: 4
       - if:
@@ -998,7 +1002,37 @@
     reaches playing pushes to iPhone instead of failing silently. This covers the
     case the Speaker Failsafe (v1) automation lists as its TODO v2: MA player present
     and not unavailable, but playback never actually starts. If the library is ever
-    re-imported again, re-check this media_id before assuming the wake music works.'
+    re-imported again, re-check this media_id before assuming the wake music works.
+    [2026-08-12] Phase 1 moved OFF Music Assistant entirely, after MA''s Apple Music
+    bridge broke again (library id 100 also started throwing ''No playable items found'',
+    survived an add-on restart, root cause never resolved) and Lara decided MA wasn''t
+    worth keeping given she barely uses it as a player. Phase 1 now uses media_player.play_media
+    with a native Sonos Favorite (media_content_type: favorite_item_id) on media_player.bedroom_frame,
+    instead of music_assistant.play_media on media_player.bedroom. Two favorites exist:
+    Lofi Sleep (FV:2/57, default) and Halloween lofi (FV:2/58). A new step calls calendar.get_events
+    on calendar.master_calendar for today''s date range; if any event summary contains
+    ''halloween'' (case-insensitive), the Halloween favorite plays instead. All Phase
+    1 volume-ramp, shuffle_set, and wait_for_trigger steps were retargeted from media_player.bedroom
+    to media_player.bedroom_frame to match. Phase 2 (the escalating alarm-clock.mp3
+    via music_assistant.play_announcement) is UNCHANGED and still targets media_player.bedroom
+    on Music Assistant deliberately — that''s the safety-critical wake mechanism,
+    proven reliable twice (Aug 10, Aug 12), and this change did not touch it. If Lara
+    later removes Music Assistant entirely, Phase 2 will need its own migration (native
+    Sonos has no direct play_announcement-with-escalating-volume equivalent; would
+    need TTS/URL playback via a script similar to sonos_broadcast). [2026-08-12 later]
+    Phase 2 also moved OFF Music Assistant, completing the full removal. music_assistant.play_announcement
+    (which supported an atomic announce_volume + non-destructive duck/resume) has
+    no native-Sonos equivalent — tested media_player.play_media with announce:true
+    on media_player.bedroom_frame first and it silently no-op''d (no state change,
+    no error, Sonos integration doesn''t implement the announce kwarg). Plain media_player.play_media
+    (no announce flag) DOES work, confirmed live twice via ha_get_history state transitions
+    (idle->playing->idle, ~1.8s matching the clip''s real length) — it just fully
+    replaces the queue rather than ducking/restoring, which is fine here since nothing
+    needs to resume after the alarm. Loop now does volume_set (0.42->1.00 in 0.08
+    steps, same ramp as before rescaled from the old 0-100 announce_volume to native
+    0.0-1.0) then play_media, both continue_on_error, both on media_player.bedroom_frame.
+    Verified the ramp math via ha_eval_template before shipping. Music Assistant no
+    longer has ANY role in this automation.'
   triggers:
   - entity_id: calendar.master_calendar
     event: start
@@ -1034,26 +1068,41 @@
           entity_id: media_player.bedroom_frame
       - alias: 'Phase 0 — Settle: let the Sonos group dissolve before playback'
         delay: 00:00:01
+      - action: calendar.get_events
+        alias: Phase 1 — Check whether a Halloween event is active today
+        continue_on_error: true
+        data:
+          end_date_time: '{{ (now() + timedelta(days=1)).strftime(''%Y-%m-%dT00:00:00'')
+            }}'
+          start_date_time: '{{ now().strftime(''%Y-%m-%dT00:00:00'') }}'
+        response_variable: today_cal_events
+        target:
+          entity_id: calendar.master_calendar
+      - alias: Phase 1 — Set halloween_active from today's calendar events
+        variables:
+          halloween_active: '{{ (today_cal_events | default({})).get(''calendar.master_calendar'',
+            {}).get(''events'', []) | selectattr(''summary'', ''defined'') | map(attribute=''summary'')
+            | select(''search'', ''(?i)halloween'') | list | length > 0 }}'
+        continue_on_error: true
       - action: media_player.volume_set
         alias: Phase 1 — Set initial low volume
         data:
           volume_level: 0.03
         target:
-          entity_id: media_player.bedroom
-      - action: music_assistant.play_media
-        alias: Phase 1 — Play Lofi Sleep playlist shuffled
+          entity_id: media_player.bedroom_frame
+      - action: media_player.play_media
+        alias: Phase 1 — Play Lofi Sleep (or Halloween) Sonos favorite
         continue_on_error: true
         data:
-          enqueue: replace
-          media_id: library://playlist/100
-          media_type: playlist
-          radio_mode: false
+          media_content_id: '{{ ''FV:2/58'' if (halloween_active | default(false))
+            else ''FV:2/57'' }}'
+          media_content_type: favorite_item_id
         target:
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
       - continue_on_timeout: true
         timeout: 00:00:15
         wait_for_trigger:
-        - entity_id: media_player.bedroom
+        - entity_id: media_player.bedroom_frame
           to: playing
           trigger: state
       - alias: Phase 1 — Alert if the wake playlist never started
@@ -1063,71 +1112,71 @@
         then:
         - action: notify.mobile_app_iphone
           data:
-            message: The Lofi Sleep playlist did not reach playing on the bedroom
-              speaker within 15s, so the volume ramp is running against silence. The
-              alarm at wake time will still sound. Check the Music Assistant library
-              for an orphaned playlist id.
+            message: The wake music (Sonos Favorite) did not reach playing on the
+              bedroom speaker within 15s, so the volume ramp is running against silence.
+              The alarm at wake time will still sound. Check the Lofi Sleep / Halloween
+              lofi favorite on the Bedroom Sonos.
             title: ⚠️ Wake lofi never started
       - action: media_player.shuffle_set
         continue_on_error: true
         data:
           shuffle: true
         target:
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
       - delay: 00:02:00
       - action: media_player.volume_set
         data:
           volume_level: 0.04
         target:
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
       - delay: 00:02:00
       - action: media_player.volume_set
         data:
           volume_level: 0.05
         target:
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
       - delay: 00:02:00
       - action: media_player.volume_set
         data:
           volume_level: 0.07
         target:
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
       - delay: 00:02:00
       - action: media_player.volume_set
         data:
           volume_level: 0.09
         target:
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
       - delay: 00:02:00
       - action: media_player.volume_set
         data:
           volume_level: 0.11
         target:
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
       - delay: 00:02:00
       - action: media_player.volume_set
         data:
           volume_level: 0.13
         target:
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
       - delay: 00:02:00
       - action: media_player.volume_set
         data:
           volume_level: 0.15
         target:
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
       - delay: 00:02:00
       - action: media_player.volume_set
         data:
           volume_level: 0.18
         target:
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
       - delay: 00:02:00
       - action: media_player.volume_set
         data:
           volume_level: 0.2
         target:
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
       - delay: 00:02:00
       - alias: Phase 2 — Skip if already out of bed
         condition: state
@@ -1136,15 +1185,21 @@
       - alias: Phase 2 — Alarm escalation loop
         repeat:
           sequence:
-          - action: music_assistant.play_announcement
+          - action: media_player.volume_set
+            alias: Phase 2 — Set escalating alarm volume
             continue_on_error: true
             data:
-              announce_volume: '{{ [42 + (repeat.index - 1) * 8, 100] | min | int
-                }}'
-              url: http://homeassistant.local:8123/local/alarm-clock.mp3
-              use_pre_announce: false
+              volume_level: '{{ [0.42 + (repeat.index - 1) * 0.08, 1.0] | min }}'
             target:
-              entity_id: media_player.bedroom
+              entity_id: media_player.bedroom_frame
+          - action: media_player.play_media
+            alias: Phase 2 — Play alarm-clock.mp3
+            continue_on_error: true
+            data:
+              media_content_id: http://homeassistant.local:8123/local/alarm-clock.mp3
+              media_content_type: music
+            target:
+              entity_id: media_player.bedroom_frame
           - delay: 00:00:12
           until:
           - condition: state
@@ -1191,7 +1246,17 @@
     Shortcut: shortcuts://run-shortcut?name=Start%20Car. Lara must create an iOS Shortcut
     named exactly ''Start Car'' (Open App: myChevrolet, or a myChevrolet Remote Start
     action to actually fire it). Pending her building the Shortcut + a re-test. Chevy
-    exposes no remote-start API.'
+    exposes no remote-start API. [2026-08-12] Sonos broadcast player list swapped
+    off Music Assistant entities: media_player.bedroom -> media_player.bedroom_frame,
+    media_player.minipod_2 -> media_player.minipod (same physical speakers, native
+    Sonos entities instead of MA ones). living_room_arc and bathroom were already
+    native, untouched. This was part of removing Music Assistant from the house entirely
+    (see [[project_wake_alarm_playlist53_failure]]) and also happens to close a latent
+    bug: sonos.snapshot/sonos.restore inside scripts/sonos_broadcast.yaml are Sonos-platform-only
+    services that silently no-op on non-Sonos (i.e. MA) entities, so the resume-after-announcement
+    protection this script was built for ([[project_sonos_broadcast_snapshot_order]])
+    never actually covered bedroom/minipod_2 before this fix. Now all 4 broadcast
+    players are native Sonos and get real snapshot/restore protection.'
   triggers:
   - entity_id: calendar.master_calendar
     event: end
@@ -1225,9 +1290,9 @@
     data:
       message: It's time to turn on the car!
       players:
-      - media_player.bedroom
+      - media_player.bedroom_frame
       - media_player.living_room_arc
-      - media_player.minipod_2
+      - media_player.minipod
       - media_player.bathroom
       restore: true
       ungroup: true
@@ -3375,7 +3440,7 @@
             entity_id: climate.bedroom_ac
   mode: single
 - id: '1783335318996'
-  alias: 'Sonos Wake Alarm: Speaker Failsafe (v1)'
+  alias: 'Sonos Wake Alarm: Speaker Failsafe (v2)'
   description: 'Failsafe for the Sonos Wake Alarm. On 2026-07-06 the wake alarm ran
     perfectly per its trace but Lara slept through it: every audio step (lofi ramp
     + escalating alarm) plays through media_player.bedroom, the Music Assistant entity
@@ -3400,7 +3465,22 @@
     the main alarm; if native Sonos ever fails to resolve mDNS, switch to the HA host
     IP. Intentional infra, don''t flag. TODO v2: also cover ''main alarm started but
     media_player.bedroom never reached playing'' to defend against non-unavailable
-    MA failures (player present but announcement errors).'
+    MA failures (player present but announcement errors).
+
+
+    UPDATE 2026-08-12 (v2): The old premise (checking whether media_player.bedroom,
+    the Music Assistant entity, was unavailable) went stale the same day once the
+    main Sonos Wake Alarm was migrated fully off Music Assistant onto native Sonos
+    - that MA entity no longer has any bearing on whether the main alarm''s audio
+    actually plays. Replaced the trigger condition with the TODO v2 already noted
+    above: check whether media_player.bedroom_frame is NOT in state ''playing'' at
+    wake time (this automation trigger fires at the same offset-0 wake moment where
+    the main alarm''s Phase 1 lofi music should still be playing, right before its
+    own Phase 2 begins - if it''s not playing, Phase 1 evidently failed). Also fixed
+    an independent bug: the backup alarm''s own play_media call used announce:true,
+    which was confirmed elsewhere this session to silently no-op on this house''s
+    Sonos integration - removed the flag so the backup alarm actually produces sound
+    if it fires. Alert wording updated to match the new premise.'
   triggers:
   - entity_id: calendar.master_calendar
     event: start
@@ -3422,18 +3502,21 @@
   - condition: template
     value_template: '{% set s = trigger.calendar_event.summary | lower | trim %}{{
       ''wake up'' in s }}'
-  - condition: state
-    entity_id: media_player.bedroom
-    state:
-    - unavailable
-    - unknown
+  - alias: Bedroom Sonos wasn't playing at wake time (main alarm audio likely failed)
+    condition: not
+    conditions:
+    - condition: state
+      entity_id: media_player.bedroom_frame
+      state: playing
   actions:
   - alias: Alert — MA bedroom player down, alarm on backup speaker
     action: notify.mobile_app_iphone
     data:
-      title: ⚠️ Wake alarm on backup speaker
-      message: Music Assistant's bedroom player was unavailable at wake time, so the
-        alarm is sounding on the bedroom Sonos directly. Check Music Assistant.
+      title: ⚠️ Wake alarm backup fired
+      message: The bedroom Sonos wasn't playing at wake time, so this backup alarm
+        is sounding on media_player.bedroom_frame directly. The main Sonos Wake Alarm's
+        audio chain (Phase 1 wake music) likely failed to start or stopped early —
+        check it.
   - alias: Phase 0 — Unjoin bedroom Sonos so the alarm stays out of the bathroom (Johnny)
     action: media_player.unjoin
     target:
@@ -3462,7 +3545,6 @@
         data:
           media_content_id: http://homeassistant.local:8123/local/alarm-clock.mp3
           media_content_type: music
-          announce: true
         continue_on_error: true
       - delay: 00:00:12
   - alias: Phase 2 — Gentle light fade-in once up
@@ -3972,12 +4054,17 @@
 
 
     continue_on_error is set because a flapping or unavailable Sonos should not abort
-    the stop for the remaining speakers.'
+    the stop for the remaining speakers.
+
+
+    UPDATE 2026-08-12: Removed the redundant media_player.bedroom (Music Assistant)
+    entry from the stop-all list now that media_player.bedroom_frame (native Sonos)
+    is the only entity anything actually plays through in the bedroom.'
   triggers:
   - entity_id: person.lara_wiz
     event: leave
-    trigger: zone
     zone: zone.home
+    platform: zone
   conditions:
   - condition: state
     entity_id: calendar.vacation
@@ -3992,7 +4079,6 @@
       - media_player.living_room
       - media_player.living_room_arc
       - media_player.bedroom_frame
-      - media_player.bedroom
       - media_player.bathroom
       - media_player.basement
   mode: single
@@ -4140,14 +4226,23 @@
   mode: single
 - id: '1786045679175'
   alias: Manual Bedroom Alarm (One-Off)
-  description: Manual one-off alarm for days off work. Set input_datetime.manual_alarm_time
+  description: 'Manual one-off alarm for days off work. Set input_datetime.manual_alarm_time
     and flip input_boolean.manual_alarm on via the iPhone dashboard card. At that
-    time, isolates the bedroom Sonos (unjoins media_player.bedroom_frame so it doesn't
+    time, isolates the bedroom Sonos (unjoins media_player.bedroom_frame so it doesn''t
     wake the bathroom speaker), then blares alarm-clock.mp3 on media_player.bedroom
     only, escalating volume every 12s. Flipping input_boolean.manual_alarm off silences
     it immediately. Auto-caps at 50 escalation cycles (~10 min) and turns itself off
-    so it won't re-fire the same time the next day if left armed. Created 2026-08-06
+    so it won''t re-fire the same time the next day if left armed. Created 2026-08-06
     for a 5am wake-up.
+
+
+    UPDATE 2026-08-12: Migrated off Music Assistant (media_player.bedroom) onto native
+    Sonos (media_player.bedroom_frame), mirroring the same-day fix to the main Sonos
+    Wake Alarm''s Phase 2. music_assistant.play_announcement (0-100 int announce_volume)
+    replaced with media_player.volume_set (0.0-1.0 float, rescaled 35,45,55...100
+    -> 0.35,0.45,0.55...1.0, same progression) + plain media_player.play_media (no
+    announce flag - announce:true was confirmed to silently no-op on this house''s
+    Sonos integration).'
   triggers:
   - at: input_datetime.manual_alarm_time
     id: manual_alarm_time
@@ -4169,19 +4264,26 @@
     data:
       volume_level: 0.35
     target:
-      entity_id: media_player.bedroom
+      entity_id: media_player.bedroom_frame
   - alias: Phase 2 — Escalating alarm loop until switched off (or 50 cycles / ~10
       min)
     repeat:
       sequence:
-      - action: music_assistant.play_announcement
+      - action: media_player.volume_set
+        alias: Phase 2 — Set escalating alarm volume
         continue_on_error: true
         data:
-          announce_volume: '{{ [35 + (repeat.index - 1) * 10, 100] | min | int }}'
-          url: http://homeassistant.local:8123/local/alarm-clock.mp3
-          use_pre_announce: false
+          volume_level: '{{ [0.35 + (repeat.index - 1) * 0.10, 1.0] | min }}'
         target:
-          entity_id: media_player.bedroom
+          entity_id: media_player.bedroom_frame
+      - action: media_player.play_media
+        alias: Phase 2 — Play alarm-clock.mp3
+        continue_on_error: true
+        data:
+          media_content_id: http://homeassistant.local:8123/local/alarm-clock.mp3
+          media_content_type: music
+        target:
+          entity_id: media_player.bedroom_frame
       - delay: 00:00:12
       until:
       - condition: or
