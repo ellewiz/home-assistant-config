@@ -4559,23 +4559,31 @@
       entity_id: switch.vanity_plug
   mode: single
 - id: '1786409326281'
-  alias: Laundry — Washer Cycle Finished (v1)
-  description: 'v1 (2026-08-10): mirrors ''Laundry — Dryer Cycle Finished''. Fires
-    when binary_sensor.washer_running (Threshold helper on sensor.washer_current_consumption,
-    upper 10 / hysteresis 5) drops to idle. The Washer KP115 reads 0.0 W at rest.
+  alias: Laundry — Washer Cycle Finished (v2)
+  description: 'v2 (2026-08-12): fixes a v1 bug where the anti-spam duration check
+    only measured the FINAL on-burst before the washer went idle, not the whole cycle.
+    trigger.from_state.last_changed only reflects the start of the most recent on-segment,
+    so a Quick Wash whose last pre-idle segment was short (~8m50s here) fell under
+    the 10-min floor and the finished push silently never fired, even though the full
+    cycle ran ~37 min. Confirmed Aug 11 2026 ~8:52pm ET - caught only because Lara
+    asked why she hadn''t gotten a push. See [[project_washer_alert_missed_antispam_bug]].
 
 
-    DEBOUNCE IS 5 MIN, LONGER THAN THE DRYER''S 3. Washers pause mid-cycle (soak,
-    drain, between fill and agitate) in a way dryers do not, and a short debounce
-    would fire ''finished'' partway through a load. THRESHOLDS AND DEBOUNCE ARE PROVISIONAL
-    - they were set without a measured cycle because the washer plug only came online
-    after the load had finished. Verify against the first real cycle: pull sensor.washer_current_consumption
-    history and check that no mid-cycle pause exceeded 5 minutes. Adjust rather than
-    assume.
+    v2 tracks session start explicitly via input_datetime.laundry_washer_started_at,
+    stamped on the first off->on transition of a new session (gated by input_boolean.laundry_washer_active_session
+    so mid-cycle flickers don''t re-stamp it), and compares the finish time against
+    THAT instead of just the last burst.
 
 
-    Anti-spam guard: the run must have lasted at least 10 minutes, same reasoning
-    as the dryer.
+    The 5-min trigger debounce and 10-min anti-spam floor themselves are unchanged
+    - still validated by the measured washer profile (peak 148.7W, longest false sub-10W
+    dip only 10s; see [[project_laundry_cycle_alerts]]). The bug was in what the floor
+    was measured against, not the floor value.
+
+
+    Session-active helper resets on every ''finished'' trigger regardless of whether
+    the anti-spam check passes, so a short blip doesn''t leave the session stuck open
+    and corrupt the next real cycle''s start-time stamp.
 
 
     Always stamps input_datetime.laundry_washer_finished_at, which is what the wet-clothes
@@ -4586,53 +4594,94 @@
 
     The plug reached HA by being added via its IP address, NOT via the discovery card
     - its discovery beacon falsely advertises that it requires authentication. See
-    project memory before ever re-adding it.'
+    project memory before ever re-adding it.
+
+
+    Known gap, not yet guarded against: if HA restarts mid-cycle and misses the off->on
+    or on->off event, input_boolean.laundry_washer_active_session can be left stuck
+    in the wrong state, which would delay or skew the next session''s start stamp.'
   triggers:
+  - entity_id: binary_sensor.washer_running
+    from: 'off'
+    id: started
+    platform: state
+    to: 'on'
   - entity_id: binary_sensor.washer_running
     for: 00:05:00
     from: 'on'
-    to: 'off'
+    id: finished
     platform: state
-  conditions:
-  - condition: state
-    entity_id: calendar.vacation
-    state: 'off'
-  - condition: template
-    value_template: '{{ (as_timestamp(trigger.to_state.last_changed) - as_timestamp(trigger.from_state.last_changed))
-      >= 600 }}'
+    to: 'off'
+  conditions: []
   actions:
-  - variables:
-      run_min: '{{ ((as_timestamp(trigger.to_state.last_changed) - as_timestamp(trigger.from_state.last_changed))
-        / 60) | round(0) }}'
-  - action: input_datetime.set_datetime
-    alias: Stamp the finish time - drives the wet-clothes nag
-    data:
-      datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
-    target:
-      entity_id: input_datetime.laundry_washer_finished_at
-  - action: input_datetime.set_datetime
-    alias: Stamp the permanent last-run record - never blanked, this is what Overview
-      should read
-    data:
-      datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
-    target:
-      entity_id: input_datetime.laundry_washer_last_run_at
   - choose:
-    - alias: Awake - notify immediately
+    - alias: Cycle started - stamp session start once per session
       conditions:
+      - condition: trigger
+        id: started
       - condition: state
-        entity_id: input_boolean.in_bed
+        entity_id: input_boolean.laundry_washer_active_session
         state: 'off'
       sequence:
-      - action: script.notify_lara
+      - action: input_datetime.set_datetime
+        alias: Stamp session start
         data:
-          message: Cycle ran {{ run_min }} min. Clothes are ready to move over.
-          title: "\U0001F9FC Washer finished"
-    default:
-    - action: input_boolean.turn_on
-      alias: In bed - defer the push until she is up
-      target:
-        entity_id: input_boolean.laundry_done_pending_washer
+          datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
+        target:
+          entity_id: input_datetime.laundry_washer_started_at
+      - action: input_boolean.turn_on
+        alias: Mark session active
+        target:
+          entity_id: input_boolean.laundry_washer_active_session
+    - alias: Cycle finished - evaluate total run time and notify
+      conditions:
+      - condition: trigger
+        id: finished
+      sequence:
+      - variables:
+          run_min: '{{ ((as_timestamp(trigger.to_state.last_changed) - as_timestamp(states(''input_datetime.laundry_washer_started_at'')))
+            / 60) | round(0) }}'
+      - action: input_boolean.turn_off
+        alias: Session over either way - reset for next run
+        target:
+          entity_id: input_boolean.laundry_washer_active_session
+      - if:
+        - condition: state
+          entity_id: calendar.vacation
+          state: 'off'
+        - condition: template
+          value_template: '{{ (as_timestamp(trigger.to_state.last_changed) - as_timestamp(states(''input_datetime.laundry_washer_started_at'')))
+            >= 600 }}'
+        then:
+        - action: input_datetime.set_datetime
+          alias: Stamp the finish time - drives the wet-clothes nag
+          data:
+            datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
+          target:
+            entity_id: input_datetime.laundry_washer_finished_at
+        - action: input_datetime.set_datetime
+          alias: Stamp the permanent last-run record - never blanked, this is what
+            Overview should read
+          data:
+            datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
+          target:
+            entity_id: input_datetime.laundry_washer_last_run_at
+        - choose:
+          - alias: Awake - notify immediately
+            conditions:
+            - condition: state
+              entity_id: input_boolean.in_bed
+              state: 'off'
+            sequence:
+            - action: script.notify_lara
+              data:
+                message: Cycle ran {{ run_min }} min. Clothes are ready to move over.
+                title: "\U0001F9FC Washer finished"
+          default:
+          - action: input_boolean.turn_on
+            alias: In bed - defer the push until she is up
+            target:
+              entity_id: input_boolean.laundry_done_pending_washer
   mode: single
 - id: '1786409377851'
   alias: Laundry — Wet Clothes Nag (v1)
