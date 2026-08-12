@@ -3203,7 +3203,7 @@
           entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
   mode: single
 - id: bedroom_heat_alert_v2
-  alias: Bedroom — Heat Alert (v4, Cools Only If Reachable)
+  alias: Bedroom — Heat Alert (v5, Boost Actually Sticks)
   description: 'v2 consolidating "Bedroom temp too hot" (id 1654570339244) and "Bedroom
     too hot when Lara comes home" (id 1691671531217), both deleted 2026-07-13 (superseded).
     Two branches: sustained warm (>75F for 15 min while home and awake, not at work)
@@ -3233,20 +3233,35 @@
     the unit. This automation is deliberately NOT guarded at the top level like the
     other three bedroom-AC automations - the push notification must still fire when
     the room is hot and the AC is unreachable, since that is exactly when Lara most
-    needs to know. Only the climate calls are conditional.'
+    needs to know. Only the climate calls are conditional.
+
+
+    2026-08-12 (v5, BUGFIX, found proactively after fixing the same pattern in the
+    away-eco automation): both branches called climate.set_hvac_mode (cool) THEN climate.set_preset_mode
+    (boost), in that order. Confirmed via the away-eco incident earlier the same day
+    that calling set_hvac_mode resets preset_mode back to ''none'' as a side effect
+    on this Midea integration - so ''boost'' was being silently wiped immediately
+    after being set, every single time this automation cooled the room. Not as severe
+    as the away-eco bug (the unit still ends up cooling in plain Cool/none, which
+    is closer to full-power than a no-op), but it was never actually delivering the
+    ''boost for faster recovery'' behavior the automation''s own log/alias claimed.
+    Reordered both branches so set_hvac_mode runs first and set_preset_mode runs last,
+    matching the fix pattern in [[project_midea_ac_integration]]. NOT yet live-fire
+    tested against a real heat event post-fix - worth confirming preset_mode actually
+    reads ''boost'' next time either branch triggers.'
   triggers:
-  - entity_id: sensor.temp_in_bedroom
-    above: 75
+  - above: 75
+    entity_id: sensor.temp_in_bedroom
     for: 00:15:00
     id: sustained_warm
     platform: numeric_state
   - entity_id: person.lara_wiz
-    to: home
+    id: arrived_home
     not_from:
     - unknown
     - unavailable
-    id: arrived_home
     platform: state
+    to: home
   conditions:
   - condition: state
     entity_id: calendar.vacation
@@ -3254,8 +3269,8 @@
   - condition: state
     entity_id: input_boolean.in_bed
     state: 'off'
-  - condition: template
-    alias: Re-alert at most once every 3h (stamped only on real sends)
+  - alias: Re-alert at most once every 3h (stamped only on real sends)
+    condition: template
     value_template: '{{ not has_value(''input_datetime.bedroom_heat_last_alerted'')
       or (now().timestamp() - as_timestamp(states(''input_datetime.bedroom_heat_last_alerted''),
       0)) > 10800 }}'
@@ -3272,16 +3287,24 @@
       sequence:
       - action: notify.mobile_app_iphone
         data:
-          title: ⚠️ Bedroom warm
           message: Bedroom is {{ states('sensor.temp_in_bedroom') }}°F. Turn down
             the heat / crank the AC.
-      - alias: Stamp anti-spam clock
-        action: input_datetime.set_datetime
-        target:
-          entity_id: input_datetime.bedroom_heat_last_alerted
+          title: ⚠️ Bedroom warm
+      - action: input_datetime.set_datetime
+        alias: Stamp anti-spam clock
         data:
           timestamp: '{{ now().timestamp() }}'
+        target:
+          entity_id: input_datetime.bedroom_heat_last_alerted
       - alias: Cool it now, but only if the AC is actually reachable (v4)
+        else:
+        - action: logbook.log
+          alias: Record that cooling could not be applied
+          data:
+            entity_id: climate.bedroom_ac
+            message: Heat alert sent, but Bedroom AC is unreachable so no cooling
+              was applied.
+            name: Bedroom Heat Alert
         if:
         - condition: not
           conditions:
@@ -3291,44 +3314,44 @@
             - unavailable
             - unknown
         then:
-        - alias: Actually cool it now (v3)
-          action: climate.set_hvac_mode
-          target:
-            entity_id: climate.bedroom_ac
+        - action: climate.set_hvac_mode
+          alias: Actually cool it now (v3)
           data:
             hvac_mode: cool
-        - alias: Boost preset for faster recovery (v3)
-          action: climate.set_preset_mode
           target:
             entity_id: climate.bedroom_ac
+        - action: climate.set_preset_mode
+          alias: Boost preset for faster recovery (v5 - set LAST so it sticks)
           data:
             preset_mode: boost
-        else:
-        - action: logbook.log
-          alias: Record that cooling could not be applied
-          data:
+          target:
             entity_id: climate.bedroom_ac
-            message: Heat alert sent, but Bedroom AC is unreachable so no cooling
-              was applied.
-            name: Bedroom Heat Alert
     - conditions:
       - condition: trigger
         id: arrived_home
-      - condition: numeric_state
+      - above: 78
+        condition: numeric_state
         entity_id: sensor.temp_in_bedroom
-        above: 78
       sequence:
       - action: notify.mobile_app_iphone
         data:
-          title: ⚠️ Bedroom hot
           message: Welcome home — bedroom is {{ states('sensor.temp_in_bedroom') }}°F.
-      - alias: Stamp anti-spam clock
-        action: input_datetime.set_datetime
-        target:
-          entity_id: input_datetime.bedroom_heat_last_alerted
+          title: ⚠️ Bedroom hot
+      - action: input_datetime.set_datetime
+        alias: Stamp anti-spam clock
         data:
           timestamp: '{{ now().timestamp() }}'
+        target:
+          entity_id: input_datetime.bedroom_heat_last_alerted
       - alias: Cool it now, but only if the AC is actually reachable (v4)
+        else:
+        - action: logbook.log
+          alias: Record that cooling could not be applied
+          data:
+            entity_id: climate.bedroom_ac
+            message: Heat alert sent, but Bedroom AC is unreachable so no cooling
+              was applied.
+            name: Bedroom Heat Alert
         if:
         - condition: not
           conditions:
@@ -3338,26 +3361,18 @@
             - unavailable
             - unknown
         then:
-        - alias: Actually cool it now (v3)
-          action: climate.set_hvac_mode
-          target:
-            entity_id: climate.bedroom_ac
+        - action: climate.set_hvac_mode
+          alias: Actually cool it now (v3)
           data:
             hvac_mode: cool
-        - alias: Boost preset for faster recovery (v3)
-          action: climate.set_preset_mode
           target:
             entity_id: climate.bedroom_ac
+        - action: climate.set_preset_mode
+          alias: Boost preset for faster recovery (v5 - set LAST so it sticks)
           data:
             preset_mode: boost
-        else:
-        - action: logbook.log
-          alias: Record that cooling could not be applied
-          data:
+          target:
             entity_id: climate.bedroom_ac
-            message: Heat alert sent, but Bedroom AC is unreachable so no cooling
-              was applied.
-            name: Bedroom Heat Alert
   mode: single
 - id: '1783335318996'
   alias: 'Sonos Wake Alarm: Speaker Failsafe (v1)'
@@ -4684,7 +4699,7 @@
               entity_id: input_boolean.laundry_done_pending_washer
   mode: single
 - id: '1786409377851'
-  alias: Laundry — Wet Clothes Nag (v1)
+  alias: Laundry — Wet Clothes Nag (v2)
   description: 'v1 (2026-08-10): repeat reminder that a finished load is still sitting
     wet in the washer.
 
@@ -4711,10 +4726,25 @@
     The timestamp sentinel: input_datetime.laundry_washer_finished_at is blanked to
     1970-01-01, so the template requires ts > 1000000000 (i.e. a real date after 2001)
     before nagging. Do not compare to 0 - a 1970 local-midnight timestamp is a negative
-    or non-zero offset depending on timezone.'
+    or non-zero offset depending on timezone.
+
+
+    v2 (2026-08-12): gated on person.lara_wiz == ''home''. Lara sometimes starts a
+    load before leaving and does not want a repeat nag she cannot act on while at
+    work (confirmed - got pinged at work, load finished 8:31am). The recurring 30-min
+    check now only fires while she is home. Added an ''arrived_home'' trigger (person.lara_wiz
+    -> ''home'', any prior state) so the nag fires promptly on arrival if the load
+    is still sitting and every other gate (not vacation, awake, nothing running, 45+
+    min elapsed) still holds, instead of waiting up to 30 min for the next scheduled
+    tick. No change to the 45-min floor or the 30-min repeat cadence themselves -
+    only when they''re allowed to fire.'
   triggers:
   - minutes: /30
     platform: time_pattern
+  - id: arrived_home
+    platform: state
+    entity_id: person.lara_wiz
+    to: home
   conditions:
   - condition: state
     entity_id: calendar.vacation
@@ -4731,6 +4761,9 @@
   - condition: template
     value_template: '{% set ts = state_attr(''input_datetime.laundry_washer_finished_at'',''timestamp'')
       | float(0) %}{{ ts > 1000000000 and (as_timestamp(now()) - ts) >= 2700 }}'
+  - condition: state
+    entity_id: person.lara_wiz
+    state: home
   actions:
   - action: script.notify_lara
     alias: Nag
@@ -4990,7 +5023,22 @@
     room still gets its setback, which is the desired behavior. Context: on 2026-08-10
     the bedroom AC went unavailable and HA''s climate services returned WITHOUT error
     against the dead entity, so automations logged success while nothing reached the
-    unit.'
+    unit.
+
+
+    2026-08-12 (BUGFIX): the dry-mode-cancel step (set_hvac_mode cool) was running
+    AFTER the eco/away preset was set. On this Midea integration, calling set_hvac_mode
+    resets preset_mode back to ''none'' as a side effect - confirmed via history showing
+    preset flip eco->none 200ms after the hvac_mode call on 2026-08-12T11:20:47Z.
+    Net effect: this morning''s departure left the bedroom unit running full un-modulated
+    Cool at last night''s leftover 65F sweet-spot-test setpoint all day instead of
+    eco, and nobody noticed until Lara asked why her room was cold at 63F while she
+    was at work. Reordered so the hvac_mode cancel-dry-mode step runs FIRST and the
+    preset_mode set runs LAST, so preset is the final word and actually sticks. Bonus:
+    since eco preset appears to carry its own baked-in reference temp (73F, matching
+    living room''s existing eco baseline) rather than obeying a stale manually-set
+    target, this ordering fix also resolves the stale-test-temperature leak without
+    needing a separate explicit temperature reset step.'
   triggers:
   - entity_id: person.lara_wiz
     event: leave
@@ -5014,30 +5062,9 @@
       - condition: trigger
         id: left_home
       sequence:
-      - choose:
-        - conditions:
-          - condition: state
-            entity_id: binary_sensor.johnny_home_alone
-            state: 'on'
-          sequence:
-          - action: climate.set_preset_mode
-            alias: Johnny's home alone — mild eco setback
-            data:
-              preset_mode: eco
-            target:
-              entity_id:
-              - climate.bedroom_ac
-              - climate.living_room_ac
-        default:
-        - action: climate.set_preset_mode
-          alias: House is fully empty — deeper away setback
-          data:
-            preset_mode: away
-          target:
-            entity_id:
-            - climate.bedroom_ac
-            - climate.living_room_ac
-      - alias: Cancel lingering Dry mode, but only if the bedroom unit is reachable
+      - alias: Cancel lingering Dry mode FIRST, but only if the bedroom unit is reachable
+          - must run before the preset is set, since set_hvac_mode resets preset_mode
+          to none on this integration
         if:
         - condition: not
           conditions:
@@ -5047,12 +5074,35 @@
             - unavailable
             - unknown
         then:
-        - alias: Also cancel any lingering Dry mode from the getting-ready automation
-          action: climate.set_hvac_mode
-          target:
-            entity_id: climate.bedroom_ac
+        - action: climate.set_hvac_mode
+          alias: Also cancel any lingering Dry mode from the getting-ready automation
           data:
             hvac_mode: cool
+          target:
+            entity_id: climate.bedroom_ac
+      - choose:
+        - conditions:
+          - condition: state
+            entity_id: binary_sensor.johnny_home_alone
+            state: 'on'
+          sequence:
+          - action: climate.set_preset_mode
+            alias: Johnny's home alone — mild eco setback (set LAST so it sticks)
+            data:
+              preset_mode: eco
+            target:
+              entity_id:
+              - climate.bedroom_ac
+              - climate.living_room_ac
+        default:
+        - action: climate.set_preset_mode
+          alias: House is fully empty — deeper away setback (set LAST so it sticks)
+          data:
+            preset_mode: away
+          target:
+            entity_id:
+            - climate.bedroom_ac
+            - climate.living_room_ac
       - action: logbook.log
         alias: Log the setback depth chosen
         data:
