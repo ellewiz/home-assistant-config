@@ -5681,3 +5681,307 @@
             }} reconnected — now {{ trigger.to_state.state }}.'
           title: ✅ AC back online
   mode: single
+- id: '1786621047539'
+  alias: Set WFH Today Flag from Wake-Up Calendar
+  description: Reads the description field on the daily 'Wake up' event on calendar.master_calendar
+    ('WFH' vs 'office') and sets input_boolean.wfh_today accordingly. Feeds the WFH-specific
+    AC automations (Bedroom AC WFH Away Preset, Living Room AC WFH Comfort Hold) so
+    they know whether today is a stay-home workday. Fires at the wake event's start
+    time (typically 6-7am), which is before the 8am AC automations check the flag.
+  triggers:
+  - entity_id: calendar.master_calendar
+    event: start
+    id: wake_event
+    platform: calendar
+  conditions:
+  - condition: template
+    value_template: '{{ trigger.calendar_event.summary == ''Wake up'' }}'
+  actions:
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{ ''wfh'' in (trigger.calendar_event.description | default('''')
+          | lower) }}'
+      sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.wfh_today
+      - action: logbook.log
+        data:
+          entity_id: input_boolean.wfh_today
+          message: Set ON — Wake up event description says WFH.
+          name: WFH Today
+    - conditions:
+      - condition: template
+        value_template: '{{ ''office'' in (trigger.calendar_event.description | default('''')
+          | lower) }}'
+      sequence:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.wfh_today
+      - action: logbook.log
+        data:
+          entity_id: input_boolean.wfh_today
+          message: Set OFF — Wake up event description says office.
+          name: WFH Today
+  mode: single
+- id: '1786621049944'
+  alias: Bedroom AC — WFH Away Preset (v1)
+  description: 'On a WFH day (input_boolean.wfh_today on), sets climate.bedroom_ac
+    to Away preset at 8am since the bedroom is essentially unoccupied except quick
+    laundry/grab trips. Also doubles as the fix for the known dry-mode-lingers-on-a-stay-home-day
+    gap documented in [[project_midea_ac_integration]] automation #7 — that automation''s
+    Dry-mode-while-getting-ready window normally only reverts via the leave-home automation,
+    which never fires on a WFH day. This automation reverts it at 8am regardless.
+    Follows the hvac_mode-before-preset_mode ordering rule (hvac_mode clobbers preset_mode
+    if set after it on this Midea integration).'
+  triggers:
+  - at: 08:00:00
+    platform: time
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.workday
+    state: 'on'
+  - condition: state
+    entity_id: input_boolean.wfh_today
+    state: 'on'
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: person.lara_wiz
+    state: home
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: climate.bedroom_ac
+      state:
+      - 'off'
+      - unavailable
+      - unknown
+  actions:
+  - action: climate.set_hvac_mode
+    alias: Cancel any lingering Dry mode first
+    data:
+      hvac_mode: cool
+    target:
+      entity_id: climate.bedroom_ac
+  - action: climate.set_preset_mode
+    alias: Away preset last, so it actually sticks
+    data:
+      preset_mode: away
+    target:
+      entity_id: climate.bedroom_ac
+  - action: logbook.log
+    data:
+      entity_id: climate.bedroom_ac
+      message: WFH day — switched to Away preset (barely occupied today).
+      name: Bedroom AC
+  mode: single
+- id: '1786621053491'
+  alias: Living Room AC — WFH Comfort Hold 74F (v1)
+  description: On a WFH day (input_boolean.wfh_today on), holds climate.living_room_ac
+    at Cool/preset none/74F starting at 8am so it stays at Lara's chosen comfortable-but-efficient
+    balance for a full day of occupancy, rather than drifting per eco's own baked-in
+    ~73F reference (see [[project_midea_ac_integration]] eco-preset finding). Uses
+    preset none + explicit set_temperature so 74F actually holds. Naturally converges
+    back to the normal eco+bedtime-setback routine when the existing 'Living Room
+    AC — Bedtime Setback' automation fires on in_bed, so no separate revert step is
+    needed. Follows the hvac_mode-before-preset_mode ordering rule.
+  triggers:
+  - at: 08:00:00
+    platform: time
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.workday
+    state: 'on'
+  - condition: state
+    entity_id: input_boolean.wfh_today
+    state: 'on'
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: person.lara_wiz
+    state: home
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: climate.living_room_ac
+      state:
+      - 'off'
+      - unavailable
+      - unknown
+  actions:
+  - action: climate.set_hvac_mode
+    alias: Ensure Cool mode
+    data:
+      hvac_mode: cool
+    target:
+      entity_id: climate.living_room_ac
+  - action: climate.set_preset_mode
+    alias: Preset none so eco's internal ~73F reference doesn't override our target
+    data:
+      preset_mode: none
+    target:
+      entity_id: climate.living_room_ac
+  - action: climate.set_temperature
+    alias: Hold at Lara's chosen WFH comfort/efficiency balance
+    data:
+      temperature: 74
+    target:
+      entity_id: climate.living_room_ac
+  - action: logbook.log
+    data:
+      entity_id: climate.living_room_ac
+      message: WFH day — holding at 74F for all-day occupancy.
+      name: Living Room AC
+  mode: single
+- id: '1786622040291'
+  alias: 'Location: Log Scotch Rd Plaza Visit (Groomer vs Salon, Heuristic)'
+  description: 'Donna''s Hair Studio (181 Scotch Rd) and Dog Wash Depot (185 Scotch
+    Rd) geocode to essentially the same point, so a second zone/radius can''t tell
+    them apart — both resolved to ~40.2745,-74.8047 via web search. Single combined
+    zone.scotch_rd_plaza (radius 90m) instead, with a single choose-branched automation
+    to avoid a race between two separate triggers on the same dwell event.
+
+
+    Triggers on device_tracker.iphone dwelling in the zone for 1 min (mirrors [[project_location_visit_logs]]
+    Vet/Allergist pattern — device_tracker.iphone not person.lara_wiz, since the person
+    entity''s other trackers pin it home).
+
+
+    Branch logic (Lara''s own disambiguation, confirmed against a real Tractive attribute):
+
+    - person.johnny also reads ''Scotch Rd Plaza'' at the same time -> he''s with
+    her (collar on, tagged along) -> Hair Salon visit.
+
+    - person.johnny is elsewhere (collar off, so no GPS match) AND binary_sensor.johnny_tracker_battery_charging
+    is on -> groomers don''t allow collars in, so Lara pulls it and it goes on the
+    charger while he''s dropped off -> Groomer visit.
+
+    - person.johnny elsewhere AND tracker NOT charging -> default/fallback -> solo
+    Hair Salon visit (she went without him, collar just isn''t on the charger for
+    some other reason).
+
+
+    This is a HEURISTIC, not a certainty — the charging signal is ''odds are'', not
+    guaranteed (Lara''s own words). Not yet live-tested against a real visit of either
+    kind. 3h dedupe via last_triggered, shared across all three branches (one dwell
+    = one visit). NOT vacation-gated, matches Vet/Allergist precedent (visits worth
+    logging regardless).'
+  triggers:
+  - entity_id: device_tracker.iphone
+    for: 00:01:00
+    platform: state
+    to: Scotch Rd Plaza
+  conditions:
+  - condition: template
+    value_template: '{{ this.attributes.last_triggered is none or (now() - this.attributes.last_triggered).total_seconds()
+      > 10800 }}'
+  actions:
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{ states(''person.johnny'') == ''Scotch Rd Plaza'' }}'
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.hair_salon_visits
+      - action: input_datetime.set_datetime
+        data:
+          timestamp: '{{ now().timestamp() }}'
+        target:
+          entity_id: input_datetime.hair_salon_last_visit
+      - action: logbook.log
+        data:
+          entity_id: input_datetime.hair_salon_last_visit
+          message: Hair salon visit — Johnny came along.
+          name: Personal Log
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              interruption-level: passive
+          message: Logged at {{ now().strftime('%-I:%M %p') }}. Johnny tagged along.
+          title: "\U0001F487 Hair salon visit logged"
+    - conditions:
+      - condition: template
+        value_template: '{{ states(''person.johnny'') != ''Scotch Rd Plaza'' and is_state(''binary_sensor.johnny_tracker_battery_charging'',
+          ''on'') }}'
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.groomer_visits
+      - action: input_datetime.set_datetime
+        data:
+          timestamp: '{{ now().timestamp() }}'
+        target:
+          entity_id: input_datetime.groomer_last_visit
+      - action: logbook.log
+        data:
+          entity_id: input_datetime.groomer_last_visit
+          message: 'Groomer visit (heuristic: Johnny not with you, tracker charging).'
+          name: Pet Log
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              interruption-level: passive
+          message: Logged at {{ now().strftime('%-I:%M %p') }} — Johnny not with you
+            + tracker charging. Collar's at {{ states('sensor.johnny_tracker_battery')
+            }}% right now. Correct me if that's wrong.
+          title: "\U0001F43E Groomer visit logged (best guess)"
+    default:
+    - action: counter.increment
+      target:
+        entity_id: counter.hair_salon_visits
+    - action: input_datetime.set_datetime
+      data:
+        timestamp: '{{ now().timestamp() }}'
+      target:
+        entity_id: input_datetime.hair_salon_last_visit
+    - action: logbook.log
+      data:
+        entity_id: input_datetime.hair_salon_last_visit
+        message: Hair salon visit — solo, Johnny stayed home.
+        name: Personal Log
+    - action: notify.mobile_app_iphone
+      data:
+        data:
+          push:
+            interruption-level: passive
+        message: Logged at {{ now().strftime('%-I:%M %p') }}. Solo trip.
+        title: "\U0001F487 Hair salon visit logged"
+  mode: single
+- id: '1786623005090'
+  alias: Johnny's Collar — 80% Charge Nudge (v1)
+  description: 'Lara''s request: she usually forgets the collar''s on the charger
+    until Tractive''s own ''fully charged'' push fires, but 80% is plenty for a typical
+    month of use (her estimate) so she''d rather get a nudge at 80% and decide then
+    whether to pull it or let it finish. Fires once per charge cycle via numeric_state''s
+    cross-above semantics (only fires on the 79->80+ crossing, not every update while
+    sitting above it). Gated on binary_sensor.johnny_tracker_battery_charging so it
+    only fires during an actual charge session, not if the reading happens to sit
+    at/above 80% while idle off the charger. Complements, doesn''t replace, the Tractive
+    app''s own low-battery and full-charge alerts (Lara''s words) — this just adds
+    the mid-point decision nudge the app doesn''t have. Not vacation-gated — collar
+    charging is a house-maintenance thing, not presence-dependent.'
+  triggers:
+  - above: 79
+    entity_id: sensor.johnny_tracker_battery
+    platform: numeric_state
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.johnny_tracker_battery_charging
+    state: 'on'
+  actions:
+  - action: notify.mobile_app_iphone
+    data:
+      data:
+        push:
+          interruption-level: passive
+      message: Currently {{ states('sensor.johnny_tracker_battery') }}%. Should cover
+        a typical month — pull it now or let it finish charging.
+      title: "\U0001F50B Johnny's collar hit 80%"
+  mode: single
