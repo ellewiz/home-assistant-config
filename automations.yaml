@@ -3268,7 +3268,7 @@
           entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
   mode: single
 - id: bedroom_heat_alert_v2
-  alias: Bedroom — Heat Alert (v6, Boost Actually Sticks)
+  alias: Bedroom — Heat Alert (v7, Skips Deliberate Setbacks)
   description: 'v2 consolidating "Bedroom temp too hot" (id 1654570339244) and "Bedroom
     too hot when Lara comes home" (id 1691671531217), both deleted 2026-07-13 (superseded).
     Two branches: sustained warm (>75F for 15 min while home and awake, not at work)
@@ -3322,7 +3322,18 @@
     temperature) landed at 08:00:00 and left the unit reading preset ''eco'' instead
     of the ''none'' it had just been set to, while the same three calls issued manually
     with several seconds between them all stuck correctly. Same session also confirmed
-    the separate, worse ''away'' preset bug — see the away-eco automation''s v4 note.'
+    the separate, worse ''away'' preset bug — see the away-eco automation''s v4 note.
+
+
+    v7 (2026-08-13): added a condition that skips the whole automation when climate.bedroom_ac''s
+    own target is 77F or higher. Introduced because the same day''s WFH warm setback
+    parks the bedroom at 78F while Lara is home, which sits permanently above this
+    automation''s 75F trigger — so it would have pushed a spurious ''bedroom warm''
+    alert every 3h on every WFH day AND forced preset boost each time, undoing the
+    setback. Also suppresses the arrive-home branch after the empty-house 80F setback,
+    which is intentional: the away-eco automation''s arrival branch already sets eco
+    and starts cooling at that same moment, so the alert was redundant there. Threshold
+    stays 75F for every normal day.'
   triggers:
   - above: 75
     entity_id: sensor.temp_in_bedroom
@@ -3348,6 +3359,14 @@
     value_template: '{{ not has_value(''input_datetime.bedroom_heat_last_alerted'')
       or (now().timestamp() - as_timestamp(states(''input_datetime.bedroom_heat_last_alerted''),
       0)) > 10800 }}'
+  - alias: Skip when the bedroom is DELIBERATELY parked warm (WFH 78F setback, empty-house
+      80F setback). Without this, a room correctly sitting at its own setpoint reads
+      as 'warm', re-alerts every 3h, and forces preset boost, which undoes the setback
+      it is complaining about. float(70) default means an unreachable unit does NOT
+      get suppressed - if we cannot tell, alert.
+    condition: template
+    value_template: '{{ (state_attr(''climate.bedroom_ac'',''temperature'') | float(70))
+      < 77 }}'
   actions:
   - choose:
     - conditions:
@@ -4076,7 +4095,14 @@
 
     UPDATE 2026-08-12: Removed the redundant media_player.bedroom (Music Assistant)
     entry from the stop-all list now that media_player.bedroom_frame (native Sonos)
-    is the only entity anything actually plays through in the bedroom.'
+    is the only entity anything actually plays through in the bedroom.
+
+
+    UPDATE 2026-08-13: Removed media_player.living_room (Music Assistant) from the
+    stop-all list — the leftover the 2026-08-12 pass missed. The Music Assistant add-on
+    was uninstalled 2026-08-13 and its config entry deleted, so no MA-side player
+    exists any more; media_player.living_room_arc (native Sonos) is retained and is
+    the living room''s real speaker.'
   triggers:
   - entity_id: person.lara_wiz
     event: leave
@@ -4093,7 +4119,6 @@
     target:
       entity_id:
       - media_player.dining_room
-      - media_player.living_room
       - media_player.living_room_arc
       - media_player.bedroom_frame
       - media_player.bathroom
@@ -5350,7 +5375,7 @@
           name: AC Away Eco
   mode: single
 - id: '1786413800292'
-  alias: Bedroom AC — Gradual Warm Before Alarm (v1)
+  alias: Bedroom AC — Gradual Warm Before Alarm (v2, Runs During Test Blocks)
   description: 'Warms the bedroom by 3°F over the 30 minutes before wake, in three
     1°F steps 15 minutes apart, landing the final step exactly at wake time - so the
     room isn''t cold enough to make staying in bed tempting. Mirrors the Sonos Wake
@@ -5367,7 +5392,38 @@
 
     Captures the target temperature at trigger time into a variable (base_temp) rather
     than reading it fresh at each step, so a stray change mid-ramp can''t compound.
-    Skips entirely if the AC is off (nothing to warm from).'
+    Skips entirely if the AC is off (nothing to warm from).
+
+
+    v2 (2026-08-13): REMOVED the condition requiring input_select.ac_sweet_spot_test_block
+    to be ''Not testing''/''Done''. That gate meant this automation had NEVER FIRED
+    ONCE since it was built on 2026-08-11 — last_triggered was null — because the
+    sweet-spot test block has been active continuously the whole time. Lara did not
+    know the test was running and chose to keep it AND have the warm-up work during
+    it, rather than trade one against the other.
+
+
+    Why this does not wreck the experiment: the ramp reads the LIVE target via base_temp,
+    so during a block it warms from that block''s own target (65F for Block 1, 62F
+    for Block 2) rather than from some unrelated number. More importantly it applies
+    identically on every test night in every block, so it is a constant, not a variable
+    — it cannot bias the BETWEEN-block comparison (65 vs 62) that the experiment actually
+    measures. It does slightly soften the absolute characterisation of ''a night at
+    65F'', but only across the final 30 minutes before wake, and the room lags the
+    setpoint badly enough (passive warming, compressor simply stops) that actual room
+    temperature barely moves in that window.
+
+
+    This is a deliberate, documented departure from the original design principle
+    stated in the sweet-spot automation''s description, which forces preset ''none''
+    specifically to avoid overnight setpoint drift. The distinction is that drift
+    was uncontrolled and varied night to night; this ramp is fixed, identical, and
+    now logged. The logbook line records the active test block at fire time so the
+    confound is visible in the data.
+
+
+    Self-corrects: during a block, the next bedtime fire re-applies the exact block
+    temperature, so the +3F does not accumulate.'
   triggers:
   - entity_id: calendar.master_calendar
     event: start
@@ -5384,11 +5440,6 @@
   - condition: state
     entity_id: calendar.vacation
     state: 'off'
-  - condition: state
-    entity_id: input_select.ac_sweet_spot_test_block
-    state:
-    - Not testing
-    - Done
   - condition: not
     conditions:
     - condition: state
@@ -5428,8 +5479,9 @@
     alias: Log it
     data:
       entity_id: climate.bedroom_ac
-      message: Gradual wake warm-up complete — {{ base_temp }}°F → {{ base_temp +
-        3 }}°F over 30 min.
+      message: 'Gradual wake warm-up complete — {{ base_temp }}°F → {{ base_temp +
+        3 }}°F over 30 min. Sweet-spot block at the time: {{ states(''input_select.ac_sweet_spot_test_block'')
+        }}.'
       name: Bedroom AC
   mode: single
 - id: '1786413806767'
