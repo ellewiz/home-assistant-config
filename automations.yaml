@@ -3268,7 +3268,7 @@
           entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
   mode: single
 - id: bedroom_heat_alert_v2
-  alias: Bedroom — Heat Alert (v5, Boost Actually Sticks)
+  alias: Bedroom — Heat Alert (v6, Boost Actually Sticks)
   description: 'v2 consolidating "Bedroom temp too hot" (id 1654570339244) and "Bedroom
     too hot when Lara comes home" (id 1691671531217), both deleted 2026-07-13 (superseded).
     Two branches: sustained warm (>75F for 15 min while home and awake, not at work)
@@ -3313,7 +3313,16 @@
     Reordered both branches so set_hvac_mode runs first and set_preset_mode runs last,
     matching the fix pattern in [[project_midea_ac_integration]]. NOT yet live-fire
     tested against a real heat event post-fix - worth confirming preset_mode actually
-    reads ''boost'' next time either branch triggers.'
+    reads ''boost'' next time either branch triggers.
+
+
+    2026-08-13: added 3-second delays between adjacent climate.* calls. These Midea
+    entities garble rapid-fire sequential commands — confirmed live on climate.living_room_ac,
+    where this automation family''s no-delay sequence (hvac_mode -> preset none ->
+    temperature) landed at 08:00:00 and left the unit reading preset ''eco'' instead
+    of the ''none'' it had just been set to, while the same three calls issued manually
+    with several seconds between them all stuck correctly. Same session also confirmed
+    the separate, worse ''away'' preset bug — see the away-eco automation''s v4 note.'
   triggers:
   - above: 75
     entity_id: sensor.temp_in_bedroom
@@ -3385,6 +3394,10 @@
             hvac_mode: cool
           target:
             entity_id: climate.bedroom_ac
+        - alias: Let the unit settle — these Midea entities clobber rapid sequential
+            commands
+          delay:
+            seconds: 3
         - action: climate.set_preset_mode
           alias: Boost preset for faster recovery (v5 - set LAST so it sticks)
           data:
@@ -3432,6 +3445,10 @@
             hvac_mode: cool
           target:
             entity_id: climate.bedroom_ac
+        - alias: Let the unit settle — these Midea entities clobber rapid sequential
+            commands
+          delay:
+            seconds: 3
         - action: climate.set_preset_mode
           alias: Boost preset for faster recovery (v5 - set LAST so it sticks)
           data:
@@ -4922,7 +4939,7 @@
       entity_id: input_boolean.laundry_done_pending_washer
   mode: single
 - id: '1786413195406'
-  alias: 'AC Sweet-Spot: Bedroom Bedtime Set (v3, 7pm Prime Floor)'
+  alias: 'AC Sweet-Spot: Bedroom Bedtime Set (v4, 7pm Prime Floor)'
   description: 'Replaces the manual dial-guessing step of the bedroom AC sweet-spot
     sleep-temp test. Before the Midea climate entity existed, Lara turned a physical
     dial and logged her best guess of the setting into input_number.ac_sweet_spot_dial_setting.
@@ -4978,7 +4995,16 @@
     not a precise calculation, since the actual pull-down rate in cool/none-preset
     mode (full power, not eco-throttled) has not been measured yet - the 21:00 trigger
     stays as an unconditional fallback in case she gets home later than 7pm. Revisit
-    the 19:00 floor once a few real cool-mode nights give an actual measured rate.'
+    the 19:00 floor once a few real cool-mode nights give an actual measured rate.
+
+
+    2026-08-13: added 3-second delays between adjacent climate.* calls. These Midea
+    entities garble rapid-fire sequential commands — confirmed live on climate.living_room_ac,
+    where this automation family''s no-delay sequence (hvac_mode -> preset none ->
+    temperature) landed at 08:00:00 and left the unit reading preset ''eco'' instead
+    of the ''none'' it had just been set to, while the same three calls issued manually
+    with several seconds between them all stuck correctly. Same session also confirmed
+    the separate, worse ''away'' preset bug — see the away-eco automation''s v4 note.'
   triggers:
   - entity_id: input_boolean.in_bed
     id: bedtime
@@ -5050,12 +5076,20 @@
           hvac_mode: cool
         target:
           entity_id: climate.bedroom_ac
+      - alias: Let the unit settle — these Midea entities clobber rapid sequential
+          commands
+        delay:
+          seconds: 3
       - action: climate.set_preset_mode
         alias: No preset curve during a real test night
         data:
           preset_mode: none
         target:
           entity_id: climate.bedroom_ac
+      - alias: Let the unit settle — these Midea entities clobber rapid sequential
+          commands
+        delay:
+          seconds: 3
       - action: climate.set_temperature
         alias: Apply the block's exact target temperature
         data:
@@ -5084,7 +5118,7 @@
         entity_id: climate.bedroom_ac
   mode: single
 - id: '1786413232913'
-  alias: AC — Away Eco / Restore on Presence (v2)
+  alias: AC — Away Eco / Restore on Presence (v4)
   description: 'Energy-saving setback for both Midea AC units when nobody human is
     home, restoring to the everyday eco preset when Lara gets back. Mirrors the trigger
     pattern of ''Turn off the lights when I leave home'' and, most importantly, the
@@ -5140,7 +5174,30 @@
     since eco preset appears to carry its own baked-in reference temp (73F, matching
     living room''s existing eco baseline) rather than obeying a stale manually-set
     target, this ordering fix also resolves the stale-test-temperature leak without
-    needing a separate explicit temperature reset step.'
+    needing a separate explicit temperature reset step.
+
+
+    v4 (2026-08-13): removed preset_mode ''away'' from the fully-empty-house branch.
+    On these Midea units ''away'' is FREEZE PROTECTION, not a cooling setback — confirmed
+    live the same day on climate.bedroom_ac, where a set_preset_mode ''away'' call
+    flipped the unit straight into hvac_mode ''dry'' with preset ''none''. Dry mode
+    ignores the target temperature, so the room ran down to 60F against a 65F target
+    and stayed there for 7.5 hours. The empty-house branch here had almost certainly
+    never fired (Johnny is normally home, so it takes the eco branch), so this was
+    latent rather than observed — but it was the same landmine.
+
+
+    Empty-house branch now does, per unit: set_hvac_mode cool -> 3s -> set_preset_mode
+    none -> 3s -> set_temperature 80. Preset ''none'' rather than ''eco'' because
+    eco carries its own baked-in ~73F reference that overrides an explicit target.
+    80F is the deep ''nobody and no dog in the house'' setback; it is a number Lara
+    can change.
+
+
+    Also tightened both branches'' reachability guard from [unavailable, unknown]
+    to [off, unavailable, unknown], so a set_hvac_mode call can never switch on a
+    unit she had deliberately turned off. Short delays between sequential climate
+    calls because these entities clobber rapid commands.'
   triggers:
   - entity_id: person.lara_wiz
     event: leave
@@ -5164,32 +5221,34 @@
       - condition: trigger
         id: left_home
       sequence:
-      - alias: Cancel lingering Dry mode FIRST, but only if the bedroom unit is reachable
-          - must run before the preset is set, since set_hvac_mode resets preset_mode
-          to none on this integration
-        if:
-        - condition: not
-          conditions:
-          - condition: state
-            entity_id: climate.bedroom_ac
-            state:
-            - unavailable
-            - unknown
-        then:
-        - action: climate.set_hvac_mode
-          alias: Also cancel any lingering Dry mode from the getting-ready automation
-          data:
-            hvac_mode: cool
-          target:
-            entity_id: climate.bedroom_ac
       - choose:
         - conditions:
           - condition: state
             entity_id: binary_sensor.johnny_home_alone
             state: 'on'
           sequence:
-          - action: climate.set_preset_mode
-            alias: Johnny's home alone — mild eco setback (set LAST so it sticks)
+          - alias: Cancel any lingering Dry mode FIRST — hvac_mode before preset_mode,
+              and skip if the unit is off or unreachable so this can never switch
+              an off unit on
+            if:
+            - condition: not
+              conditions:
+              - condition: state
+                entity_id: climate.bedroom_ac
+                state:
+                - 'off'
+                - unavailable
+                - unknown
+            then:
+            - action: climate.set_hvac_mode
+              data:
+                hvac_mode: cool
+              target:
+                entity_id: climate.bedroom_ac
+            - delay:
+                seconds: 3
+          - alias: Johnny's home alone — mild eco setback, set LAST so it sticks
+            action: climate.set_preset_mode
             data:
               preset_mode: eco
             target:
@@ -5197,23 +5256,78 @@
               - climate.bedroom_ac
               - climate.living_room_ac
         default:
-        - action: climate.set_preset_mode
-          alias: House is fully empty — deeper away setback (set LAST so it sticks)
-          data:
-            preset_mode: away
-          target:
-            entity_id:
-            - climate.bedroom_ac
-            - climate.living_room_ac
-      - action: logbook.log
-        alias: Log the setback depth chosen
+        - alias: 'House fully empty — bedroom: cool + preset none + 80F. NOT preset
+            away: on these Midea units away is freeze protection and flips the unit
+            into hvac_mode dry, which ignores the setpoint and overcools indefinitely
+            (confirmed live 2026-08-13). Skipped entirely if the unit is off or unreachable.'
+          if:
+          - condition: not
+            conditions:
+            - condition: state
+              entity_id: climate.bedroom_ac
+              state:
+              - 'off'
+              - unavailable
+              - unknown
+          then:
+          - action: climate.set_hvac_mode
+            data:
+              hvac_mode: cool
+            target:
+              entity_id: climate.bedroom_ac
+          - delay:
+              seconds: 3
+          - action: climate.set_preset_mode
+            data:
+              preset_mode: none
+            target:
+              entity_id: climate.bedroom_ac
+          - delay:
+              seconds: 3
+          - action: climate.set_temperature
+            data:
+              temperature: 80
+            target:
+              entity_id: climate.bedroom_ac
+        - alias: 'House fully empty — living room: same deep setback'
+          if:
+          - condition: not
+            conditions:
+            - condition: state
+              entity_id: climate.living_room_ac
+              state:
+              - 'off'
+              - unavailable
+              - unknown
+          then:
+          - action: climate.set_hvac_mode
+            data:
+              hvac_mode: cool
+            target:
+              entity_id: climate.living_room_ac
+          - delay:
+              seconds: 3
+          - action: climate.set_preset_mode
+            data:
+              preset_mode: none
+            target:
+              entity_id: climate.living_room_ac
+          - delay:
+              seconds: 3
+          - action: climate.set_temperature
+            data:
+              temperature: 80
+            target:
+              entity_id: climate.living_room_ac
+      - alias: Log the setback depth chosen
+        action: logbook.log
         data:
-          entity_id: climate.bedroom_ac
-          message: Left home — set AC preset to {{ 'eco (Johnny home alone)' if is_state('binary_sensor.johnny_home_alone',
-            'on') else 'away (house empty)' }}.{{ ' Bedroom AC was unreachable, so
-            this applied to the living room only.' if states('climate.bedroom_ac')
-            in ['unavailable','unknown'] else '' }}
           name: AC Away Eco
+          entity_id: climate.bedroom_ac
+          message: Left home — {{ 'Johnny home alone, mild eco setback' if is_state('binary_sensor.johnny_home_alone','on')
+            else 'house empty, deep setback to cool/none/80F' }}.{{ ' Bedroom AC was
+            off or unreachable, so this applied to the living room only.' if states('climate.bedroom_ac')
+            in ['off','unavailable','unknown'] else '' }}
     - conditions:
       - condition: trigger
         id: arrived_home
@@ -5319,7 +5433,7 @@
       name: Bedroom AC
   mode: single
 - id: '1786413806767'
-  alias: Living Room AC — Bedtime Setback (Unless Guests) (v2)
+  alias: Living Room AC — Bedtime Setback (Unless Guests) (v3)
   description: 'At bedtime (in_bed on), sets the living room AC to eco preset and
     relaxes its target temperature up 3°F, so it''s not working to hold a full daytime-comfort
     temperature all night in an empty room - just enough to keep it from getting too
@@ -5348,7 +5462,16 @@
 
 
     Also now skips if climate.living_room_ac is unavailable, which it and its bedroom
-    sibling have both been doing intermittently.'
+    sibling have both been doing intermittently.
+
+
+    2026-08-13: added 3-second delays between adjacent climate.* calls. These Midea
+    entities garble rapid-fire sequential commands — confirmed live on climate.living_room_ac,
+    where this automation family''s no-delay sequence (hvac_mode -> preset none ->
+    temperature) landed at 08:00:00 and left the unit reading preset ''eco'' instead
+    of the ''none'' it had just been set to, while the same three calls issued manually
+    with several seconds between them all stuck correctly. Same session also confirmed
+    the separate, worse ''away'' preset bug — see the away-eco automation''s v4 note.'
   triggers:
   - entity_id: input_boolean.in_bed
     to: 'on'
@@ -5389,6 +5512,9 @@
       preset_mode: eco
     target:
       entity_id: climate.living_room_ac
+  - alias: Let the unit settle — these Midea entities clobber rapid sequential commands
+    delay:
+      seconds: 3
   - action: climate.set_temperature
     alias: Relax target +3°F — just enough, not full daytime comfort
     data:
@@ -5404,7 +5530,7 @@
       name: Living Room AC
   mode: single
 - id: '1786413813332'
-  alias: Living Room AC — Precool Before Arriving Home (v1)
+  alias: Living Room AC — Precool Before Arriving Home (v2)
   description: 'When Lara leaves zone.work, releases the living room AC''s deeper
     ''away'' setback back to the everyday ''eco'' preset early - rather than waiting
     for the arrival-home trigger in ''AC — Away Eco / Restore on Presence'' - so the
@@ -5427,7 +5553,16 @@
     was home alone, already on eco), this is a harmless no-op repeat.
 
 
-    Gated on calendar.vacation off per house style section 8.'
+    Gated on calendar.vacation off per house style section 8.
+
+
+    2026-08-13: added 3-second delays between adjacent climate.* calls. These Midea
+    entities garble rapid-fire sequential commands — confirmed live on climate.living_room_ac,
+    where this automation family''s no-delay sequence (hvac_mode -> preset none ->
+    temperature) landed at 08:00:00 and left the unit reading preset ''eco'' instead
+    of the ''none'' it had just been set to, while the same three calls issued manually
+    with several seconds between them all stuck correctly. Same session also confirmed
+    the separate, worse ''away'' preset bug — see the away-eco automation''s v4 note.'
   triggers:
   - entity_id: person.lara_wiz
     event: leave
@@ -5445,6 +5580,9 @@
       preset_mode: eco
     target:
       entity_id: climate.living_room_ac
+  - alias: Let the unit settle — these Midea entities clobber rapid sequential commands
+    delay:
+      seconds: 3
   - action: climate.set_hvac_mode
     alias: Direct cool mode so it actually recovers on the drive
     data:
@@ -5726,18 +5864,28 @@
           name: WFH Today
   mode: single
 - id: '1786621049944'
-  alias: Bedroom AC — WFH Away Preset (v1)
-  description: 'On a WFH day (input_boolean.wfh_today on), sets climate.bedroom_ac
-    to Away preset at 8am since the bedroom is essentially unoccupied except quick
-    laundry/grab trips. Also doubles as the fix for the known dry-mode-lingers-on-a-stay-home-day
-    gap documented in [[project_midea_ac_integration]] automation #7 — that automation''s
-    Dry-mode-while-getting-ready window normally only reverts via the leave-home automation,
-    which never fires on a WFH day. This automation reverts it at 8am regardless.
-    Follows the hvac_mode-before-preset_mode ordering rule (hvac_mode clobbers preset_mode
-    if set after it on this Midea integration).'
+  alias: Bedroom AC — WFH Warm Setback 78F (v2)
+  description: 'At 8am on a WFH workday, parks climate.bedroom_ac at cool / preset
+    none / 78F so it idles all day but still catches a real heat spike.
+
+
+    v2 (2026-08-13, same day as v1): v1 used preset_mode ''away''. On Midea, ''away''
+    is FREEZE PROTECTION, not a cooling setback. Confirmed live from history: at 08:00:00
+    the set_hvac_mode ''cool'' step landed correctly (cool/eco/65), then the very
+    next set_preset_mode ''away'' call knocked the unit into hvac_mode ''dry'' with
+    preset ''none''. Dry mode ignores the setpoint, so it ran 7.5h and held the bedroom
+    at 60F against a 65F target. v1''s own ''cancel lingering dry mode'' step worked
+    and was then undone by the next line.
+
+
+    v2 therefore: no preset ''away'' anywhere. Explicit preset ''none'' (NOT eco -
+    eco has a baked-in ~73F reference that overrides an explicit target) plus set_temperature
+    78. 78 chosen with Lara: high enough to idle, low enough that the bedtime pull-down
+    to 65 isn''t a long expensive recovery. Short delays between calls because these
+    Midea entities clobber rapid sequential commands.'
   triggers:
-  - at: 08:00:00
-    platform: time
+  - trigger: time
+    at: 08:00:00
   conditions:
   - condition: state
     entity_id: binary_sensor.workday
@@ -5760,34 +5908,48 @@
       - unavailable
       - unknown
   actions:
-  - action: climate.set_hvac_mode
-    alias: Cancel any lingering Dry mode first
+  - alias: Cancel any lingering Dry mode first
+    action: climate.set_hvac_mode
+    target:
+      entity_id: climate.bedroom_ac
     data:
       hvac_mode: cool
+  - delay:
+      seconds: 3
+  - alias: Clear eco so its baked-in ~73F reference can't override the target
+    action: climate.set_preset_mode
     target:
       entity_id: climate.bedroom_ac
-  - action: climate.set_preset_mode
-    alias: Away preset last, so it actually sticks
     data:
-      preset_mode: away
+      preset_mode: none
+  - delay:
+      seconds: 3
+  - alias: Park it warm
+    action: climate.set_temperature
     target:
       entity_id: climate.bedroom_ac
-  - action: logbook.log
     data:
-      entity_id: climate.bedroom_ac
-      message: WFH day — switched to Away preset (barely occupied today).
-      name: Bedroom AC
+      temperature: 78
   mode: single
 - id: '1786621053491'
-  alias: Living Room AC — WFH Comfort Hold 74F (v1)
-  description: On a WFH day (input_boolean.wfh_today on), holds climate.living_room_ac
-    at Cool/preset none/74F starting at 8am so it stays at Lara's chosen comfortable-but-efficient
-    balance for a full day of occupancy, rather than drifting per eco's own baked-in
+  alias: Living Room AC — WFH Comfort Hold 74F (v2)
+  description: 'On a WFH day (input_boolean.wfh_today on), holds climate.living_room_ac
+    at Cool/preset none/74F starting at 8am so it stays at Lara''s chosen comfortable-but-efficient
+    balance for a full day of occupancy, rather than drifting per eco''s own baked-in
     ~73F reference (see [[project_midea_ac_integration]] eco-preset finding). Uses
     preset none + explicit set_temperature so 74F actually holds. Naturally converges
-    back to the normal eco+bedtime-setback routine when the existing 'Living Room
-    AC — Bedtime Setback' automation fires on in_bed, so no separate revert step is
-    needed. Follows the hvac_mode-before-preset_mode ordering rule.
+    back to the normal eco+bedtime-setback routine when the existing ''Living Room
+    AC — Bedtime Setback'' automation fires on in_bed, so no separate revert step
+    is needed. Follows the hvac_mode-before-preset_mode ordering rule.
+
+
+    2026-08-13: added 3-second delays between adjacent climate.* calls. These Midea
+    entities garble rapid-fire sequential commands — confirmed live on climate.living_room_ac,
+    where this automation family''s no-delay sequence (hvac_mode -> preset none ->
+    temperature) landed at 08:00:00 and left the unit reading preset ''eco'' instead
+    of the ''none'' it had just been set to, while the same three calls issued manually
+    with several seconds between them all stuck correctly. Same session also confirmed
+    the separate, worse ''away'' preset bug — see the away-eco automation''s v4 note.'
   triggers:
   - at: 08:00:00
     platform: time
@@ -5819,12 +5981,18 @@
       hvac_mode: cool
     target:
       entity_id: climate.living_room_ac
+  - alias: Let the unit settle — these Midea entities clobber rapid sequential commands
+    delay:
+      seconds: 3
   - action: climate.set_preset_mode
     alias: Preset none so eco's internal ~73F reference doesn't override our target
     data:
       preset_mode: none
     target:
       entity_id: climate.living_room_ac
+  - alias: Let the unit settle — these Midea entities clobber rapid sequential commands
+    delay:
+      seconds: 3
   - action: climate.set_temperature
     alias: Hold at Lara's chosen WFH comfort/efficiency balance
     data:
@@ -5984,4 +6152,35 @@
       message: Currently {{ states('sensor.johnny_tracker_battery') }}%. Should cover
         a typical month — pull it now or let it finish charging.
       title: "\U0001F50B Johnny's collar hit 80%"
+  mode: single
+- id: bedroom_ac_dry_mode_auto_revert_v1
+  alias: Bedroom AC — Dry Mode Auto-Revert (v1)
+  description: 'Backstop for the dry-mode-lingers class of bug. Built 2026-08-13 after
+    the bedroom sat in dry mode 08:00-15:30 and drifted to 60F.
+
+
+    Dry mode does not respect the target temperature - it just runs the compressor
+    to dehumidify - so anything that leaves it on indefinitely overcools the room.
+    The ''Dry Mode While Getting Ready'' automation has no revert of its own and relied
+    on the leave-home automation to reset it, which never fires on a stay-home day.
+
+
+    This is deliberately entity-state-triggered rather than bolted onto the getting-ready
+    automation, so it also catches dry mode set by the remote, by the app, or by any
+    future automation. 90 minutes is well past a getting-ready stretch.'
+  triggers:
+  - trigger: state
+    entity_id: climate.bedroom_ac
+    to: dry
+    for:
+      hours: 1
+      minutes: 30
+  conditions: []
+  actions:
+  - alias: Back to cool - dry mode has run long enough
+    action: climate.set_hvac_mode
+    target:
+      entity_id: climate.bedroom_ac
+    data:
+      hvac_mode: cool
   mode: single
