@@ -936,12 +936,25 @@
     johnny_home_alone keys on person.lara_wiz being not_home, which is still fed by
     the MacBook and iPad trackers (they pin it home), so the plan is to reduce person.lara_wiz
     to the iPhone tracker only, making this gate reliable on every away-day rather
-    than only when the Mac is asleep.'
+    than only when the Mac is asleep.
+
+
+    2026-08-14: the caveat in the paragraph above is now RESOLVED, and it was worse
+    than described. person.lara_wiz was already reduced to the iPhone tracker, but
+    binary_sensor.johnny_home_alone''s template still used is_state(''person.lara_wiz'',''not_home'')
+    — a literal state string. Any NAMED zone (Work, vet, allergist) is not that string,
+    so the sensor read ''off'' the entire time she was at the office, and this relight
+    gate was silently open on every workday. Confirmed on 2026-08-14, where the sensor
+    flipped off at 08:05, 10:52 and 12:08 purely because her phone touched zone.work.
+    Helper template changed to ''not is_state(person.lara_wiz, home)'', which is true
+    for not_home AND every named zone. No change to this automation''s own config;
+    the gate simply works now. Found while tracing a separate 7ms race in AC — Away
+    Eco / Restore on Presence (v5).'
   triggers:
   - entity_id: binary_sensor.hue_motion_sensor_4_motion
     from: 'off'
     to: 'on'
-    platform: state
+    trigger: state
   conditions:
   - condition: state
     entity_id: group.morning
@@ -5143,118 +5156,131 @@
         entity_id: climate.bedroom_ac
   mode: single
 - id: '1786413232913'
-  alias: AC — Away Eco / Restore on Presence (v4)
+  alias: AC — Away Eco / Restore on Presence (v5)
   description: 'Energy-saving setback for both Midea AC units when nobody human is
-    home, restoring to the everyday eco preset when Lara gets back. Mirrors the trigger
-    pattern of ''Turn off the lights when I leave home'' and, most importantly, the
-    vacation gate from ''Speakers - Stop All When I Leave Home'' - GATED on calendar.vacation
-    == off for exactly the same reason documented there: if a dog/house-sitter is
-    staying during an actual vacation window, this should not quietly setback the
-    AC on them just because binary_sensor.johnny_home_alone reads off-pattern (no
-    person.* tracker exists for a sitter, so without this gate a sitter-covered vacation
-    would look identical to ''house empty'' and get the deeper away preset).
+    home, restoring to the everyday eco preset AND the exact pre-away target when
+    Lara gets back. Gated on calendar.vacation == off so a dog/house-sitter during
+    a real vacation window never gets a silent setback (no person.* tracker exists
+    for a sitter, so a sitter-covered vacation looks identical to ''house empty'').
 
 
-    Depth of setback depends on binary_sensor.johnny_home_alone: if Johnny is home
-    alone (no sitter, no Lara), use the milder ''eco'' preset so the house doesn''t
-    get too warm for the dog. If the house is fully empty, use the deeper ''away''
-    preset. On arrival home, both units are restored to ''eco'', which is their normal
-    everyday steady-state preset (observed default on both units when the Midea integration
-    was first added 2026-08-11).
+    v5 (2026-08-14) — TWO BUGS FIXED, both found by tracing a real day.
 
 
-    Does not touch climate.bedroom_ac during an active AC Sweet-Spot test block -
-    moot in practice since she can''t be both away and in bed, so the two never overlap
-    in time anyway.
+    BUG 1: RACE ON binary_sensor.johnny_home_alone. On 2026-08-14 at 07:36:22.233
+    Lara left zone.home, this automation triggered, and the inner choose read binary_sensor.johnny_home_alone
+    at 07:36:22.2446 — it still said ''off''. That template sensor flipped to ''on''
+    at 07:36:22.2513, SEVEN MILLISECONDS LATER, because it depends on person.lara_wiz
+    and recomputes in the same event tick that triggered this automation. Net effect:
+    the automation concluded the house was empty while Johnny was standing in it,
+    and parked BOTH units at 80F for the whole day. Worse, the logbook message is
+    a template that evaluates ~12s later, after the sensor caught up, so it logged
+    ''Johnny home alone, mild eco setback'' while the actions had actually taken the
+    deep branch — the log flatly contradicted the behaviour.
 
 
-    2026-08-11: left_home branch now also forces climate.bedroom_ac back to hvac_mode
-    cool, to cancel any lingering Dry mode from ''Bedroom AC - Dry Mode While Getting
-    Ready'' if she leaves before that automation would otherwise be superseded.
+    Fix: stop reading the derived sensor here entirely and read person.johnny directly.
+    person.johnny does not recompute off person.lara_wiz, so it is stable across the
+    trigger tick (verified: it read ''home'' continuously on 2026-08-14 apart from
+    one 53-second ''unknown'' Tractive blip at 11:10 unrelated to any departure).
 
 
-    2026-08-11 (v2): availability handling for climate.bedroom_ac. This automation
-    is deliberately NOT guarded at the top level like the other bedroom-AC automations,
-    because it targets BOTH units - a bedroom guard would wrongly block the living-room
-    setback too. Instead: (a) the bedroom-only set_hvac_mode cool step is wrapped
-    in an availability check, and (b) both logbook messages now append a note when
-    the bedroom unit is unreachable, so the log stops claiming both units were set
-    when only the living room actually was. The two-entity set_preset_mode calls are
-    left targeting both on purpose - HA no-ops the unavailable one and the living
-    room still gets its setback, which is the desired behavior. Context: on 2026-08-10
-    the bedroom AC went unavailable and HA''s climate services returned WITHOUT error
-    against the dead entity, so automations logged success while nothing reached the
-    unit.
+    Also INVERTED THE FAIL-OPEN DIRECTION. In v4 the destructive 80F path was the
+    choose DEFAULT, so any ambiguity fell through to it — that is what made a 7ms
+    race cost a whole day. In v5 the deep setback is the explicitly-conditioned branch
+    and requires positive confirmation that person.johnny is NOT in [home, unknown,
+    unavailable]; the mild eco setback is the default. If we cannot tell where the
+    dog is, he gets the comfortable house.
 
 
-    2026-08-12 (BUGFIX): the dry-mode-cancel step (set_hvac_mode cool) was running
-    AFTER the eco/away preset was set. On this Midea integration, calling set_hvac_mode
-    resets preset_mode back to ''none'' as a side effect - confirmed via history showing
-    preset flip eco->none 200ms after the hvac_mode call on 2026-08-12T11:20:47Z.
-    Net effect: this morning''s departure left the bedroom unit running full un-modulated
-    Cool at last night''s leftover 65F sweet-spot-test setpoint all day instead of
-    eco, and nobody noticed until Lara asked why her room was cold at 63F while she
-    was at work. Reordered so the hvac_mode cancel-dry-mode step runs FIRST and the
-    preset_mode set runs LAST, so preset is the final word and actually sticks. Bonus:
-    since eco preset appears to carry its own baked-in reference temp (73F, matching
-    living room''s existing eco baseline) rather than obeying a stale manually-set
-    target, this ordering fix also resolves the stale-test-temperature leak without
-    needing a separate explicit temperature reset step.
+    BUG 2: THE 80F HAD NO RESTORE PATH. v4''s arrival branch only set preset_mode
+    eco and assumed eco''s baked-in ~73F reference would override the stale explicit
+    target. That assumption is FALSE and was disproven the same day: the living room
+    sat at target 80 under preset eco from 08:06 until Lara hand-set 75 at 14:53,
+    and climate.bedroom_ac was still at 80 with the room at 77F that evening. This
+    is the exact lesson already written up for the LR bedtime setback on 2026-08-11
+    — a setback that writes an explicit number needs a symmetric explicit restore,
+    and the restore trigger must mirror how it was armed.
 
 
-    v4 (2026-08-13): removed preset_mode ''away'' from the fully-empty-house branch.
-    On these Midea units ''away'' is FREEZE PROTECTION, not a cooling setback — confirmed
-    live the same day on climate.bedroom_ac, where a set_preset_mode ''away'' call
-    flipped the unit straight into hvac_mode ''dry'' with preset ''none''. Dry mode
-    ignores the target temperature, so the room ran down to 60F against a 65F target
-    and stayed there for 7.5 hours. The empty-house branch here had almost certainly
-    never fired (Johnny is normally home, so it takes the eco branch), so this was
-    latent rather than observed — but it was the same landmine.
+    Fix: two marker helpers, input_number.bedroom_ac_pre_away_temp and input_number.lr_ac_pre_away_temp.
+    0 means ''no away setback active''; non-zero holds the exact pre-away target.
+    The deep branch stores each unit''s target BEFORE writing 80 (guarded on the marker
+    being below 0.5, so a second departure without an intervening arrival cannot overwrite
+    the real base with 80). The restore branch writes the stored value back and zeroes
+    the marker. If a restore is missed because a unit was unreachable, the marker
+    survives and the NEXT arrival restores it — self-healing, no stuck state.
 
 
-    Empty-house branch now does, per unit: set_hvac_mode cool -> 3s -> set_preset_mode
-    none -> 3s -> set_temperature 80. Preset ''none'' rather than ''eco'' because
-    eco carries its own baked-in ~73F reference that overrides an explicit target.
-    80F is the deep ''nobody and no dog in the house'' setback; it is a number Lara
-    can change.
+    Restore ordering: preset eco FIRST, then set_temperature LAST, so the explicit
+    number is the final word. Verified empirically on 2026-08-14 that setting temperature
+    under preset eco sticks on these units (Lara set 75 under eco at 14:53 and it
+    held).
 
 
-    Also tightened both branches'' reachability guard from [unavailable, unknown]
-    to [off, unavailable, unknown], so a set_hvac_mode call can never switch on a
-    unit she had deliberately turned off. Short delays between sequential climate
-    calls because these entities clobber rapid commands.'
+    Added trigger ''unit_recovered'' (either climate entity coming back from unavailable
+    while she is home), mirroring the LR morning-restore design: without it, a unit
+    that is offline at the moment she walks in never gets its number back.
+
+
+    mode: queued (max 3) rather than single, because unit_recovered can fire twice
+    in quick succession (both units returning together) and a dropped run would strand
+    a marker.
+
+
+    Midea command rules observed throughout (see project memory midea-ac-integration):
+    hvac_mode BEFORE preset_mode, 3s between adjacent climate calls, and never preset
+    ''away'' (it is freeze protection and flips the unit to dry).
+
+
+    STILL OPEN, not fixed here: binary_sensor.johnny_home_alone''s own template uses
+    is_state(''person.lara_wiz'',''not_home''), so it reads false whenever she is
+    in ANY named zone (Work, vet, allergist). Being fixed separately. This automation
+    no longer depends on it either way.'
   triggers:
   - entity_id: person.lara_wiz
     event: leave
     id: left_home
-    platform: zone
+    trigger: zone
     zone: zone.home
   - entity_id: person.lara_wiz
     id: arrived_home
     not_from:
     - unknown
     - unavailable
-    platform: state
     to: home
+    trigger: state
+  - entity_id:
+    - climate.bedroom_ac
+    - climate.living_room_ac
+    from: unavailable
+    id: unit_recovered
+    trigger: state
   conditions:
   - condition: state
     entity_id: calendar.vacation
     state: 'off'
   actions:
   - choose:
-    - conditions:
+    - alias: LEAVING HOME — pick a setback depth
+      conditions:
       - condition: trigger
         id: left_home
       sequence:
       - choose:
-        - conditions:
-          - condition: state
-            entity_id: binary_sensor.johnny_home_alone
-            state: 'on'
+        - alias: Deep setback ONLY on positive confirmation the dog is not home —
+            v5 fail-open inversion
+          conditions:
+          - condition: not
+            conditions:
+            - condition: state
+              entity_id: person.johnny
+              state:
+              - home
+              - unknown
+              - unavailable
           sequence:
-          - alias: Cancel any lingering Dry mode FIRST — hvac_mode before preset_mode,
-              and skip if the unit is off or unreachable so this can never switch
-              an off unit on
+          - alias: Bedroom — remember the pre-away target, then deep setback to cool/none/80F
             if:
             - condition: not
               conditions:
@@ -5265,6 +5291,19 @@
                 - unavailable
                 - unknown
             then:
+            - alias: Store the pre-away target — only if no away setback is already
+                active
+              if:
+              - below: 0.5
+                condition: numeric_state
+                entity_id: input_number.bedroom_ac_pre_away_temp
+              then:
+              - action: input_number.set_value
+                data:
+                  value: '{{ state_attr(''climate.bedroom_ac'',''temperature'') |
+                    float(0) }}'
+                target:
+                  entity_id: input_number.bedroom_ac_pre_away_temp
             - action: climate.set_hvac_mode
               data:
                 hvac_mode: cool
@@ -5272,19 +5311,64 @@
                 entity_id: climate.bedroom_ac
             - delay:
                 seconds: 3
-          - alias: Johnny's home alone — mild eco setback, set LAST so it sticks
-            action: climate.set_preset_mode
-            data:
-              preset_mode: eco
-            target:
-              entity_id:
-              - climate.bedroom_ac
-              - climate.living_room_ac
+            - action: climate.set_preset_mode
+              data:
+                preset_mode: none
+              target:
+                entity_id: climate.bedroom_ac
+            - delay:
+                seconds: 3
+            - action: climate.set_temperature
+              data:
+                temperature: 80
+              target:
+                entity_id: climate.bedroom_ac
+          - alias: Living room — same deep setback
+            if:
+            - condition: not
+              conditions:
+              - condition: state
+                entity_id: climate.living_room_ac
+                state:
+                - 'off'
+                - unavailable
+                - unknown
+            then:
+            - alias: Store the pre-away target — only if no away setback is already
+                active
+              if:
+              - below: 0.5
+                condition: numeric_state
+                entity_id: input_number.lr_ac_pre_away_temp
+              then:
+              - action: input_number.set_value
+                data:
+                  value: '{{ state_attr(''climate.living_room_ac'',''temperature'')
+                    | float(0) }}'
+                target:
+                  entity_id: input_number.lr_ac_pre_away_temp
+            - action: climate.set_hvac_mode
+              data:
+                hvac_mode: cool
+              target:
+                entity_id: climate.living_room_ac
+            - delay:
+                seconds: 3
+            - action: climate.set_preset_mode
+              data:
+                preset_mode: none
+              target:
+                entity_id: climate.living_room_ac
+            - delay:
+                seconds: 3
+            - action: climate.set_temperature
+              data:
+                temperature: 80
+              target:
+                entity_id: climate.living_room_ac
         default:
-        - alias: 'House fully empty — bedroom: cool + preset none + 80F. NOT preset
-            away: on these Midea units away is freeze protection and flips the unit
-            into hvac_mode dry, which ignores the setpoint and overcools indefinitely
-            (confirmed live 2026-08-13). Skipped entirely if the unit is off or unreachable.'
+        - alias: Johnny is home, or we cannot confirm otherwise — cancel lingering
+            Dry mode FIRST (hvac_mode clobbers preset on this integration)
           if:
           - condition: not
             conditions:
@@ -5302,78 +5386,121 @@
               entity_id: climate.bedroom_ac
           - delay:
               seconds: 3
-          - action: climate.set_preset_mode
-            data:
-              preset_mode: none
-            target:
-              entity_id: climate.bedroom_ac
-          - delay:
-              seconds: 3
-          - action: climate.set_temperature
-            data:
-              temperature: 80
-            target:
-              entity_id: climate.bedroom_ac
-        - alias: 'House fully empty — living room: same deep setback'
-          if:
-          - condition: not
-            conditions:
-            - condition: state
-              entity_id: climate.living_room_ac
-              state:
-              - 'off'
-              - unavailable
-              - unknown
-          then:
-          - action: climate.set_hvac_mode
-            data:
-              hvac_mode: cool
-            target:
-              entity_id: climate.living_room_ac
-          - delay:
-              seconds: 3
-          - action: climate.set_preset_mode
-            data:
-              preset_mode: none
-            target:
-              entity_id: climate.living_room_ac
-          - delay:
-              seconds: 3
-          - action: climate.set_temperature
-            data:
-              temperature: 80
-            target:
-              entity_id: climate.living_room_ac
-      - alias: Log the setback depth chosen
-        action: logbook.log
+        - action: climate.set_preset_mode
+          alias: Mild eco setback, set LAST so it sticks
+          data:
+            preset_mode: eco
+          target:
+            entity_id:
+            - climate.bedroom_ac
+            - climate.living_room_ac
+      - action: logbook.log
+        alias: Log the setback depth actually chosen — reads the SAME entity the branch
+          did, so it can never disagree again
         data:
-          name: AC Away Eco
           entity_id: climate.bedroom_ac
-          message: Left home — {{ 'Johnny home alone, mild eco setback' if is_state('binary_sensor.johnny_home_alone','on')
-            else 'house empty, deep setback to cool/none/80F' }}.{{ ' Bedroom AC was
-            off or unreachable, so this applied to the living room only.' if states('climate.bedroom_ac')
-            in ['off','unavailable','unknown'] else '' }}
-    - conditions:
+          message: Left home — {{ 'house empty (person.johnny = ' ~ states('person.johnny')
+            ~ '), deep setback to cool/none/80F' if states('person.johnny') not in
+            ['home','unknown','unavailable'] else 'Johnny home or location unconfirmed
+            (person.johnny = ' ~ states('person.johnny') ~ '), mild eco setback' }}.{{
+            ' Bedroom AC was off or unreachable, so this applied to the living room
+            only.' if states('climate.bedroom_ac') in ['off','unavailable','unknown']
+            else '' }}
+          name: AC Away Eco
+    - alias: BACK HOME (or a unit came back online while home) — restore eco AND the
+        exact pre-away target
+      conditions:
       - condition: trigger
-        id: arrived_home
+        id:
+        - arrived_home
+        - unit_recovered
+      - condition: state
+        entity_id: person.lara_wiz
+        state: home
       sequence:
+      - alias: Capture the markers before anything zeroes them, for the restore values
+          and the log
+        variables:
+          br_restore: '{{ states(''input_number.bedroom_ac_pre_away_temp'') | float(0)
+            }}'
+          lr_restore: '{{ states(''input_number.lr_ac_pre_away_temp'') | float(0)
+            }}'
       - action: climate.set_preset_mode
-        alias: Restore everyday eco preset
+        alias: Restore the everyday eco preset on both units
         data:
           preset_mode: eco
         target:
           entity_id:
           - climate.bedroom_ac
           - climate.living_room_ac
+      - delay:
+          seconds: 3
+      - alias: Bedroom — put the exact pre-away target back, then clear the marker
+        if:
+        - above: 0.5
+          condition: numeric_state
+          entity_id: input_number.bedroom_ac_pre_away_temp
+        - condition: not
+          conditions:
+          - condition: state
+            entity_id: climate.bedroom_ac
+            state:
+            - 'off'
+            - unavailable
+            - unknown
+        then:
+        - action: climate.set_temperature
+          data:
+            temperature: '{{ br_restore }}'
+          target:
+            entity_id: climate.bedroom_ac
+        - delay:
+            seconds: 3
+        - action: input_number.set_value
+          data:
+            value: 0
+          target:
+            entity_id: input_number.bedroom_ac_pre_away_temp
+      - alias: Living room — put the exact pre-away target back, then clear the marker
+        if:
+        - above: 0.5
+          condition: numeric_state
+          entity_id: input_number.lr_ac_pre_away_temp
+        - condition: not
+          conditions:
+          - condition: state
+            entity_id: climate.living_room_ac
+            state:
+            - 'off'
+            - unavailable
+            - unknown
+        then:
+        - action: climate.set_temperature
+          data:
+            temperature: '{{ lr_restore }}'
+          target:
+            entity_id: climate.living_room_ac
+        - delay:
+            seconds: 3
+        - action: input_number.set_value
+          data:
+            value: 0
+          target:
+            entity_id: input_number.lr_ac_pre_away_temp
       - action: logbook.log
-        alias: Log the restore
+        alias: Log the restore, naming the numbers actually put back
         data:
           entity_id: climate.bedroom_ac
-          message: Back home — restored AC preset to eco.{{ ' Bedroom AC was unreachable,
-            so this applied to the living room only.' if states('climate.bedroom_ac')
-            in ['unavailable','unknown'] else '' }}
+          message: 'Back home — restored eco preset.{{ '' Bedroom target back to ''
+            ~ br_restore ~ ''F.'' if br_restore > 0.5 else '' Bedroom had no away
+            setback to undo.'' }}{{ '' Living room target back to '' ~ lr_restore
+            ~ ''F.'' if lr_restore > 0.5 else '' Living room had no away setback to
+            undo.'' }}{{ '' NOTE: bedroom AC unreachable, its restore was skipped
+            and the marker was kept for next time.'' if states(''climate.bedroom_ac'')
+            in [''unavailable'',''unknown''] else '''' }}'
           name: AC Away Eco
-  mode: single
+  max: 3
+  mode: queued
 - id: '1786413800292'
   alias: Bedroom AC — Gradual Warm Before Alarm (v2, Runs During Test Blocks)
   description: 'Warms the bedroom by 3°F over the 30 minutes before wake, in three
@@ -5582,71 +5709,123 @@
       name: Living Room AC
   mode: single
 - id: '1786413813332'
-  alias: Living Room AC — Precool Before Arriving Home (v2)
-  description: 'When Lara leaves zone.work, releases the living room AC''s deeper
-    ''away'' setback back to the everyday ''eco'' preset early - rather than waiting
-    for the arrival-home trigger in ''AC — Away Eco / Restore on Presence'' - so the
-    unit has the whole drive home to recover instead of starting cold at the front
-    door. A single preset change is enough: unlike the wake-alarm volume ramp (which
-    needs literal steps because volume jumps are jarring), cooling a room is inherently
-    gradual once a real target is set, so no artificial multi-step ramp is needed
-    here - the drive itself is the ramp.
+  alias: Living Room AC — Precool Before Arriving Home (v3)
+  description: 'When Lara leaves zone.work, releases the living room AC''s away setback
+    early — rather than waiting for the arrival-home trigger in ''AC — Away Eco /
+    Restore on Presence'' — so the unit has the drive home to recover instead of starting
+    cold at the front door.
 
 
-    Uses sensor.waze_travel_time for the log message only (context on how long the
-    recovery window is) - note this is technically the home-to-work route, HA has
-    no work-to-home sensor configured, but it''s the closest live duration signal
-    available and the roads are the same either direction.
+    v3 (2026-08-14) — two fixes.
 
 
-    Converges cleanly with the arrival-home branch of ''AC — Away Eco / Restore on
-    Presence'', which also sets eco - no fight between the two, this one just gets
-    there earlier. If the house was never in the deeper ''away'' preset (e.g. Johnny
-    was home alone, already on eco), this is a harmless no-op repeat.
+    FIX 1, ORDERING. v2 called set_preset_mode eco FIRST and set_hvac_mode cool SECOND.
+    That is backwards per rule 1 of the Midea command rules (see project memory midea-ac-integration):
+    on this integration set_hvac_mode resets preset_mode to ''none'' as a side effect,
+    so the eco it had just set was live only until the next call. It survived unnoticed
+    on 2026-08-14 purely because the unit was already in cool, making the hvac_mode
+    call a device-level no-op. Reordered to hvac_mode -> 3s -> preset -> 3s, so the
+    preset is the final word. Also added the off/unavailable/unknown guard the sibling
+    climate automations already carry, so this can never switch on a unit that was
+    deliberately turned off.
 
 
-    Gated on calendar.vacation off per house style section 8.
+    FIX 2, IT WAS ONLY RESTORING HALF THE SETBACK. Setting preset eco does nothing
+    about the explicit 80F target the away setback writes, and an 80F target means
+    the unit will not cool no matter what the preset says. On 2026-08-14 this automation
+    fired at 08:06 and set the living room to eco while the target stayed at 80 —
+    so ''precool'' cooled nothing and Lara walked into an 80F living room. Now restores
+    the exact pre-away target from input_number.lr_ac_pre_away_temp and zeroes the
+    marker, the same helper away-eco v5 writes. The two converge cleanly: whichever
+    runs first restores the number and clears the marker, and the other one finds
+    0 and correctly skips.
 
 
-    2026-08-13: added 3-second delays between adjacent climate.* calls. These Midea
-    entities garble rapid-fire sequential commands — confirmed live on climate.living_room_ac,
-    where this automation family''s no-delay sequence (hvac_mode -> preset none ->
-    temperature) landed at 08:00:00 and left the unit reading preset ''eco'' instead
-    of the ''none'' it had just been set to, while the same three calls issued manually
-    with several seconds between them all stuck correctly. Same session also confirmed
-    the separate, worse ''away'' preset bug — see the away-eco automation''s v4 note.'
+    KNOWN DESIGN PROBLEM, NOT FIXED HERE. zone.work is not a reliable at-work signal.
+    On 2026-08-14 Lara''s phone registered INSIDE the zone for only 51s, 2.7min and
+    1.6min across a full office day — it reads not_home while she is at her desk and
+    only sees her when she steps outside to the parking lot. So this automation fired
+    three times (08:06 arriving, 10:55 moving her car, 12:10 the real departure) and,
+    because she went to a doctor''s appointment after work, even the real one ran
+    1h48m before she actually walked in. ''Left work'' may simply be the wrong trigger;
+    a zone-near-home entry or a travel-time trigger is the likely replacement. Lara
+    agreed to redesign this rather than patch the zone. Until then the automation
+    is at least correct in what it does when it does fire.
+
+
+    Uses sensor.waze_travel_time for the log message only (it is the home-to-work
+    route, HA has no work-to-home sensor, but the roads are the same either direction).
+
+
+    Gated on calendar.vacation off per house style section 8.'
   triggers:
   - entity_id: person.lara_wiz
     event: leave
     id: left_work
-    platform: zone
+    trigger: zone
     zone: zone.work
   conditions:
   - condition: state
     entity_id: calendar.vacation
     state: 'off'
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: climate.living_room_ac
+      state:
+      - 'off'
+      - unavailable
+      - unknown
   actions:
-  - action: climate.set_preset_mode
-    alias: Release the away setback early
+  - alias: Capture the marker before it is zeroed, for the restore value and the log
+    variables:
+      lr_restore: '{{ states(''input_number.lr_ac_pre_away_temp'') | float(0) }}'
+  - action: climate.set_hvac_mode
+    alias: Direct cool mode FIRST — hvac_mode clobbers preset_mode on this integration,
+      so it must not run after the preset
     data:
-      preset_mode: eco
+      hvac_mode: cool
     target:
       entity_id: climate.living_room_ac
   - alias: Let the unit settle — these Midea entities clobber rapid sequential commands
     delay:
       seconds: 3
-  - action: climate.set_hvac_mode
-    alias: Direct cool mode so it actually recovers on the drive
+  - action: climate.set_preset_mode
+    alias: Release the away setback to the everyday eco preset
     data:
-      hvac_mode: cool
+      preset_mode: eco
     target:
       entity_id: climate.living_room_ac
+  - alias: Let the unit settle
+    delay:
+      seconds: 3
+  - alias: Put the exact pre-away target back — without this the preset change alone
+      leaves an 80F target and nothing cools
+    if:
+    - above: 0.5
+      condition: numeric_state
+      entity_id: input_number.lr_ac_pre_away_temp
+    then:
+    - action: climate.set_temperature
+      data:
+        temperature: '{{ lr_restore }}'
+      target:
+        entity_id: climate.living_room_ac
+    - delay:
+        seconds: 3
+    - action: input_number.set_value
+      data:
+        value: 0
+      target:
+        entity_id: input_number.lr_ac_pre_away_temp
   - action: logbook.log
     alias: Log it
     data:
       entity_id: climate.living_room_ac
       message: Left work, ~{{ states('sensor.waze_travel_time') }} min out (home→work
-        route, used as an estimate) — releasing away setback to eco now.
+        route, used as an estimate) — released to eco.{{ ' Target restored to ' ~
+        lr_restore ~ 'F.' if lr_restore > 0.5 else ' No away setback was active, so
+        the target was left alone.' }}
       name: Living Room AC
   mode: single
 - id: '1786413963544'
@@ -6236,3 +6415,55 @@
     data:
       hvac_mode: cool
   mode: single
+- id: '1786748848061'
+  alias: AC Sweet-Spot — One-Shot Re-Enable (v1)
+  description: 'ONE-SHOT SAFETY NET, created 2026-08-14 ~19:20 ET. Delete it once
+    it has fired.
+
+
+    On the evening of 2026-08-14 Lara asked for the bedroom held at a fixed number
+    overnight rather than allowed to ramp, so `automation.ac_sweet_spot_bedroom_bedtime_set_v1`
+    was turned OFF for the night. Its non-testing branch applies preset `sleep`, which
+    raises the target roughly 3.6F over the first two hours and would have undone
+    the hold.
+
+
+    A disabled automation is a SILENT failure — nothing would ever have told her the
+    bedtime AC logic was dead. The re-enable deliberately lives HERE, inside Home
+    Assistant, and NOT in a Cowork scheduled task: on 2026-08-14 Lara test-fired a
+    cloud-side scheduled task and it could not reach Home Assistant at all, because
+    the HA MCP server is local to her Mac and reached through the desktop bridge.
+    Anything that MUST happen should therefore be an HA automation, not a cloud task.
+
+
+    Fires at 09:00, turns the sweet-spot automation back on, logs it, then disables
+    ITSELF by hardcoded entity_id so it cannot fire a second time. Self-disable rather
+    than a date template, per the HA best-practices one-shot pattern.
+
+
+    If Lara decides to retire the AC Sweet-Spot experiment outright (the sleep-temp
+    question it was built for is already resolved — see project memory bedroom-temp-sleep-pattern-check),
+    delete BOTH this and the sweet-spot automation instead of letting this quietly
+    switch the experiment back on.'
+  triggers:
+  - at: 09:00:00
+    id: morning
+    trigger: time
+  actions:
+  - action: automation.turn_on
+    alias: Put the bedtime AC automation back the way it was
+    target:
+      entity_id: automation.ac_sweet_spot_bedroom_bedtime_set_v1
+  - action: logbook.log
+    alias: Say so in the logbook, so the re-enable is not itself silent
+    data:
+      entity_id: automation.ac_sweet_spot_bedroom_bedtime_set_v1
+      message: Re-enabled after the 2026-08-14 overnight hold. The one-shot that did
+        this has now disabled itself and can be deleted.
+      name: AC Sweet-Spot
+  - action: automation.turn_off
+    alias: Disable myself so this can never fire twice
+    target:
+      entity_id: automation.ac_sweet_spot_one_shot_re_enable_v1
+  mode: single
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
