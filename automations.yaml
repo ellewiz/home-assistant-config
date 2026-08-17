@@ -918,7 +918,7 @@
   mode: restart
   max_exceeded: silent
 - id: '1763032936247'
-  alias: Living Room — Morning Lights (v3, Lux + Presence Gated)
+  alias: Living Room — Morning Lights (v4, Lux + Presence + Already-On Guard)
   description: 'v2 of "Living room lights on - Morning". v1 had no lux condition,
     so after the Ambient Manager''s early_morning_ended branch turned the lights off
     at 8:00 (room bright by lux), the next motion re-lit them — observed 9/9 days
@@ -949,7 +949,26 @@
     Helper template changed to ''not is_state(person.lara_wiz, home)'', which is true
     for not_home AND every named zone. No change to this automation''s own config;
     the gate simply works now. Found while tracing a separate 7ms race in AC — Away
-    Eco / Restore on Presence (v5).'
+    Eco / Restore on Presence (v5).
+
+
+    2026-08-17 (v4): ADDED AN ALREADY-ON GUARD to the relight branch. The branch had
+    no condition that light.living_room_lights was off, so it fired light.turn_on
+    on EVERY motion off->on even when the lamps were already lit. Traced Fri 2026-08-14:
+    motion fired 06:14:59.763 and both lamps dropped together 1.01s later at 06:15:00.776
+    and .778 (2ms apart = one service call to the group); the LR motion sensor then
+    bounced 20+ times between 06:14:59 and 06:23, and because mode is restart every
+    bounce re-ran this automation, each run restarting Adaptive Lighting''s 45s re-ramp.
+    Net effect: the lamps visibly breathed for about 8 minutes during her actual morning.
+    RULED OUT while tracing: not a relight (the group was continuously on from 06:02:58
+    to 07:36:23) and not sleep mode (off at 05:30, stayed off). Reference implementation
+    for the guard is Ambient Manager''s presence_arrived branch, which correctly requires
+    state off. Action[0] (the Adaptive Lighting sleep-mode clear) DELIBERATELY stays
+    unconditional and outside the guard, so the wake-up path is unaffected: on morning
+    motion AL sleep mode is still cleared and AL re-adapts already-on lamps up from
+    10 percent. STILL UNEXPLAINED, do not treat as solved: the dip landed on exactly
+    10 percent, which is precisely AL''s sleep_brightness, and the record cannot account
+    for that coincidence.'
   triggers:
   - entity_id: binary_sensor.hue_motion_sensor_4_motion
     from: 'off'
@@ -978,6 +997,11 @@
         - condition: template
           value_template: '{{ states(''sensor.hue_motion_sensor_4_illuminance'') in
             [''unknown'', ''unavailable''] }}'
+      - condition: state
+        entity_id: light.living_room_lights
+        state: 'off'
+        alias: Only relight if the group is actually OFF (anti re-fire guard, added
+          v4)
       sequence:
       - action: light.turn_on
         target:
@@ -3281,7 +3305,7 @@
           entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
   mode: single
 - id: bedroom_heat_alert_v2
-  alias: Bedroom — Heat Alert (v7, Skips Deliberate Setbacks)
+  alias: Bedroom — Heat Alert (v8, Gate Matches the 76F Daytime Hold)
   description: 'v2 consolidating "Bedroom temp too hot" (id 1654570339244) and "Bedroom
     too hot when Lara comes home" (id 1691671531217), both deleted 2026-07-13 (superseded).
     Two branches: sustained warm (>75F for 15 min while home and awake, not at work)
@@ -3329,37 +3353,66 @@
     reads ''boost'' next time either branch triggers.
 
 
+    **v5 IS NOW VERIFIED (2026-08-15 18:51).** The sustained_warm branch fired for
+    real and climate.bedroom_ac read back preset_mode ''boost'' three seconds later.
+    The ordering fix works end to end. That open question from 2026-08-12 is closed.
+
+
     2026-08-13: added 3-second delays between adjacent climate.* calls. These Midea
-    entities garble rapid-fire sequential commands — confirmed live on climate.living_room_ac,
+    entities garble rapid-fire sequential commands - confirmed live on climate.living_room_ac,
     where this automation family''s no-delay sequence (hvac_mode -> preset none ->
     temperature) landed at 08:00:00 and left the unit reading preset ''eco'' instead
     of the ''none'' it had just been set to, while the same three calls issued manually
     with several seconds between them all stuck correctly. Same session also confirmed
-    the separate, worse ''away'' preset bug — see the away-eco automation''s v4 note.
+    the separate, worse ''away'' preset bug - see the away-eco automation''s v4 note.
 
 
     v7 (2026-08-13): added a condition that skips the whole automation when climate.bedroom_ac''s
     own target is 77F or higher. Introduced because the same day''s WFH warm setback
     parks the bedroom at 78F while Lara is home, which sits permanently above this
-    automation''s 75F trigger — so it would have pushed a spurious ''bedroom warm''
+    automation''s 75F trigger - so it would have pushed a spurious ''bedroom warm''
     alert every 3h on every WFH day AND forced preset boost each time, undoing the
-    setback. Also suppresses the arrive-home branch after the empty-house 80F setback,
-    which is intentional: the away-eco automation''s arrival branch already sets eco
-    and starts cooling at that same moment, so the alert was redundant there. Threshold
-    stays 75F for every normal day.'
+    setback.
+
+
+    v8 (2026-08-15 evening): the v7 gate was ''target < 77'', which did NOT cover
+    a deliberate 76F hold. Changed to ''target < 76''. WHY, from a real firing: at
+    18:51 on 2026-08-15 this automation alerted and forced boost while the bedroom
+    dial sat at a deliberate 76F - the daytime number Lara asked for. sensor.temp_in_bedroom
+    crossed 75 at 18:36:16 and the 15-minute trigger fired at 18:51:16. The alert
+    was pure noise: the unit''s own thermometer read 74 against a 76 target, so it
+    already believed itself satisfied and ''boost'' had nothing to do. The 76F daytime
+    hold is the number Lara chose (75 is unsettable on these units - see the night
+    setpoint manager''s notes), so the gate must sit AT it, not one degree above.
+    Alerts still fire for anything genuinely warmer than her own setting, and the
+    WFH 78F and empty-house 80F setbacks stay suppressed exactly as before.
+
+
+    The float(70) default is deliberate and unchanged: an unreachable unit returns
+    None, defaults to 70, passes the condition, and still alerts. If we cannot tell,
+    alert.
+
+
+    STILL OPEN: this automation''s boost action fights whatever else owns the dial.
+    ''Bedroom AC - Night Setpoint Manager (v2)'' now clears a rogue preset, but only
+    inside its evening-ramp and in-bed windows, deliberately, so a genuine daytime
+    boost is left alone. If boost ever proves it does not actually cool (it did not
+    on 2026-08-15, because the unit thought it was satisfied), consider dropping the
+    climate calls and making this notify-only. Lara was offered that on 2026-08-15
+    and chose to keep the cooling action for now.'
   triggers:
   - above: 75
     entity_id: sensor.temp_in_bedroom
     for: 00:15:00
     id: sustained_warm
-    platform: numeric_state
+    trigger: numeric_state
   - entity_id: person.lara_wiz
     id: arrived_home
     not_from:
     - unknown
     - unavailable
-    platform: state
     to: home
+    trigger: state
   conditions:
   - condition: state
     entity_id: calendar.vacation
@@ -3372,14 +3425,16 @@
     value_template: '{{ not has_value(''input_datetime.bedroom_heat_last_alerted'')
       or (now().timestamp() - as_timestamp(states(''input_datetime.bedroom_heat_last_alerted''),
       0)) > 10800 }}'
-  - alias: Skip when the bedroom is DELIBERATELY parked warm (WFH 78F setback, empty-house
-      80F setback). Without this, a room correctly sitting at its own setpoint reads
-      as 'warm', re-alerts every 3h, and forces preset boost, which undoes the setback
-      it is complaining about. float(70) default means an unreachable unit does NOT
-      get suppressed - if we cannot tell, alert.
+  - alias: Skip when the bedroom is DELIBERATELY parked at or above its own daytime
+      hold (76F daytime, WFH 78F, empty-house 80F). Without this, a room correctly
+      sitting at its own setpoint reads as 'warm', re-alerts every 3h, and forces
+      preset boost, which undoes the setting it is complaining about. v8 moved this
+      from 77 to 76 after a real spurious firing at a deliberate 76F on 2026-08-15.
+      float(70) default means an unreachable unit does NOT get suppressed - if we
+      cannot tell, alert.
     condition: template
     value_template: '{{ (state_attr(''climate.bedroom_ac'',''temperature'') | float(70))
-      < 77 }}'
+      < 76 }}'
   actions:
   - choose:
     - conditions:
@@ -3431,7 +3486,8 @@
           delay:
             seconds: 3
         - action: climate.set_preset_mode
-          alias: Boost preset for faster recovery (v5 - set LAST so it sticks)
+          alias: Boost preset for faster recovery (v5 - set LAST so it sticks; verified
+            live 2026-08-15)
           data:
             preset_mode: boost
           target:
@@ -3482,7 +3538,8 @@
           delay:
             seconds: 3
         - action: climate.set_preset_mode
-          alias: Boost preset for faster recovery (v5 - set LAST so it sticks)
+          alias: Boost preset for faster recovery (v5 - set LAST so it sticks; verified
+            live 2026-08-15)
           data:
             preset_mode: boost
           target:
@@ -4976,185 +5033,6 @@
     target:
       entity_id: input_boolean.laundry_done_pending_washer
   mode: single
-- id: '1786413195406'
-  alias: 'AC Sweet-Spot: Bedroom Bedtime Set (v4, 7pm Prime Floor)'
-  description: 'Replaces the manual dial-guessing step of the bedroom AC sweet-spot
-    sleep-temp test. Before the Midea climate entity existed, Lara turned a physical
-    dial and logged her best guess of the setting into input_number.ac_sweet_spot_dial_setting.
-    Now that climate.bedroom_ac gives exact digital control, this automation reads
-    input_select.ac_sweet_spot_test_block at bedtime and applies the block''s exact
-    target temperature via climate.set_temperature, then overwrites the dial-setting
-    helper with the real applied value so her tracking data is precise instead of
-    eyeballed.
-
-
-    WHY preset_mode is forced to ''none'' during an active test block: several of
-    this unit''s presets (especially ''sleep'') are documented as having their own
-    internal setpoint drift/curve over the night. That''s exactly the kind of confound
-    the sweet-spot test is trying to isolate, so during a real test block this automation
-    deliberately avoids any preset that could quietly move the temperature away from
-    the block''s target. hvac_mode is forced to ''cool'' (not ''auto'') for the same
-    reason - predictable, direct control.
-
-
-    When the test block is ''Not testing'' or ''Done'', this instead just switches
-    to the Sleep preset and leaves whatever target temperature is already set alone
-    - this is the everyday behavior once the experiment wraps, not part of the test.
-
-
-    Two triggers: the normal bedtime moment (in_bed turns on), and a same-night input_select
-    change (in case Lara switches test blocks mid-experiment while already in bed)
-    - the second trigger''s branch additionally requires in_bed to already be on,
-    so a daytime block change doesn''t touch the AC.
-
-
-    Gated on calendar.vacation off per house style section 8 (personal comfort automation).
-
-
-    FUTURE: input_boolean.ac_sweet_spot_confound_tonight (e.g. alcohol) is intentionally
-    NOT read here - that''s Lara''s own manual flag for her own analysis, not something
-    this automation should act on.
-
-
-    2026-08-11 (v2): Added a third trigger, work_night_prime, at 21:00 on workdays
-    (binary_sensor.workday on) - primes the room to the same target ahead of Laras
-    usual 9-10pm work-night bedtime instead of waiting reactively for in_bed to actually
-    flip on, per her request. Non-work nights and off-schedule bedtimes still rely
-    on the in_bed-on trigger as before.
-
-
-    2026-08-11 (v3): Lara asked whether 21:00 primes AT 9pm or has the room READY
-    BY 9pm - it was the former. Checked real history: bedroom temp was only dropping
-    ~1F/hour under normal eco-modulated cycling that evening, so waiting until 21:00
-    to start a 10+ degree pull-down (typical evening temp ~75F down to a 62-65F test
-    target) would not remotely be ready by a 9-10pm bedtime. Added a fourth trigger,
-    work_night_prime_early, at 19:00 on workdays AND only when person.lara_wiz is
-    home (so it does not blast an empty house before she is back) - this is a floor,
-    not a precise calculation, since the actual pull-down rate in cool/none-preset
-    mode (full power, not eco-throttled) has not been measured yet - the 21:00 trigger
-    stays as an unconditional fallback in case she gets home later than 7pm. Revisit
-    the 19:00 floor once a few real cool-mode nights give an actual measured rate.
-
-
-    2026-08-13: added 3-second delays between adjacent climate.* calls. These Midea
-    entities garble rapid-fire sequential commands — confirmed live on climate.living_room_ac,
-    where this automation family''s no-delay sequence (hvac_mode -> preset none ->
-    temperature) landed at 08:00:00 and left the unit reading preset ''eco'' instead
-    of the ''none'' it had just been set to, while the same three calls issued manually
-    with several seconds between them all stuck correctly. Same session also confirmed
-    the separate, worse ''away'' preset bug — see the away-eco automation''s v4 note.'
-  triggers:
-  - entity_id: input_boolean.in_bed
-    id: bedtime
-    platform: state
-    to: 'on'
-  - entity_id: input_select.ac_sweet_spot_test_block
-    id: block_changed
-    platform: state
-  - platform: time
-    at: '21:00:00'
-    id: work_night_prime
-  - platform: time
-    at: '19:00:00'
-    id: work_night_prime_early
-  conditions:
-  - condition: state
-    entity_id: calendar.vacation
-    state: 'off'
-  - condition: or
-    conditions:
-    - condition: trigger
-      id: bedtime
-    - condition: and
-      conditions:
-      - condition: trigger
-        id: block_changed
-      - condition: state
-        entity_id: input_boolean.in_bed
-        state: 'on'
-    - condition: and
-      conditions:
-      - condition: trigger
-        id: work_night_prime
-      - condition: state
-        entity_id: binary_sensor.workday
-        state: 'on'
-    - condition: and
-      conditions:
-      - condition: trigger
-        id: work_night_prime_early
-      - condition: state
-        entity_id: binary_sensor.workday
-        state: 'on'
-      - condition: state
-        entity_id: person.lara_wiz
-        state: home
-  - condition: not
-    conditions:
-    - condition: state
-      entity_id: climate.bedroom_ac
-      state:
-      - unavailable
-      - unknown
-  actions:
-  - choose:
-    - conditions:
-      - condition: state
-        entity_id: input_select.ac_sweet_spot_test_block
-        state:
-        - Block 1 - aim 65F
-        - Block 2 - aim 62F
-      sequence:
-      - variables:
-          target_temp: '{{ {''Block 1 - aim 65F'': 65, ''Block 2 - aim 62F'': 62}[states(''input_select.ac_sweet_spot_test_block'')]
-            }}'
-      - action: climate.set_hvac_mode
-        alias: Direct cool mode for predictable control
-        data:
-          hvac_mode: cool
-        target:
-          entity_id: climate.bedroom_ac
-      - alias: Let the unit settle — these Midea entities clobber rapid sequential
-          commands
-        delay:
-          seconds: 3
-      - action: climate.set_preset_mode
-        alias: No preset curve during a real test night
-        data:
-          preset_mode: none
-        target:
-          entity_id: climate.bedroom_ac
-      - alias: Let the unit settle — these Midea entities clobber rapid sequential
-          commands
-        delay:
-          seconds: 3
-      - action: climate.set_temperature
-        alias: Apply the block's exact target temperature
-        data:
-          temperature: '{{ target_temp }}'
-        target:
-          entity_id: climate.bedroom_ac
-      - action: input_number.set_value
-        alias: Replace the manual dial guess with the exact applied setpoint
-        data:
-          value: '{{ target_temp }}'
-        target:
-          entity_id: input_number.ac_sweet_spot_dial_setting
-      - action: logbook.log
-        alias: Log it for auditability
-        data:
-          entity_id: climate.bedroom_ac
-          message: Applied {{ target_temp }}°F ({{ states('input_select.ac_sweet_spot_test_block')
-            }}) to Bedroom AC.
-          name: AC Sweet-Spot
-    default:
-    - action: climate.set_preset_mode
-      alias: Not testing — Sleep preset, leave target temp alone
-      data:
-        preset_mode: sleep
-      target:
-        entity_id: climate.bedroom_ac
-  mode: single
 - id: '1786413232913'
   alias: AC — Away Eco / Restore on Presence (v5)
   description: 'Energy-saving setback for both Midea AC units when nobody human is
@@ -5829,33 +5707,67 @@
       name: Living Room AC
   mode: single
 - id: '1786413963544'
-  alias: Bedroom AC — Dry Mode While Getting Ready (v1)
-  description: 'On waking on a workday (in_bed turns off, 04:30-08:00 window matching
-    the other morning automations'' guard), switches climate.bedroom_ac to hvac_mode:
-    dry for the getting-ready stretch, rather than continuing to cool normally - Lara''s
-    request, to keep the room from feeling muggy while showering/dressing. Leaves
-    fan/target alone, just changes the mode.
+  alias: Bedroom AC — Dry Mode While Getting Ready (v2, Humidity-Gated)
+  description: 'On waking on a workday, switches climate.bedroom_ac to hvac_mode dry
+    for the getting-ready stretch, so the room does not feel muggy while showering
+    and dressing. Lara''s original request.
 
 
-    Schedule-based, not humidity-reactive, per her plain phrasing (''keep bedroom
-    dry while getting ready'') - sensor.airguard_humidity exists in the bedroom if
-    she''d rather make this conditional on an actual humidity reading later.
+    v2 (2026-08-15) - WHY THIS CHANGED. v1 was schedule-based with no humidity check
+    and no revert of its own, relying on ''Bedroom AC - Dry Mode Auto-Revert'' at
+    the 1h30m mark. Dry mode on this Midea unit IGNORES THE SETPOINT (this is the
+    same mechanism behind the preset ''away'' bug - see project memory midea-away-preset-dry-mode-bug),
+    so for that whole stretch nothing was governing how cold the room got. On 2026-08-14
+    it ran 05:50:38 to 07:20:38 and Lara left the house at 07:36 - meaning her entire
+    getting-ready window ran with the unit uncontrolled, while she was standing at
+    a vanity that sits directly beside it. She reported the bedroom as freezing. This
+    automation was a contributing cause.
 
 
-    Does NOT include its own revert step - relies on ''AC — Away Eco / Restore on
-    Presence'', which now also resets climate.bedroom_ac back to hvac_mode: cool on
-    the left_home branch, so dry mode never lingers once she actually leaves for work.
-    On a day she doesn''t leave (e.g. staying home), dry mode would keep running -
-    acceptable for a v1, revisit if that''s ever actually annoying.
+    v2 keeps the feature but constrains it three ways, all chosen by Lara 2026-08-15:
 
 
-    Gated on calendar.vacation off per house style section 8; skips if the AC is already
-    off.'
+    1. HUMIDITY GATE. Only enters dry mode when sensor.airguard_humidity is above
+    input_number.bedroom_dry_mode_humidity_threshold (default 58%). Bedroom RH measured
+    51.5% on 2026-08-15 morning and 56% at the end of the 2026-08-14 dry run, so this
+    will fire rarely. That is the intended outcome, not a bug: if it never fires,
+    mugginess was never the real problem. The threshold is a helper precisely so Lara
+    can tune it without editing YAML. Caveat worth remembering: RELATIVE humidity
+    rises as a room cools, so the same absolute moisture reads higher at 62F than
+    at 72F - do not read a high number in a cold room as proof the air is actually
+    damp.
+
+
+    2. COLD-ROOM GUARD. Requires sensor.hue_motion_sensor_2_temperature (the wall
+    sensor beside the AC, i.e. the vanity side, and the one Lara named as the reference
+    for this part of the room) to be ABOVE 68F before entering dry mode at all. Adding
+    uncontrolled cooling to an already-cold room is exactly the failure this is fixing.
+
+
+    3. SELF-REVERT WITH AN EARLY BAIL-OUT. Caps the stretch at 25 minutes instead
+    of leaning on the 90-minute auto-revert, and returns to cool the instant the wall
+    sensor drops below 68F, whichever comes first. Lara picked 68 as the bail-out
+    point - 2F under the bottom of the 70-72 band she wants held on that side of the
+    room.
+
+
+    ''Bedroom AC - Dry Mode Auto-Revert (v1)'' is deliberately left in place as a
+    backstop, for dry mode arriving from the remote or the Midea app rather than from
+    here.
+
+
+    Gated on calendar.vacation off per house style section 8; skips if the AC is off,
+    unavailable or unknown.
+
+
+    RELATED, NOT YET BUILT: the office-morning vanity window that holds the wall sensor
+    at 70-72 was deferred by Lara on 2026-08-15. When it is built, this automation''s
+    revert step should hand back to it rather than simply restoring cool.'
   triggers:
   - entity_id: input_boolean.in_bed
     id: woke
-    platform: state
     to: 'off'
+    trigger: state
   conditions:
   - condition: state
     entity_id: binary_sensor.workday
@@ -5874,6 +5786,16 @@
       - 'off'
       - unavailable
       - unknown
+  - above: input_number.bedroom_dry_mode_humidity_threshold
+    condition: numeric_state
+    entity_id: sensor.airguard_humidity
+    note: Only bother if the air is actually damp. Tunable from the dashboard rather
+      than hardcoded.
+  - above: 68
+    condition: numeric_state
+    entity_id: sensor.hue_motion_sensor_2_temperature
+    note: Never add uncontrolled cooling to an already-cold room. This is the wall
+      sensor on the vanity side, next to the unit.
   actions:
   - action: climate.set_hvac_mode
     alias: Dry mode for the getting-ready window
@@ -5882,10 +5804,35 @@
     target:
       entity_id: climate.bedroom_ac
   - action: logbook.log
-    alias: Log it
+    alias: Log entry, with the readings that justified it
     data:
       entity_id: climate.bedroom_ac
-      message: Switched to Dry mode for the getting-ready window.
+      message: Dry mode on for getting ready. Humidity {{ states('sensor.airguard_humidity')
+        }}% (threshold {{ states('input_number.bedroom_dry_mode_humidity_threshold')
+        }}%), wall {{ states('sensor.hue_motion_sensor_2_temperature') }}F.
+      name: Bedroom AC
+  - alias: Hold for up to 25 min, but bail the moment the vanity side gets cold
+    continue_on_timeout: true
+    note: Dry mode ignores the setpoint, so a sensor watch is the only real protection.
+      25 min is the hard cap; the 68F crossing ends it sooner.
+    timeout: 00:25:00
+    wait_for_trigger:
+    - below: 68
+      entity_id: sensor.hue_motion_sensor_2_temperature
+      trigger: numeric_state
+  - action: climate.set_hvac_mode
+    alias: Back to cool either way
+    data:
+      hvac_mode: cool
+    target:
+      entity_id: climate.bedroom_ac
+  - action: logbook.log
+    alias: Log the exit, and say which way it ended
+    data:
+      entity_id: climate.bedroom_ac
+      message: Dry mode off, back to cool. Ended by {{ 'the 68F bail-out' if wait.completed
+        else 'the 25 minute cap' }}. Wall now {{ states('sensor.hue_motion_sensor_2_temperature')
+        }}F, bedside {{ states('sensor.airguard_temperature') }}F.
       name: Bedroom AC
   mode: single
 - id: '1786446832933'
@@ -6415,55 +6362,866 @@
     data:
       hvac_mode: cool
   mode: single
-- id: '1786748848061'
-  alias: AC Sweet-Spot — One-Shot Re-Enable (v1)
-  description: 'ONE-SHOT SAFETY NET, created 2026-08-14 ~19:20 ET. Delete it once
-    it has fired.
+- id: bedroom_night_setpoint_manager_v1
+  alias: Bedroom AC — Night Setpoint Manager (v3)
+  description: 'Single owner of climate.bedroom_ac''s dial from the evening ramp through
+    to wake. Built 2026-08-15 after Lara woke into a 62F bedroom: on the night of
+    2026-08-14 the dial was parked at 61F (the unit''s minimum) as a fixed overnight
+    hold, and NOTHING released it, because every automation that raises the bedroom
+    target is gated either on binary_sensor.workday being on or on her physically
+    leaving zone.home. On a Saturday at home, all of them sat out.
 
 
-    On the evening of 2026-08-14 Lara asked for the bedroom held at a fixed number
-    overnight rather than allowed to ramp, so `automation.ac_sweet_spot_bedroom_bedtime_set_v1`
-    was turned OFF for the night. Its non-testing branch applies preset `sleep`, which
-    raises the target roughly 3.6F over the first two hours and would have undone
-    the hold.
+    TWO PHASES, both derived from state rather than from a chain of delays, so an
+    HA restart mid-night cannot strand the room at the wrong number.
 
 
-    A disabled automation is a SILENT failure — nothing would ever have told her the
-    bedtime AC logic was dead. The re-enable deliberately lives HERE, inside Home
-    Assistant, and NOT in a Cowork scheduled task: on 2026-08-14 Lara test-fired a
-    cloud-side scheduled task and it could not reach Home Assistant at all, because
-    the HA MCP server is local to her Mac and reached through the desktop bridge.
-    Anything that MUST happen should therefore be an HA automation, not a cloud task.
+    1. EVENING RAMP. From 19:00 on nights before a workday (input_boolean.workday_tomorrow
+    on) or 20:00 otherwise, steps the dial down 1F every 15 minutes until it reaches
+    65F. Lara asked for 19:00 on work nights specifically, ''should be less work that
+    way'' - from a daytime 76 that is a ~2h45m descent, and finishing earlier means
+    the compressor never has to blast. This deliberately tracks the measured pull-down
+    rate (project memory ac-pulldown-rate: ~2F in the first hour, then under 0.5F/hr),
+    so the dial never runs far ahead of what the room can physically do.
 
 
-    Fires at 09:00, turns the sweet-spot automation back on, logs it, then disables
-    ITSELF by hardcoded entity_id so it cannot fire a second time. Self-disable rather
-    than a date template, per the HA best-practices one-shot pattern.
+    2. IN-BED CLIMB. Once input_boolean.in_bed is on, holds 65F and adds 1F every
+    90 minutes, capped at 68F. Lara''s words: ''65 until in_bed starts, can slowly
+    climb to 68 over the evening.'' Computed as floor + (minutes since in_bed last_changed
+    // 90) rather than as a sequence of delays, so it is idempotent - every 15-minute
+    tick recomputes the correct number and writes only when the dial disagrees.
 
 
-    If Lara decides to retire the AC Sweet-Spot experiment outright (the sleep-temp
-    question it was built for is already resolved — see project memory bedroom-temp-sleep-pattern-check),
-    delete BOTH this and the sweet-spot automation instead of letting this quietly
-    switch the experiment back on.'
+    v2 (2026-08-15 evening) - PRESET RESCUE BUGFIX. Found the same evening v1 shipped,
+    when ''Bedroom - Heat Alert'' fired at 18:51 and set preset ''boost'' on this
+    unit. In v1 the preset-clearing step sat INSIDE the ''only act if the dial needs
+    to move'' branch, so a rogue preset could only ever be cleared on a tick that
+    also happened to change the number. The failure that matters is not tonight''s:
+    it is a heat alert firing at, say, 22:30 when the ramp has already parked the
+    dial at 65. desired would equal cur, the run would stop, and preset ''boost''
+    would sit there blasting the room all night with nothing to clear it. Restructured
+    so the run is gated on BEING IN A WINDOW rather than on the number changing: inside
+    a window it now asserts preset ''none'' first, then writes the number only if
+    it actually differs. Outside both windows it still stops immediately and touches
+    nothing, which is deliberate - a legitimate heat-alert boost during the day must
+    be allowed to do its job.
+
+
+    WHY last_triggered IS USELESS ON THIS AUTOMATION, and what to read instead. The
+    15-minute time_pattern fires whether or not there is anything to do, so `last_triggered`
+    always reads a few minutes ago and carries no information - unlike every other
+    automation on the AC dashboard. The dial-writing branch therefore stamps input_datetime.bedroom_night_setpoint_last_change,
+    which only moves when the dial ACTUALLY changed. Read that, not last_triggered.
+    An input_datetime survives restarts and is untouched by unavailable blips, per
+    the HA best-practices note on for:/last_changed resets.
+
+
+    WHY THIS REPLACES THE SWEET-SPOT BEDTIME AUTOMATION: automation.ac_sweet_spot_bedroom_bedtime_set_v1
+    was deleted 2026-08-15 with Lara''s approval. Its non-testing branch applied preset
+    ''sleep'', which raises the target ~3.6F over the first two hours on the unit''s
+    own internal curve - a second, uncontrollable version of this climb running at
+    a different rate against the same dial. The sleep-temp experiment it served is
+    already resolved (project memory bedroom-temp-sleep-pattern-check: 70 nights,
+    cool-is-better NOT supported). Its 19:00/21:00 workday prime is superseded by
+    this ramp, which also covers weekends - something the old one never did.
+
+
+    75F IS SKIPPED DELIBERATELY. Verified live 2026-08-15: climate.set_temperature
+    75 on climate.bedroom_ac reads back 73, reproducibly, twice in a row; 76 lands
+    exactly. climate.living_room_ac did the same 75-to-73 thing on 2026-08-13 and
+    it was written off then as a status-poll race. It is not a race - it reproduces
+    on both units. The descending ramp therefore steps 76 straight to 74.
+
+
+    PRESET DISCIPLINE. Forces hvac_mode cool then preset none before writing a number,
+    but only when the preset is not already none, so an ordinary tick is a single
+    state read and no service calls. This matters because preset ''eco'' carries a
+    baked-in ~73F reference that overrides an explicit set_temperature - if away-eco
+    left the unit in eco, every number written here would be silently ignored. Call
+    ordering and the 3-second spacing follow the three hard rules in project memory
+    midea-ac-integration.
+
+
+    GATES: calendar.vacation off per house style section 8; person.lara_wiz home,
+    so it neither ramps an empty house nor fights ''AC - Away Eco / Restore on Presence''
+    while she is out; AC not off/unavailable/unknown; plus a native numeric_state
+    floor on the target attribute, so an unreachable unit reporting None cannot be
+    read as 0 and force a spurious 65.
+
+
+    NOT YET BUILT - deferred by Lara 2026-08-15: the office-morning vanity window
+    (Hue wall sensor held 70-72 while she does makeup right next to the unit) and
+    the daytime release to 76. Until those exist, weekend daytime sits wherever this
+    automation leaves it. Also still open: away-eco puts the bedroom into eco (~73F)
+    on departure rather than the 76 she asked for, The heat alert''s suppression gate
+    is NO LONGER open: it was raised from ''target < 77'' to ''target < 76'' as v8
+    on the evening of 2026-08-15, with Lara''s approval, so a deliberate 76F daytime
+    hold now suppresses it. The 18:51 firing that day happened under the old gate,
+    where 76 < 77 passed. Verified across setpoints: dial 65/68/71/74 alert, dial
+    76/78/80 suppressed. The float(70) default is unchanged and deliberate - an unreachable
+    unit still alerts, because if we cannot tell, alert. (Description corrected 2026-08-16;
+    no logic change.)
+
+
+    v3 (2026-08-16) - THE in_bed SINGLE POINT OF FAILURE IS CLOSED. Found by inspection
+    the morning after: on the night of 2026-08-15 (Sat) input_boolean.in_bed NEVER
+    TURNED ON - verified from history, one single ''off'' state across the entire
+    window - so the in-bed climb never ran. The evening ramp parked the dial at 65
+    at 22:00 and it sat there for ~15 hours. The room fell from 76.3F at 20:00 to
+    64.9F by 12:50 the next day. This is the SAME CLASS of failure as the 62F morning
+    that prompted v1: a leg of the design that only runs if some other thing fires,
+    with no path when it doesn''t. The 03:30 in_bed fallback that catches this exists
+    but is WORK-NIGHT ONLY (see project memory alarm-in-bed-fallback), so Saturday
+    night has no catcher at all.
+
+
+    THE FIX: a VIRTUAL BEDTIME ANCHOR. When in_bed is off but the clock is past input_datetime.bedroom_virtual_bedtime
+    (default 23:00, tunable without touching this template), the climb runs anyway,
+    anchored to that time instead of to in_bed.last_changed. Same shape as before:
+    65 at the anchor, +1F per 90 min, capped at 68, so a no-in_bed night now lands
+    on 68 by 03:30 exactly as a normal night does. A real in_bed still WINS - that
+    branch is tested first - so setting bedtime at 23:30 anchors on 23:30, not on
+    23:00.
+
+
+    ONE DELIBERATE DIFFERENCE from the in_bed branch: the virtual branch steps DOWN
+    gradually rather than jumping. If the dial is still above the climb target when
+    the anchor passes (e.g. the AC was switched on late at 76), it steps -1F per tick
+    toward the target instead of slamming to 65. The in_bed branch jumps on purpose
+    (''jump straight to 65 at bedtime''), because that is an explicit user action;
+    the virtual anchor is not, so it stays gradual and keeps tracking the measured
+    pull-down rate. The 75-skip still applies on the way down - verified in simulation,
+    a 76 dial at 23:10 goes to 74, not 75.
+
+
+    Verified by simulation across 8 cases before writing: 21:00/cur70 -> 69 (ramp
+    intact), 22:45/cur65 -> 65 (holds at floor), 23:00 -> 65, 00:30 -> 66, 02:00 ->
+    67, 03:30 -> 68 (capped), 23:10/cur76 -> 74 (75 skipped), 00:00/cur74 -> 73 (still
+    descending, does not jump up to the climb target).
+
+
+    in_window now also opens on the virtual-bedtime clock, so a virtual bedtime set
+    EARLIER than the 19:00/20:00 ramp start still gets a window rather than silently
+    computing a number the run then discards. phase now reports ''virtual-bedtime
+    climb'' as a third value, so the logbook line says which of the three paths moved
+    the dial.
+
+
+    STILL TRUE IN v3: read input_datetime.bedroom_night_setpoint_last_change, NOT
+    last_triggered. Note the daytime release automation added the same day (Bedroom
+    AC - Daytime Release to 76) deliberately does NOT stamp that helper, so it stays
+    a clean signal for THIS automation only.'
   triggers:
-  - at: 09:00:00
-    id: morning
-    trigger: time
+  - id: tick
+    minutes: /15
+    note: Every quarter hour. The action recomputes from scratch and no-ops when nothing
+      needs changing, so a missed tick self-heals on the next one. This is also why
+      last_triggered is meaningless here - see the description.
+    trigger: time_pattern
+  - entity_id: input_boolean.in_bed
+    id: got_in_bed
+    note: Jump straight to 65 at bedtime instead of waiting up to 15 minutes for the
+      next tick.
+    to: 'on'
+    trigger: state
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: person.lara_wiz
+    note: Do not ramp an empty house, and do not fight away-eco while she is out.
+    state: home
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: climate.bedroom_ac
+      state:
+      - 'off'
+      - unavailable
+      - unknown
+  - above: 55
+    attribute: temperature
+    condition: numeric_state
+    entity_id: climate.bedroom_ac
+    note: 'An unreachable unit reports None for the target. numeric_state evaluates
+      false on None, which is the fail-safe direction: do nothing rather than write
+      a number based on a missing reading.'
   actions:
-  - action: automation.turn_on
-    alias: Put the bedtime AC automation back the way it was
-    target:
-      entity_id: automation.ac_sweet_spot_bedroom_bedtime_set_v1
-  - action: logbook.log
-    alias: Say so in the logbook, so the re-enable is not itself silent
-    data:
-      entity_id: automation.ac_sweet_spot_bedroom_bedtime_set_v1
-      message: Re-enabled after the 2026-08-14 overnight hold. The one-shot that did
-        this has now disabled itself and can be deleted.
-      name: AC Sweet-Spot
-  - action: automation.turn_off
-    alias: Disable myself so this can never fire twice
-    target:
-      entity_id: automation.ac_sweet_spot_one_shot_re_enable_v1
+  - alias: Work out whether this automation owns the dial right now, and what the
+      number should be
+    note: in_bed wins over the clock, so getting into bed early ends the ramp immediately.
+    variables:
+      cur_temp: '{{ state_attr(''climate.bedroom_ac'',''temperature'') | float(0)
+        }}'
+      desired: '{% set ns = namespace(d = 0) %}{% set floor_t = 65 %}{% set ceil_t
+        = 68 %}{% set cur = state_attr(''climate.bedroom_ac'',''temperature'') | float(0)
+        %}{% set start_h = 19 if is_state(''input_boolean.workday_tomorrow'',''on'')
+        else 20 %}{% set vb = states(''input_datetime.bedroom_virtual_bedtime'') if
+        states(''input_datetime.bedroom_virtual_bedtime'') not in [''unknown'',''unavailable'']
+        else ''23:00:00'' %}{% set vb_t = state_attr(''input_datetime.bedroom_virtual_bedtime'',''timestamp'')
+        | int(82800) %}{% set now_t = now().hour * 3600 + now().minute * 60 + now().second
+        %}{% if is_state(''input_boolean.in_bed'',''on'') %}{% set mins = (now() -
+        states.input_boolean.in_bed.last_changed).total_seconds() / 60 %}{% set ns.d
+        = [ floor_t + ((mins // 90) | int), ceil_t ] | min %}{% elif now_t >= vb_t
+        or now().hour < 4 %}{% set anchor = today_at(vb) if now_t >= vb_t else today_at(vb)
+        - timedelta(days=1) %}{% set mins = (now() - anchor).total_seconds() / 60
+        %}{% set target = [ floor_t + ((mins // 90) | int), ceil_t ] | min %}{% set
+        ns.d = ([ target, cur - 1 ] | max) if cur > target else target %}{% elif now().hour
+        >= start_h %}{% set ns.d = [ floor_t, cur - 1 ] | max %}{% else %}{% set ns.d
+        = cur %}{% endif %}{{ (74 if ns.d == 75 else ns.d) | round(0) | int }}'
+      in_window: '{{ is_state(''input_boolean.in_bed'',''on'') or now().hour >= (19
+        if is_state(''input_boolean.workday_tomorrow'',''on'') else 20) or now().hour
+        < 4 or (now().hour * 3600 + now().minute * 60 + now().second) >= (state_attr(''input_datetime.bedroom_virtual_bedtime'',''timestamp'')
+        | int(82800)) }}'
+      phase: '{% if is_state(''input_boolean.in_bed'',''on'') %}in-bed climb{% elif
+        (now().hour * 3600 + now().minute * 60 + now().second) >= (state_attr(''input_datetime.bedroom_virtual_bedtime'',''timestamp'')
+        | int(82800)) or now().hour < 4 %}virtual-bedtime climb{% else %}evening ramp{%
+        endif %}'
+  - alias: Stop unless this automation owns the dial right now
+    condition: template
+    note: 'v2: the run is gated on being in a window, NOT on the number needing to
+      change. Outside both windows nothing below here runs, so a daytime heat-alert
+      boost is left alone to do its job.'
+    value_template: '{{ in_window }}'
+  - alias: Inside a window, assert preset none even if the number is already right
+    if:
+    - condition: not
+      conditions:
+      - attribute: preset_mode
+        condition: state
+        entity_id: climate.bedroom_ac
+        state: none
+    note: eco's baked-in ~73F reference and the heat alert's 'boost' both override
+      or ignore an explicit number. This is the step that makes the dial trustworthy
+      inside a window.
+    then:
+    - action: climate.set_hvac_mode
+      data:
+        hvac_mode: cool
+      target:
+        entity_id: climate.bedroom_ac
+    - alias: Let the unit settle, these Midea entities clobber rapid sequential commands
+      delay:
+        seconds: 3
+    - action: climate.set_preset_mode
+      data:
+        preset_mode: none
+      target:
+        entity_id: climate.bedroom_ac
+    - alias: Let the unit settle, these Midea entities clobber rapid sequential commands
+      delay:
+        seconds: 3
+    - action: logbook.log
+      alias: Say so, since this is a rescue rather than routine
+      data:
+        entity_id: climate.bedroom_ac
+        message: Cleared a preset that was not 'none' during the {{ phase }} and took
+          the dial back.
+        name: Night Setpoint
+  - alias: Write the step, but only when the number actually differs
+    if:
+    - condition: template
+      value_template: '{{ (desired | float(0)) != (cur_temp | float(0)) }}'
+    then:
+    - action: climate.set_temperature
+      data:
+        temperature: '{{ desired | int }}'
+      target:
+        entity_id: climate.bedroom_ac
+    - action: input_datetime.set_datetime
+      alias: Stamp the real change, since last_triggered cannot tell you this
+      data:
+        datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
+      target:
+        entity_id: input_datetime.bedroom_night_setpoint_last_change
+    - action: logbook.log
+      alias: Log it so the night's shape is auditable after the fact
+      data:
+        entity_id: climate.bedroom_ac
+        message: '{{ phase }}: {{ cur_temp | int }}F to {{ desired | int }}F. Bedside
+          {{ states(''sensor.airguard_temperature'') }}F, wall {{ states(''sensor.hue_motion_sensor_2_temperature'')
+          }}F.'
+        name: Night Setpoint
+  max_exceeded: silent
   mode: single
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
+- id: bedroom_ac_daytime_release_76_v1
+  alias: Bedroom AC — Daytime Release to 76 (v2)
+  description: 'Releases the bedroom dial from its overnight setback up to 76F once
+    the night is over. Built 2026-08-16 alongside Night Setpoint Manager v3, after
+    the night of 2026-08-15 left the dial at 65 and NOTHING raised it: the night manager
+    is deliberately out of window between 04:00 and the 19:00/20:00 ramp, so it stops
+    immediately and touches nothing, and no other automation owns the bedroom dial
+    during the day. Verified consequence: bedside 64.9F and wall 63.1F at 12:50 on
+    a Sunday, with the unit still actively cooling. This is deferred item 2 from project
+    memory bedroom-ac-night-rules (''daytime release to 76''), which became unblocked
+    when heat alert v8 moved its suppression gate from ''target < 77'' to ''target
+    < 76''.
+
+
+    WHY 76 AND NOT 75: Lara''s rule is ''weekend / day off: on getting up, rise to
+    about 75 at the bed'' and ''office day, after she leaves: rise to 75-76 at the
+    bed''. 75 is UNSETTABLE on both Midea units - writing 75 reads back 73, reproducibly,
+    verified twice on 2026-08-15 - so ''about 75'' translates to 76 everywhere in
+    this config. A dial of 76 in cool mode already IS ''let it rise, then cool mildly
+    above 76'', so no extra logic is needed beyond the number.
+
+
+    TWO TRIGGERS, AND WHY EACH EXISTS.
+
+
+    1. got_up - input_boolean.in_bed going on->off. This is the clean ''she is up''
+    signal and it covers the weekend rule directly. It is gated on binary_sensor.workday
+    being OFF. That gate is deliberate and load-bearing: on a WORK day she does not
+    want 76 at wake, she wants the wall sensor held at 70-72 while she does her makeup
+    at the vanity, which ''sits right next to the air conditioner''. That office-morning
+    vanity window is still NOT BUILT (deferred item 1). Until it exists, a workday
+    morning between wake and 09:00 sits wherever the night left it - that is a known
+    gap, not an oversight, and building the vanity window is what closes it.
+
+
+    2. backstop - a plain 09:00 time trigger with no workday gate. This is the leg
+    that would have caught the 2026-08-15 failure. It covers BOTH the workday case
+    (she has left by ~07:36, so 76 is exactly right) AND any night where in_bed was
+    never set at all, in which case got_up can never fire because there is no on->off
+    transition to fire on. A fix that depended on in_bed would have reproduced the
+    very bug it was written for.
+
+
+    IT ONLY RAISES, NEVER LOWERS. The dial is written only when it currently reads
+    BELOW 76. If Lara has deliberately set 78, this leaves 78 alone. Silently overriding
+    a hand-set number is the worse failure here - she demonstrably sets the dial by
+    hand, and the 18:51 incident on 2026-08-15 is on record as a manual 76 tripping
+    a deferred automation fix. KNOWN CONSEQUENCE of that choice: if away-eco''s restore-on-presence
+    leaves the bedroom high (its deep branch goes to 80) this will not pull it back
+    down. That is deferred item 4 - remove the bedroom legs from away-eco - and is
+    tracked there rather than papered over here.
+
+
+    DELIBERATELY DOES NOT STAMP input_datetime.bedroom_night_setpoint_last_change.
+    That helper is documented as THE diagnostic for the night manager, whose 15-minute
+    tick makes last_triggered meaningless. If this automation stamped it too, that
+    signal would stop meaning ''the night manager moved the dial''. This automation
+    fires only on real events, never on a tick, so its OWN last_triggered is meaningful
+    - read that instead.
+
+
+    PRESET DISCIPLINE per the four hard rules in project memory midea-ac-integration:
+    hvac_mode cool, then preset none, then the number, with 3s spacing, and only when
+    the preset is not already none so an ordinary run makes no service calls. This
+    matters because preset ''eco'' carries a baked-in ~73F reference that silently
+    overrides an explicit set_temperature, and ''away'' is freeze protection that
+    flips the unit to dry mode where the setpoint is ignored entirely.
+
+
+    v2 (2026-08-16, same afternoon) - THE VANITY WINDOW NOW EXISTS, so two things
+    in the v1 text above are out of date and are corrected here rather than deleted,
+    because the reasoning still explains the shape.
+
+
+    1. Deferred item 1 is BUILT: automation.bedroom_ac_office_morning_vanity_window_v1,
+    alias v2. The v1 note that a workday morning ''sits wherever the night left it''
+    and calls that ''a known gap'' is no longer true - that gap is closed. The workday
+    gate on got_up stays exactly as it was, and is now load-bearing for a live automation
+    instead of a planned one.
+
+
+    2. NEW CONDITION: input_boolean.bedroom_vanity_window must be off. Narrow but
+    real conflict it prevents - if she is still home at 09:00 on a workday with the
+    vanity window open, the backstop would fire, find the dial below 76, and overwrite
+    the vanity target mid-window. The vanity window writes 76 itself when it closes,
+    so nothing is stranded by deferring to it.
+
+
+    Also worth recording: the vanity window is measured, not assumed. Two office mornings
+    of history showed the at-the-vanity stretch is only 14-22 minutes and sits AFTER
+    a twelve-minute shower gap, which is why that automation opens on first morning
+    motion rather than at the vanity itself.'
+  triggers:
+  - entity_id: input_boolean.in_bed
+    from: 'on'
+    id: got_up
+    note: She got up. Weekend/day-off path only - the workday gate lives in the conditions,
+      because on a work morning the vanity window (not yet built) should own the dial
+      until she leaves.
+    to: 'off'
+    trigger: state
+  - at: 09:00:00
+    id: backstop
+    note: Catches BOTH a workday after she has left AND any night where in_bed was
+      never set, in which case got_up can never fire. This is the leg that would have
+      caught the 2026-08-15 failure.
+    trigger: time
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.bedroom_vanity_window
+    state: 'off'
+    note: The vanity window owns the dial while it is open. Without this the 09:00
+      backstop would overwrite the vanity target with 76 on a morning she is still
+      home.
+  - condition: state
+    entity_id: person.lara_wiz
+    note: Do not fight away-eco while she is out; it owns the dial then.
+    state: home
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: climate.bedroom_ac
+      state:
+      - 'off'
+      - unavailable
+      - unknown
+    note: Never resurrect a unit that was switched off on purpose.
+  - above: 55
+    attribute: temperature
+    condition: numeric_state
+    entity_id: climate.bedroom_ac
+    note: 'An unreachable unit reports None for the target. numeric_state evaluates
+      false on None, which is the fail-safe direction: do nothing rather than act
+      on a missing reading.'
+  actions:
+  - alias: Decide whether this trigger is allowed to release the dial
+    condition: or
+    conditions:
+    - condition: trigger
+      id: backstop
+    - condition: and
+      conditions:
+      - condition: trigger
+        id: got_up
+      - condition: state
+        entity_id: binary_sensor.workday
+        note: Work mornings are the vanity window's territory (70-72 at the wall),
+          not this automation's.
+        state: 'off'
+  - alias: Stop unless the dial is actually below 76, so a hand-set higher number
+      is never overridden
+    attribute: temperature
+    below: 76
+    condition: numeric_state
+    entity_id: climate.bedroom_ac
+  - alias: Clear any preset that would make the number meaningless
+    if:
+    - condition: not
+      conditions:
+      - attribute: preset_mode
+        condition: state
+        entity_id: climate.bedroom_ac
+        state: none
+    then:
+    - action: climate.set_hvac_mode
+      data:
+        hvac_mode: cool
+      target:
+        entity_id: climate.bedroom_ac
+    - alias: Let the unit settle, these Midea entities clobber rapid sequential commands
+      delay:
+        seconds: 3
+    - action: climate.set_preset_mode
+      data:
+        preset_mode: none
+      target:
+        entity_id: climate.bedroom_ac
+    - alias: Let the unit settle, these Midea entities clobber rapid sequential commands
+      delay:
+        seconds: 3
+  - action: climate.set_temperature
+    alias: Release the dial to 76
+    data:
+      temperature: 76
+    target:
+      entity_id: climate.bedroom_ac
+  - action: logbook.log
+    alias: Log it so the day's shape is auditable alongside the night manager's entries
+    data:
+      entity_id: climate.bedroom_ac
+      message: 'Daytime release ({{ trigger.id }}): dial to 76F. Bedside {{ states(''sensor.airguard_temperature'')
+        }}F, wall {{ states(''sensor.hue_motion_sensor_2_temperature'') }}F.'
+      name: Daytime Release
+  mode: single
+- id: bedroom_ac_office_morning_vanity_window_v1
+  alias: Bedroom AC — Office Morning Vanity Window (v2)
+  description: 'Holds the bedroom warm enough for Lara to get ready at the vanity,
+    which sits right next to the AC unit. Built 2026-08-16, closing deferred item
+    1 from project memory bedroom-ac-night-rules. Her rule: office day, out of bed
+    until she leaves, wall sensor 70-72, and she does not want to get frozen out.
+    This is THE reasoned exception to feedback room-sensors-are-truth-ac-is-a-dial:
+    the reference here is sensor.hue_motion_sensor_2_temperature, the Hue WALL sensor,
+    because it is closest to the vanity and the unit. Do not correct it back to the
+    bedside AirGuard.
+
+
+    WHY IT OPENS ON FIRST MOTION, NOT AT THE VANITY. Measured from history 2026-08-16
+    across two office mornings. Aug 14: motion 07:07-07:10, then TWELVE MINUTES silent
+    (she is in the shower), then dense 07:22-07:32, departed 07:36. Aug 12: sporadic
+    from 06:01, shower gap 06:28-06:48, dense from 06:58, departed 07:20. The at-the-vanity
+    stretch is only 14-22 minutes. Against the measured pull-down rate (project memory
+    ac-pulldown-rate: ~2F in hour one, so ~0.5F in fifteen minutes) the room cannot
+    be moved into range once she is standing there. The originally-agreed closed loop
+    (wall >72 for 10 min -> -1, wall <70 for 10 min -> +1) would manage one or two
+    steps before she left and never converge. So it opens on FIRST morning motion,
+    buying the whole shower as lead time. The loop was right for a long window and
+    wrong for this one.
+
+
+    NO WFH BRANCH, DELIBERATELY. input_boolean.wfh_today is useless for morning gating:
+    on 2026-08-13 it did not turn on until 07:37:47, long after that morning''s motion
+    ended at 07:06. Instead the SIGNAL discriminates the day. On that WFH day motion
+    ran 07:00:23-07:06:03 and then stopped entirely until 11:00, so the 30-minute
+    no-motion close fires at ~07:36 and hands straight back to 76. On an office day
+    motion keeps recurring until she leaves. Lara confirmed 2026-08-16 that WFH mornings
+    are much lower-key. This is why there is no day-type flag anywhere in here.
+
+
+    THE DIAL NUMBER IS A GUESS AND IS MEANT TO BE CALIBRATED. input_number.bedroom_vanity_dial_target
+    starts at 73. Reasoning: at steady state the wall reads about 2F below the dial
+    (observed 2026-08-16: dial 65, wall 63.1), so 73 should land the wall near 71,
+    mid-band. But that offset is NOT constant, which is exactly why the original design
+    wanted a loop. Every run logs the wall and bedside readings to the logbook. Read
+    those over a week and move the helper; do not edit this automation.
+
+
+    HANDOFF. On close it writes 76 itself so the room is never stranded at the vanity
+    number. The Daytime Release automation is gated off this window flag so the two
+    cannot fight. The Night Setpoint Manager is already out of window in the morning
+    and needs no change.
+
+
+    PRESET DISCIPLINE per project memory midea-ac-integration: hvac_mode cool, then
+    preset none, then the number, 3s apart, and only when the preset is not already
+    none.
+
+
+    v2 (2026-08-16, minutes after v1, never ran) - SELF-CLOSING BUG, caught in review
+    before a single fire. In v1 the CLOSE branch''s only condition was ''window flag
+    is on''. Trace it: first motion opens the window and sets the flag. The NEXT motion
+    event re-triggers, fails the OPEN branch because that branch requires the flag
+    to be OFF, falls through to CLOSE, whose condition is now satisfied - and closes
+    the window immediately. The window would have survived roughly one motion event,
+    then slammed shut and written 76, every single morning. v2 adds an explicit trigger-id
+    condition so only departed / went_quiet / backstop can close it. Also added max_exceeded:
+    silent, because motion is a high-frequency trigger and mode single would otherwise
+    log a warning on every overlapping fire.
+
+
+    WATCH THIS WHEN THE NEW PRESENCE SENSOR GOES IN. Lara reported 2026-08-16 that
+    she has a bedroom presence sensor not yet added, bought because the lights were
+    switching off while she sat still in the chair - PIR does not see a person who
+    is not moving. That failure mode applies directly to the went_quiet leg here:
+    thirty minutes is generous enough that sitting at the vanity should not trip it,
+    but a quiet morning could close the window early. When the presence sensor is
+    added, went_quiet should switch from ''motion off for 30 min'' to ''presence clear
+    for N min'', which is both faster and more truthful. Until then the 30-minute
+    figure is deliberately conservative for exactly this reason.'
+  triggers:
+  - entity_id: binary_sensor.hue_motion_sensor_2_motion
+    id: first_motion
+    note: First bedroom motion of the morning opens the window. Deliberately the EARLY
+      edge, so the shower becomes lead time.
+    to: 'on'
+    trigger: state
+  - entity_id: person.lara_wiz
+    from: home
+    id: departed
+    note: She left for the office. Primary close.
+    trigger: state
+  - entity_id: binary_sensor.hue_motion_sensor_2_motion
+    for:
+      minutes: 30
+    id: went_quiet
+    note: Thirty minutes of stillness. This is the leg that closes a WFH morning,
+      where motion stops after a few minutes and never resumes.
+    to: 'off'
+    trigger: state
+  - at: 09:30:00
+    id: backstop
+    note: Hard ceiling so the window can never hold the room at the vanity number
+      all day.
+    trigger: time
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - choose:
+    - alias: OPEN the window on first morning motion
+      conditions:
+      - condition: trigger
+        id: first_motion
+      - condition: state
+        entity_id: input_boolean.bedroom_vanity_window
+        state: 'off'
+      - condition: state
+        entity_id: binary_sensor.workday
+        state: 'on'
+      - condition: state
+        entity_id: person.lara_wiz
+        state: home
+      - after: 05:00:00
+        before: 09:00:00
+        condition: time
+      - condition: not
+        conditions:
+        - condition: state
+          entity_id: climate.bedroom_ac
+          state:
+          - 'off'
+          - unavailable
+          - unknown
+      - above: 55
+        attribute: temperature
+        condition: numeric_state
+        entity_id: climate.bedroom_ac
+      sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.bedroom_vanity_window
+      - alias: Clear any preset that would make the number meaningless
+        if:
+        - condition: not
+          conditions:
+          - attribute: preset_mode
+            condition: state
+            entity_id: climate.bedroom_ac
+            state: none
+        then:
+        - action: climate.set_hvac_mode
+          data:
+            hvac_mode: cool
+          target:
+            entity_id: climate.bedroom_ac
+        - alias: Let the unit settle, these Midea entities clobber rapid sequential
+            commands
+          delay:
+            seconds: 3
+        - action: climate.set_preset_mode
+          data:
+            preset_mode: none
+          target:
+            entity_id: climate.bedroom_ac
+        - alias: Let the unit settle, these Midea entities clobber rapid sequential
+            commands
+          delay:
+            seconds: 3
+      - action: climate.set_temperature
+        alias: Set the vanity target, skipping the unsettable 75
+        data:
+          temperature: '{% set t = states(''input_number.bedroom_vanity_dial_target'')
+            | int(73) %}{{ 74 if t == 75 else t }}'
+        target:
+          entity_id: climate.bedroom_ac
+      - action: logbook.log
+        alias: Log the opening reading so the dial target can be calibrated later
+        data:
+          entity_id: climate.bedroom_ac
+          message: Vanity window OPEN. Dial to {{ states('input_number.bedroom_vanity_dial_target')
+            | int(73) }}F. Wall {{ states('sensor.hue_motion_sensor_2_temperature')
+            }}F, bedside {{ states('sensor.airguard_temperature') }}F.
+          name: Vanity Window
+    - alias: CLOSE the window and hand back to the daytime 76
+      conditions:
+      - condition: trigger
+        id:
+        - departed
+        - went_quiet
+        - backstop
+        note: LOAD-BEARING. Without this, every motion event after the window opened
+          would fall past the OPEN branch (which requires the flag off) into this
+          one and close the window instantly.
+      - condition: state
+        entity_id: input_boolean.bedroom_vanity_window
+        state: 'on'
+      sequence:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.bedroom_vanity_window
+      - action: logbook.log
+        alias: Log the closing reading, the one that says whether the target was right
+        data:
+          entity_id: climate.bedroom_ac
+          message: Vanity window CLOSED ({{ trigger.id }}). Wall {{ states('sensor.hue_motion_sensor_2_temperature')
+            }}F, bedside {{ states('sensor.airguard_temperature') }}F, dial was {{
+            state_attr('climate.bedroom_ac','temperature') }}F. Target band is wall
+            70-72.
+          name: Vanity Window
+      - alias: Hand off to 76 so the room is never stranded at the vanity number
+        if:
+        - condition: and
+          conditions:
+          - condition: state
+            entity_id: person.lara_wiz
+            state: home
+          - condition: not
+            conditions:
+            - condition: state
+              entity_id: climate.bedroom_ac
+              state:
+              - 'off'
+              - unavailable
+              - unknown
+          - attribute: temperature
+            below: 76
+            condition: numeric_state
+            entity_id: climate.bedroom_ac
+        then:
+        - action: climate.set_temperature
+          data:
+            temperature: 76
+          target:
+            entity_id: climate.bedroom_ac
+  mode: single
+  max_exceeded: silent
+- id: living_room_energize_morning_trial
+  alias: Living Room — Energize Morning Trial (v1)
+  description: 'TRIAL, added 2026-08-17 at Lara''s request: "Let''s try Energize in
+    the morning the next couple days." Scoped to 06:00-10:00 ONLY. Delete this one
+    automation to revert completely; nothing else was changed.
+
+
+    WHY: measured 2026-08-17 06:35, the living room ran 100% brightness at 2,409K,
+    warmer than a household incandescent. Brightness was never the problem, colour
+    was. Adaptive Lighting pins colour at min_color_temp (2000K) while the sun is
+    below the horizon then interpolates toward max_color_temp scaled by sun position,
+    PEAKING AT SOLAR NOON (~13:05). So it does not cross 4,000K until roughly 08:30.
+    AL''s curve is symmetric around solar noon and structurally cannot deliver an
+    energising 6am.
+
+
+    VALUES: these are Hue''s Energize recipe, MEASURED off the bulbs on 2026-08-17
+    19:28 while the scene was live, not taken from a spec sheet. Per-lamp readings
+    were torchiere 6535K (its ceiling), end table 6410K, corner 6410K, all at brightness
+    255. 6410 is used for the group; the torchiere lands 125K cooler than its own
+    maximum, which is not visible.
+
+
+    WHY NOT scene.turn_on: Energize exists in the Hue app only as a SLOT INSIDE the
+    "Natural light" smart scene, not as a saved Living Room scene. Home Assistant
+    can only see saved room scenes, so no scene.living_room_energize entity exists.
+    Confirmed by a full Hue config-entry reload on 2026-08-17, after which the LR
+    still exposed only Blood moon, Nighttime, Nightlight, Movies and Golden hours.
+    If Lara later saves Energize as its own Living Room scene, swap the two light.turn_on
+    calls for scene.turn_on and drop the kelvin literals.
+
+
+    WHY AL IS SWITCHED OFF FOR THE WINDOW: a Hue scene recall is executed BY THE BRIDGE,
+    and this AL switch runs detect_non_ha_changes false while take_over_control only
+    watches Home Assistant''s own light.turn_on calls, so AL never notices a bridge-side
+    change and never sets manual_control. It does not pause, it silently overwrites
+    at its next 90s interval. Verified twice on 2026-08-17: a Golden hours recall
+    was fully reclaimed within 100 seconds with manual_control still empty, and an
+    Energize recall at 19:22 had been dragged from 6,451K back toward AL''s 2,455K
+    target within about five minutes. Switching AL off is therefore mandatory, not
+    tidiness. This automation uses light.turn_on rather than a bridge-side recall,
+    which WOULD pin manual_control, but that is moot because AL is off for the whole
+    window.
+
+
+    SAFETY: the 10:00 restore branch is deliberately UNGATED so Adaptive Lighting
+    can never be left switched off for the rest of the day. The homeassistant-start
+    branch is a backstop for the case where HA is down at 10:00 and misses that trigger;
+    without it a restart at 09:00 would leave AL off indefinitely.
+
+
+    PRESENCE: the relight branch requires person.lara_wiz home, per house rule that
+    comfort lighting keys off human presence. On an away morning the Ambient Manager''s
+    away-dim (brightness_pct 20, occupied look) is left alone rather than being blasted
+    to full.
+
+
+    TODO once the trial ends: either promote this into the wider Hue-scene plan (Energize
+    / Concentrate / Read / Relax / Rest scheduled by HA, AL removed from all three
+    bulbs) or delete it and retune AL''s six currently-null sun anchors instead. See
+    project memory lr-adaptive-lighting-replacement-scoping.'
+  triggers:
+  - at: 06:00:00
+    id: window_open
+    trigger: time
+  - entity_id: light.living_room_lights
+    from: 'off'
+    id: lights_on
+    to: 'on'
+    trigger: state
+  - at: '10:00:00'
+    id: window_close
+    trigger: time
+  - event: start
+    id: ha_start
+    trigger: homeassistant
+  conditions: []
+  actions:
+  - choose:
+    - alias: '06:00 — open the window: take Adaptive Lighting out of the way, then
+        apply Energize if the lamps are already on'
+      conditions:
+      - condition: trigger
+        id: window_open
+      sequence:
+      - action: switch.turn_off
+        alias: AL must be OFF or it overwrites Energize within 90 seconds
+        target:
+          entity_id: switch.adaptive_lighting_living_room_lights
+      - if:
+        - condition: state
+          entity_id: light.living_room_lights
+          state: 'on'
+        - condition: state
+          entity_id: person.lara_wiz
+          state: home
+        then:
+        - action: light.turn_on
+          data:
+            brightness: 255
+            kelvin: 6410
+            transition: 5
+          target:
+            entity_id: light.living_room_lights
+    - alias: Lamps came on inside the window — apply Energize
+      conditions:
+      - condition: trigger
+        id: lights_on
+      - after: 06:00:00
+        before: '10:00:00'
+        condition: time
+      - condition: state
+        entity_id: person.lara_wiz
+        state: home
+      sequence:
+      - alias: Let the bulbs finish reporting their turn-on state first
+        delay:
+          seconds: 2
+      - action: light.turn_on
+        data:
+          brightness: 255
+          kelvin: 6410
+          transition: 5
+        target:
+          entity_id: light.living_room_lights
+    - alias: 10:00 — close the window and hand the lamps back to Adaptive Lighting
+        (UNGATED on purpose)
+      conditions:
+      - condition: trigger
+        id: window_close
+      sequence:
+      - action: switch.turn_on
+        target:
+          entity_id: switch.adaptive_lighting_living_room_lights
+    - alias: Backstop — if HA restarted and it is now outside the window, make sure
+        AL is back on
+      conditions:
+      - condition: trigger
+        id: ha_start
+      - condition: not
+        conditions:
+        - after: 06:00:00
+          before: '10:00:00'
+          condition: time
+      sequence:
+      - action: switch.turn_on
+        target:
+          entity_id: switch.adaptive_lighting_living_room_lights
+  max: 10
+  max_exceeded: silent
+  mode: queued

@@ -14,6 +14,34 @@ logger:
     homeassistant.components.apple_tv: critical
     pyatv: critical
 
+# Recorder
+#
+# 2026-08-16: first recorder: block in this config. Everything not named
+# below keeps the previous default behaviour (all entities recorded,
+# purge_keep_days 10). This adds an exclude list only.
+#
+# The bedroom LD2410 mmWave sensor (added 2026-08-16) streams its radar
+# readouts at roughly 1 Hz, forever, whether or not anyone is home. Five
+# sensors at that rate is on the order of 400k state rows a day from a
+# single device.
+#
+# The three binary sensors (presence / moving target / still target) are
+# deliberately NOT excluded. They change a few dozen times a day and they
+# are the only entities on this device worth keeping history for.
+#
+# The G0-G8 per-gate energy sensors sit at `unknown` while Engineering
+# mode is off. They are globbed out anyway so that flipping Engineering
+# mode on to tune the radar cannot flood the database by accident.
+recorder:
+  exclude:
+    entity_globs:
+      - sensor.bedroom_bedroom_presence_sensor_g*_energy
+    entities:
+      - sensor.bedroom_bedroom_presence_sensor_moving_distance
+      - sensor.bedroom_bedroom_presence_sensor_still_distance
+      - sensor.bedroom_bedroom_presence_sensor_move_energy
+      - sensor.bedroom_bedroom_presence_sensor_still_energy
+      - sensor.bedroom_bedroom_presence_sensor_detection_distance
 
 group: !include groups.yaml
 light: !include light-groups.yaml
