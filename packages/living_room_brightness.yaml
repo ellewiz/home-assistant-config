@@ -67,3 +67,139 @@ template:
           {{ 0 if b is none else (b | float / 255 * 100) | round(0) }}
         availability: >-
           {{ states('light.next_to_couch') not in ['unknown', 'unavailable'] }}
+
+# ===========================================================================
+# COLOUR TEMPERATURE MIRRORS (added 2026-08-17)
+#
+# Same reasoning as the brightness mirrors above: the light integration tells
+# the recorder to drop the high-churn colour attributes, so there is no way to
+# ask after the fact what colour a bulb was actually at.
+#
+# MOTIVATING CASE: measured 2026-08-17 06:35, the living room ran 100 percent
+# brightness at 2,409K, warmer than a household incandescent. Brightness was
+# never the problem and was already measurable here. Colour was the problem
+# and was not. Adaptive Lighting's colour curve peaks at SOLAR NOON, so it does
+# not cross 4,000K until roughly 08:30.
+#
+# NOTE ON availability: unlike the brightness mirrors, which report 0 when the
+# bulb is off so an away-window average stays meaningful, these report only
+# while the bulb is ON. Colour has no meaningful "off" value and a fabricated
+# one would corrupt the long-term statistics mean. Gaps overnight are intended.
+#
+# No device_class: HA's temperature device class means thermal degrees, not
+# colour temperature, and setting it would trigger unit conversion.
+# ===========================================================================
+
+      # Living Room Corner colour temperature.
+      #
+      # Reads color_temp_kelvin when the bulb reports in color_temp mode. When it
+      # reports in xy mode instead, color_temp_kelvin is null, so this converts the
+      # xy chromaticity coordinates back to a colour temperature using McCamy's
+      # 1992 approximation:
+      #     n   = (x - 0.3320) / (0.1858 - y)
+      #     CCT = 449n^3 + 3525n^2 + 6823.3n + 5520.33
+      # Without the fallback the series would go blank at exactly the moments a
+      # scene is active, which is when the reading matters most. All three lamps
+      # flip modes intermittently; the Innr corner does it most.
+      #
+      # Validated against real readings on 2026-08-17 before being trusted:
+      #   torchiere xy (0.3472, 0.3480) -> 4,912K  (Golden hours, 06:39)
+      #   corner    xy (0.4809, 0.4141) -> 2,445K  (while the other two lamps
+      #                                             natively reported 2,409-2,457K)
+      # Accuracy degrades far from the Planckian locus, e.g. Hue's Rest preset.
+      - name: "Living Room Corner Color Temp"
+        unique_id: living_room_corner_color_temp
+        unit_of_measurement: "K"
+        state_class: measurement
+        state: >-
+          {% set k = state_attr('light.living_room_corner', 'color_temp_kelvin') %}
+          {% if k is not none %}
+            {{ k | int }}
+          {% else %}
+            {% set xy = state_attr('light.living_room_corner', 'xy_color') %}
+            {% if xy is not none and xy | length == 2 and (0.1858 - xy[1]) != 0 %}
+              {% set n = (xy[0] - 0.3320) / (0.1858 - xy[1]) %}
+              {% set cct = 449 * n ** 3 + 3525 * n ** 2 + 6823.3 * n + 5520.33 %}
+              {{ [[cct, 1000] | max, 10000] | min | round(0) | int }}
+            {% else %}
+              {{ None }}
+            {% endif %}
+          {% endif %}
+        availability: >-
+          {{ is_state('light.living_room_corner', 'on') }}
+
+      # Torchiere colour temperature.
+      #
+      # Reads color_temp_kelvin when the bulb reports in color_temp mode. When it
+      # reports in xy mode instead, color_temp_kelvin is null, so this converts the
+      # xy chromaticity coordinates back to a colour temperature using McCamy's
+      # 1992 approximation:
+      #     n   = (x - 0.3320) / (0.1858 - y)
+      #     CCT = 449n^3 + 3525n^2 + 6823.3n + 5520.33
+      # Without the fallback the series would go blank at exactly the moments a
+      # scene is active, which is when the reading matters most. All three lamps
+      # flip modes intermittently; the Innr corner does it most.
+      #
+      # Validated against real readings on 2026-08-17 before being trusted:
+      #   torchiere xy (0.3472, 0.3480) -> 4,912K  (Golden hours, 06:39)
+      #   corner    xy (0.4809, 0.4141) -> 2,445K  (while the other two lamps
+      #                                             natively reported 2,409-2,457K)
+      # Accuracy degrades far from the Planckian locus, e.g. Hue's Rest preset.
+      - name: "Torchiere Color Temp"
+        unique_id: torchiere_color_temp
+        unit_of_measurement: "K"
+        state_class: measurement
+        state: >-
+          {% set k = state_attr('light.torchiere', 'color_temp_kelvin') %}
+          {% if k is not none %}
+            {{ k | int }}
+          {% else %}
+            {% set xy = state_attr('light.torchiere', 'xy_color') %}
+            {% if xy is not none and xy | length == 2 and (0.1858 - xy[1]) != 0 %}
+              {% set n = (xy[0] - 0.3320) / (0.1858 - xy[1]) %}
+              {% set cct = 449 * n ** 3 + 3525 * n ** 2 + 6823.3 * n + 5520.33 %}
+              {{ [[cct, 1000] | max, 10000] | min | round(0) | int }}
+            {% else %}
+              {{ None }}
+            {% endif %}
+          {% endif %}
+        availability: >-
+          {{ is_state('light.torchiere', 'on') }}
+
+      # End Table colour temperature.
+      #
+      # Reads color_temp_kelvin when the bulb reports in color_temp mode. When it
+      # reports in xy mode instead, color_temp_kelvin is null, so this converts the
+      # xy chromaticity coordinates back to a colour temperature using McCamy's
+      # 1992 approximation:
+      #     n   = (x - 0.3320) / (0.1858 - y)
+      #     CCT = 449n^3 + 3525n^2 + 6823.3n + 5520.33
+      # Without the fallback the series would go blank at exactly the moments a
+      # scene is active, which is when the reading matters most. All three lamps
+      # flip modes intermittently; the Innr corner does it most.
+      #
+      # Validated against real readings on 2026-08-17 before being trusted:
+      #   torchiere xy (0.3472, 0.3480) -> 4,912K  (Golden hours, 06:39)
+      #   corner    xy (0.4809, 0.4141) -> 2,445K  (while the other two lamps
+      #                                             natively reported 2,409-2,457K)
+      # Accuracy degrades far from the Planckian locus, e.g. Hue's Rest preset.
+      - name: "End Table Color Temp"
+        unique_id: next_to_couch_color_temp
+        unit_of_measurement: "K"
+        state_class: measurement
+        state: >-
+          {% set k = state_attr('light.next_to_couch', 'color_temp_kelvin') %}
+          {% if k is not none %}
+            {{ k | int }}
+          {% else %}
+            {% set xy = state_attr('light.next_to_couch', 'xy_color') %}
+            {% if xy is not none and xy | length == 2 and (0.1858 - xy[1]) != 0 %}
+              {% set n = (xy[0] - 0.3320) / (0.1858 - xy[1]) %}
+              {% set cct = 449 * n ** 3 + 3525 * n ** 2 + 6823.3 * n + 5520.33 %}
+              {{ [[cct, 1000] | max, 10000] | min | round(0) | int }}
+            {% else %}
+              {{ None }}
+            {% endif %}
+          {% endif %}
+        availability: >-
+          {{ is_state('light.next_to_couch', 'on') }}

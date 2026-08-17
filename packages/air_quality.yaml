@@ -120,6 +120,78 @@ rest:
           - us_aqi
         availability: "{{ value_json.hourly is defined and value_json.hourly.us_aqi is defined }}"
 
+  # ---------------------------------------------------------------------------
+  # DAYLIGHT / SOLAR RADIATION  (added 2026-08-17)
+  #
+  # Separate resource from the air-quality pull above because the two live on
+  # DIFFERENT Open-Meteo endpoints: air-quality-api.open-meteo.com carries no
+  # radiation or cloud fields at all. This is api.open-meteo.com/v1/forecast.
+  #
+  # WHY THIS EXISTS: the living room needs a daylight signal to modulate lamp
+  # brightness, and NO existing lux sensor in this house is usable for it.
+  # Checked against three days of hourly statistics (13-15 Aug 2026):
+  #   Front Door  - faces WEST. On 15 Aug its 18:00 hour averaged 20,153 lx and
+  #                 peaked at 31,908 lx, while the whole rest of that day topped
+  #                 out at 9,690. Direct setting sun on the lens. At that same
+  #                 hour the living room itself was at 24.7 lx and FALLING, so a
+  #                 ceiling driven off it would minimise the lamps exactly when
+  #                 the room goes dark. Usable mornings only (diffuse sky until
+  #                 roughly 14:00).
+  #   Office      - range only ~30-100 lx and visibly stepped by its own lamps.
+  #   Bedroom     - flat 10-16 lx all day, every day. No dynamic range.
+  #   Kitchen     - on the windowsill, known overreader.
+  #   Living room - sees the lamps it would control (~15-20 lx of its own
+  #                 contribution). Closing a brightness loop on it is strictly
+  #                 worse than the on/off flapping loop of 12 Jun 2026, because
+  #                 it oscillates continuously rather than discretely.
+  #   uv_index    - (already pulled above) carries NO cloud signal before about
+  #                 09:00-10:00; 07:00 and 08:00 were identical to five decimal
+  #                 places across all three days, i.e. pure clear-sky geometry
+  #                 at low sun angles. Good from ~10:00 on.
+  # shortwave_radiation is orientation-free and honest at 06:00 and 18:00 alike.
+  #
+  # scan_interval 900 rather than the 1800 above: cloud cover moves faster
+  # than AQI does.
+  # ---------------------------------------------------------------------------
+  - resource: "https://api.open-meteo.com/v1/forecast?latitude=40.2596&longitude=-74.8283&current=shortwave_radiation,direct_radiation,diffuse_radiation,cloud_cover&timezone=America%2FNew_York"
+    scan_interval: 900
+    sensor:
+      - name: "Daylight Shortwave Radiation"
+        unique_id: daylight_shortwave_radiation
+        value_template: "{{ value_json.current.shortwave_radiation | float(0) | round(1) }}"
+        unit_of_measurement: "W/m²"
+        device_class: irradiance
+        state_class: measurement
+        icon: mdi:solar-power-variant
+        availability: "{{ value_json.current.shortwave_radiation is defined and value_json.current.shortwave_radiation is not none }}"
+
+      - name: "Daylight Direct Radiation"
+        unique_id: daylight_direct_radiation
+        value_template: "{{ value_json.current.direct_radiation | float(0) | round(1) }}"
+        unit_of_measurement: "W/m²"
+        device_class: irradiance
+        state_class: measurement
+        icon: mdi:weather-sunny
+        availability: "{{ value_json.current.direct_radiation is defined and value_json.current.direct_radiation is not none }}"
+
+      - name: "Daylight Diffuse Radiation"
+        unique_id: daylight_diffuse_radiation
+        value_template: "{{ value_json.current.diffuse_radiation | float(0) | round(1) }}"
+        unit_of_measurement: "W/m²"
+        device_class: irradiance
+        state_class: measurement
+        icon: mdi:weather-hazy
+        availability: "{{ value_json.current.diffuse_radiation is defined and value_json.current.diffuse_radiation is not none }}"
+
+      - name: "Daylight Cloud Cover"
+        unique_id: daylight_cloud_cover
+        value_template: "{{ value_json.current.cloud_cover | int(0) }}"
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:cloud-percent
+        availability: "{{ value_json.current.cloud_cover is defined and value_json.current.cloud_cover is not none }}"
+
+
 # Derived plain-language band from the US AQI number. Used on the dashboard and
 # inside the alert message so the push reads "Unhealthy" rather than a bare number.
 template:
