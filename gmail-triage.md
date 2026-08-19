@@ -60,12 +60,16 @@ instead.
   "Claude searches." Leaving it alone rather than creating a competing
   "Real Estate" filter.
 
-### 2. Known low-quality marketing → Review-Delete — done
-- **From field:** `uphubroad.work`
+### 2. Known low-quality marketing → Review-Delete — done, update as new ones show up
+- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live`
 - **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
-- `update@uphubroad.work` ("home insurance quotes") came back **suspicious**
-  on a threat-intelligence check. Already manually marked as spam; filter
-  added to catch future mail from the same domain automatically.
+- A recurring cluster of insurance/vehicle-protection marketing on throwaway
+  domains — each one came back **suspicious** on a threat-intelligence check
+  when it showed up in daily triage (`uphubroad.work` 8/2, `smartgudock.blog`
+  8/14, `bestwloom.live` 8/14 — also marked Spam + reported, `paceleadc.live`
+  8/19 — also marked Spam + reported). They rotate domains often, so this
+  filter needs topping up each time a new one appears rather than staying
+  static — check gmail-triage.md before assuming this list is current.
 
 ### 3. Account/security alerts → Alerts — still to do
 - **From field:** `id.apple.com, email.apple.com, accounts.google.com`
