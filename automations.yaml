@@ -36,7 +36,7 @@
       entity_id: input_boolean.workday_tomorrow
   mode: single
 - id: '1635902622080'
-  alias: Turn off the lights when I leave home
+  alias: Turn off the lights when I leave home (v2)
   description: 'Turns off lights in bedroom, kitchen, living room and office when
     Lara leaves zone.home. Gated on group.morning being on OR living room lux above
     input_number.living_room_lux_on, so it only fires on a bright/morning departure.
@@ -46,12 +46,33 @@
     from this automation and moved to ''Speakers - Stop All When I Leave Home''. Reason:
     speaker shutoff was sitting behind this automation''s lighting condition, so a
     dark-morning departure would leave audio running. Speaker shutoff now owns its
-    own automation with no lux gate. Do not re-add media actions here.'
+    own automation with no lux gate. Do not re-add media actions here.
+
+
+    2026-08-17 (v2): lux source switched from the RAW Hue sensor (sensor.hue_motion_sensor_4_illuminance)
+    to sensor.living_room_illuminance_smoothed, the 10-min median from package living_room_lux_smoothing.yaml.
+    The Ambient Manager was rebuilt in June 2026 specifically to stop reading the
+    raw value - its own note records the raw sensor swinging 19-43 every few minutes
+    and causing a confirmed flapping loop - but this automation was never given the
+    same treatment, so a departure timed into a raw-lux dip left the whole house lit.
+    No missed departure was observed in the 12 days to 2026-08-17 (the Aug 17 07:31
+    departure worked correctly); this is a design-consistency fix, not a response
+    to an observed failure.
+
+
+    OPEN QUESTION - THRESHOLD SEMANTICS: this still compares against input_number.living_room_lux_on
+    (30), which is the DARK side of the hysteresis band; input_number.living_room_lux_off
+    (57) is the bright side and is arguably the semantically correct end for an ''is
+    it bright enough to bother turning these off'' gate. Moving it to lux_off would
+    leave the lamps on for departures in the 30-57 lx dead zone - more energy, but
+    she comes home to a lit house on a dull day. Deliberately NOT changed on 2026-08-17
+    because it shifts real energy behaviour and needs a decision, not a sweep. Decide
+    and either move it or delete this paragraph.'
   triggers:
   - entity_id: person.lara_wiz
     zone: zone.home
     event: leave
-    platform: zone
+    trigger: zone
   conditions:
   - condition: or
     conditions:
@@ -59,8 +80,10 @@
       entity_id: group.morning
       state: 'on'
     - condition: numeric_state
-      entity_id: sensor.hue_motion_sensor_4_illuminance
+      entity_id: sensor.living_room_illuminance_smoothed
       above: input_number.living_room_lux_on
+      alias: Bright enough that the occupied look is not needed - 10-min median, not
+        the jittery raw Hue lux
   actions:
   - target:
       area_id:
@@ -653,7 +676,7 @@
     data: {}
   mode: single
 - id: '1758763117719'
-  alias: Living Room — Ambient Manager (Lux On/Off) (v2)
+  alias: Living Room — Ambient Manager (Lux On/Off) (v3)
   description: 'Turn living room ambient on when dark; off when bright (with hysteresis).
     2026-06-12: rebuilt to stop a confirmed flapping loop (light.living_room_lights
     cycled on/off 6x in ~80 min on a cloudy afternoon, empty room). Three changes:
@@ -700,30 +723,51 @@
     on the ordinary home on-branches: light.next_to_couch is pinned to 20 percent
     by the Movie Lamp Dimmer during TV, and a blanket clear there would brighten the
     end table lamp mid-movie. A bare turn_on leaves manual_control alone, which is
-    why the home branch uses one.'
+    why the home branch uses one. 2026-08-17 (v3): LATE-NIGHT GUARD on the presence_arrived
+    branch. Overnight Aug 15->16 the no-bedtime fallback (automation.living_room_late_night_off_no_bedtime_fallback_v1)
+    turned the room off 8 times between 02:00 and 04:15 and this branch relit it within
+    ~30s every time; the same fight ran overnight Aug 7->8 (3x), Aug 8->9 (1x) and
+    Aug 12->13 (3x) - 15 catches across 4 overnights for an automation designed to
+    fire once per night. It then ran again overnight Aug 18->19 (4x: 02:00, 02:15,
+    02:45, 03:15), the fifth overnight, hours before this guard landed - running total
+    19 catches across 5 overnights. NOTE ON DATES: every catch falls in the 02:00-05:00
+    window, so each one belongs to the overnight that ENDS on the logged date, not
+    the evening that starts it. Cause: the SNZB-06P carries a 120s clear delay, so
+    binary_sensor.living_room_presence drops to off while she is sitting still on
+    the couch; the fallback''s /15 sweep lands in one of those holes, sees an empty
+    room and turns off; she moves, presence returns, and this branch''s conditions
+    (lux below lux_on - the room sits at 2-3 lx overnight - group off, person home,
+    in_bed off) were all satisfied, so it relit. The fallback owns 02:00-05:00 and
+    presence must not override it there. ONLY this branch is gated: lux_below_on still
+    provides the occupied look at any hour, and person_arrived_home must still be
+    able to clear the away-dim pin whenever she walks in. Motion-driven relight is
+    unaffected - the fallback carries its own motion condition and will not turn off
+    on top of someone moving - and Morning Lights v4 still owns the 05:00+ relight.
+    Accepted trade: a still, awake 3am couch session now goes dark once instead of
+    cycling.'
   triggers:
   - id: lux_below_on
     entity_id: sensor.living_room_illuminance_smoothed
     below: input_number.living_room_lux_on
     for: 00:01:00
-    platform: numeric_state
+    trigger: numeric_state
   - id: lux_above_off
     entity_id: sensor.living_room_illuminance_smoothed
     above: input_number.living_room_lux_off
     for: 00:05:00
-    platform: numeric_state
+    trigger: numeric_state
   - id: early_morning_ended
     entity_id: binary_sensor.early_morning
     to: 'off'
-    platform: state
+    trigger: state
   - id: presence_arrived
-    platform: state
     entity_id: binary_sensor.living_room_presence
     to: 'on'
+    trigger: state
   - id: person_arrived_home
-    platform: state
     entity_id: person.lara_wiz
     to: home
+    trigger: state
   conditions:
   - condition: template
     alias: Early-morning gate — exempt the arrived-home branch so the away-dim pin
@@ -793,6 +837,13 @@
     - conditions:
       - condition: trigger
         id: presence_arrived
+      - alias: Not inside the Late-Night Off window (02:00-05:00) — the no-bedtime
+          fallback owns that window; see the 2026-08-17 v3 note in the description
+        condition: not
+        conditions:
+        - condition: time
+          after: 02:00:00
+          before: 05:00:00
       - condition: numeric_state
         entity_id: sensor.living_room_illuminance_smoothed
         below: input_number.living_room_lux_on
@@ -1283,22 +1334,43 @@
     Shortcut: shortcuts://run-shortcut?name=Start%20Car. Lara must create an iOS Shortcut
     named exactly ''Start Car'' (Open App: myChevrolet, or a myChevrolet Remote Start
     action to actually fire it). Pending her building the Shortcut + a re-test. Chevy
-    exposes no remote-start API. [2026-08-12] Sonos broadcast player list swapped
-    off Music Assistant entities: media_player.bedroom -> media_player.bedroom_frame,
-    media_player.minipod_2 -> media_player.minipod (same physical speakers, native
-    Sonos entities instead of MA ones). living_room_arc and bathroom were already
-    native, untouched. This was part of removing Music Assistant from the house entirely
-    (see [[project_wake_alarm_playlist53_failure]]) and also happens to close a latent
+    exposes no remote-start API.
+
+
+    [2026-08-12] Sonos broadcast player list swapped off Music Assistant entities:
+    media_player.bedroom -> media_player.bedroom_frame. living_room_arc and bathroom
+    were already native, untouched. Part of removing Music Assistant from the house
+    entirely (see [[project_wake_alarm_playlist53_failure]]). This also closes a latent
     bug: sonos.snapshot/sonos.restore inside scripts/sonos_broadcast.yaml are Sonos-platform-only
-    services that silently no-op on non-Sonos (i.e. MA) entities, so the resume-after-announcement
+    services that silently no-op on non-Sonos entities, so the resume-after-announcement
     protection this script was built for ([[project_sonos_broadcast_snapshot_order]])
-    never actually covered bedroom/minipod_2 before this fix. Now all 4 broadcast
-    players are native Sonos and get real snapshot/restore protection.'
+    never actually covered bedroom before this fix.
+
+
+    [2026-08-18] Player list is now bedroom_frame + living_room_arc + bathroom, three
+    genuine Sonos, all three getting real snapshot/restore protection. A fourth entry
+    was removed after the daily sweep found it was not a Sonos device at all, despite
+    the 2026-08-12 note above claiming the whole list had been moved to native Sonos.
+    script.sonos_broadcast runs ungroup: true and calls media_player.unjoin; a non-Sonos
+    player does not support that action, so the script errored at step 3 and, because
+    this automation is mode: single with no continue_on_error, the whole automation
+    aborted at action 1 and the iPhone push at action 2 never fired either. Both halves
+    of the nudge were silently dead from 2026-08-12 until 2026-08-18. RULE: only entities
+    on the Sonos platform belong in this players list. Verify the platform before
+    adding one; do not trust an entity name. NOTE: scripts/sonos_broadcast.yaml already
+    carried a 2026-06-14 comment stating HomePod support was removed — that comment
+    was correct and was simply not read before the 2026-08-12 edit.
+
+
+    [2026-08-18b] Added continue_on_error: true to the broadcast call. The push at
+    action 2 is the load-bearing half of this nudge (it carries the Start Car shortcut);
+    a speaker fault must never again take it down with it. Mirrors script.commute_time_announcer,
+    which has always done this.'
   triggers:
   - entity_id: calendar.master_calendar
     event: end
     offset: -0:13:0
-    platform: calendar
+    trigger: calendar
   conditions:
   - condition: template
     value_template: "{{ \n  'office' in (trigger.calendar_event.description | default('')
@@ -1324,18 +1396,22 @@
       entity_id: sensor.kttn_dew_point
   actions:
   - action: script.sonos_broadcast
+    continue_on_error: true
+    note: continue_on_error so a bad speaker cannot abort the run and kill the iPhone
+      push below. Only Sonos-platform entities belong in players.
     data:
       message: It's time to turn on the car!
       players:
       - media_player.bedroom_frame
       - media_player.living_room_arc
-      - media_player.minipod
       - media_player.bathroom
       restore: true
       ungroup: true
       volume: 0.7
     metadata: {}
   - action: notify.mobile_app_iphone
+    note: 'The load-bearing half of this nudge: carries the Start Car shortcut tap
+      target.'
     data:
       data:
         actions:
@@ -1828,29 +1904,56 @@
 - id: '1777933269637'
   alias: 'Commute: Set target arrival from calendar'
   description: 'When in_bed turns on and workday_tomorrow is on, read calendar.master_calendar
-    for tomorrow''s ''Wake up'' event. Office (description/location contains ''office'')
-    + late shift (summary/description contains ''late shift'') -> commute_target_arrival
+    for the WAKE-UP DAY''s ''Wake up'' event. Office (description/location contains
+    ''office'') + late shift (summary/description contains ''late shift'') -> commute_target_arrival
     09:20. Office regular -> 07:50. No-op if no office wake-up event (helper keeps
     last value). 2026-06-09: source switched from calendar.workday_calendar to master_calendar;
     workday_calendar only held bare all-day ''Workday'' entries with no office/late-shift
     detail, so detection always failed and target_arrival sat stale at 07:50 -- on
     late-shift days the announcer started after the stale 7:20 leave_by had already
-    passed and never announced.'
+    passed and never announced.
+
+
+    [2026-08-19] OFF-BY-ONE DAY FIXED. The calendar window was hardcoded to now()
+    + 1 day, which is only correct when in_bed flips BEFORE midnight. On 2026-08-19
+    in_bed was never set Tuesday evening; the 03:30 fallback turned it on at 03:30:00.31
+    and this automation fired 0.24s later at 03:30:00.55. At 03:30 Wednesday, now()+1day
+    resolved to THURSDAY, so it read Thursday''s ''Wake up late shift'' event and
+    set 09:20 on a normal Wednesday. leave_by went 07:21 -> 08:51, the announcer''s
+    60-minute enrichment window opened at 07:51, and Lara left around 07:20 -- so
+    she got the 5-minute time announcements with no commute time at all, all morning.
+    FIX: _target_date picks TODAY when this fires before 08:00 and TOMORROW otherwise,
+    so both the normal bedtime path (22:00 -> tomorrow) and the 03:30 fallback path
+    (03:30 -> today) resolve to the day she is actually about to wake up for. Verified
+    against live calendar data before saving: both paths returned 2026-08-20 for Thursday''s
+    late shift.
+
+
+    KNOWN REMAINING HOLE, not fixed here: the workday_tomorrow condition above is
+    still literally about TOMORROW. On a Friday 03:30-fallback night that helper reads
+    Saturday, so it is off and this automation skips entirely, leaving commute_target_arrival
+    stale from Thursday. Same off-by-one class as the bug above, different entity.
+    Fixing it means making the gate day-aware or dropping it (has_office_event already
+    no-ops when the target day has no office event), which is a gating-semantics change
+    and was left for Lara to decide.'
   triggers:
-  - platform: state
-    entity_id: input_boolean.in_bed
+  - entity_id: input_boolean.in_bed
     to: 'on'
+    trigger: state
   conditions:
   - condition: state
     entity_id: input_boolean.workday_tomorrow
     state: 'on'
   actions:
+  - variables:
+      _target_date: '{{ (now() if now().hour < 8 else now() + timedelta(days=1)).strftime(''%Y-%m-%d'')
+        }}'
   - action: calendar.get_events
     target:
       entity_id: calendar.master_calendar
     data:
-      start_date_time: '{{ (now() + timedelta(days=1)).strftime(''%Y-%m-%d'') }}T00:00:00'
-      end_date_time: '{{ (now() + timedelta(days=1)).strftime(''%Y-%m-%d'') }}T23:59:59'
+      start_date_time: '{{ _target_date }}T00:00:00'
+      end_date_time: '{{ _target_date }}T23:59:59'
     response_variable: cal_response
   - variables:
       has_office_event: '{% set events = cal_response[''calendar.master_calendar''][''events'']
@@ -5586,126 +5689,6 @@
         }}°F. Stored {{ base_temp }}°F for the morning restore.
       name: Living Room AC
   mode: single
-- id: '1786413813332'
-  alias: Living Room AC — Precool Before Arriving Home (v3)
-  description: 'When Lara leaves zone.work, releases the living room AC''s away setback
-    early — rather than waiting for the arrival-home trigger in ''AC — Away Eco /
-    Restore on Presence'' — so the unit has the drive home to recover instead of starting
-    cold at the front door.
-
-
-    v3 (2026-08-14) — two fixes.
-
-
-    FIX 1, ORDERING. v2 called set_preset_mode eco FIRST and set_hvac_mode cool SECOND.
-    That is backwards per rule 1 of the Midea command rules (see project memory midea-ac-integration):
-    on this integration set_hvac_mode resets preset_mode to ''none'' as a side effect,
-    so the eco it had just set was live only until the next call. It survived unnoticed
-    on 2026-08-14 purely because the unit was already in cool, making the hvac_mode
-    call a device-level no-op. Reordered to hvac_mode -> 3s -> preset -> 3s, so the
-    preset is the final word. Also added the off/unavailable/unknown guard the sibling
-    climate automations already carry, so this can never switch on a unit that was
-    deliberately turned off.
-
-
-    FIX 2, IT WAS ONLY RESTORING HALF THE SETBACK. Setting preset eco does nothing
-    about the explicit 80F target the away setback writes, and an 80F target means
-    the unit will not cool no matter what the preset says. On 2026-08-14 this automation
-    fired at 08:06 and set the living room to eco while the target stayed at 80 —
-    so ''precool'' cooled nothing and Lara walked into an 80F living room. Now restores
-    the exact pre-away target from input_number.lr_ac_pre_away_temp and zeroes the
-    marker, the same helper away-eco v5 writes. The two converge cleanly: whichever
-    runs first restores the number and clears the marker, and the other one finds
-    0 and correctly skips.
-
-
-    KNOWN DESIGN PROBLEM, NOT FIXED HERE. zone.work is not a reliable at-work signal.
-    On 2026-08-14 Lara''s phone registered INSIDE the zone for only 51s, 2.7min and
-    1.6min across a full office day — it reads not_home while she is at her desk and
-    only sees her when she steps outside to the parking lot. So this automation fired
-    three times (08:06 arriving, 10:55 moving her car, 12:10 the real departure) and,
-    because she went to a doctor''s appointment after work, even the real one ran
-    1h48m before she actually walked in. ''Left work'' may simply be the wrong trigger;
-    a zone-near-home entry or a travel-time trigger is the likely replacement. Lara
-    agreed to redesign this rather than patch the zone. Until then the automation
-    is at least correct in what it does when it does fire.
-
-
-    Uses sensor.waze_travel_time for the log message only (it is the home-to-work
-    route, HA has no work-to-home sensor, but the roads are the same either direction).
-
-
-    Gated on calendar.vacation off per house style section 8.'
-  triggers:
-  - entity_id: person.lara_wiz
-    event: leave
-    id: left_work
-    trigger: zone
-    zone: zone.work
-  conditions:
-  - condition: state
-    entity_id: calendar.vacation
-    state: 'off'
-  - condition: not
-    conditions:
-    - condition: state
-      entity_id: climate.living_room_ac
-      state:
-      - 'off'
-      - unavailable
-      - unknown
-  actions:
-  - alias: Capture the marker before it is zeroed, for the restore value and the log
-    variables:
-      lr_restore: '{{ states(''input_number.lr_ac_pre_away_temp'') | float(0) }}'
-  - action: climate.set_hvac_mode
-    alias: Direct cool mode FIRST — hvac_mode clobbers preset_mode on this integration,
-      so it must not run after the preset
-    data:
-      hvac_mode: cool
-    target:
-      entity_id: climate.living_room_ac
-  - alias: Let the unit settle — these Midea entities clobber rapid sequential commands
-    delay:
-      seconds: 3
-  - action: climate.set_preset_mode
-    alias: Release the away setback to the everyday eco preset
-    data:
-      preset_mode: eco
-    target:
-      entity_id: climate.living_room_ac
-  - alias: Let the unit settle
-    delay:
-      seconds: 3
-  - alias: Put the exact pre-away target back — without this the preset change alone
-      leaves an 80F target and nothing cools
-    if:
-    - above: 0.5
-      condition: numeric_state
-      entity_id: input_number.lr_ac_pre_away_temp
-    then:
-    - action: climate.set_temperature
-      data:
-        temperature: '{{ lr_restore }}'
-      target:
-        entity_id: climate.living_room_ac
-    - delay:
-        seconds: 3
-    - action: input_number.set_value
-      data:
-        value: 0
-      target:
-        entity_id: input_number.lr_ac_pre_away_temp
-  - action: logbook.log
-    alias: Log it
-    data:
-      entity_id: climate.living_room_ac
-      message: Left work, ~{{ states('sensor.waze_travel_time') }} min out (home→work
-        route, used as an estimate) — released to eco.{{ ' Target restored to ' ~
-        lr_restore ~ 'F.' if lr_restore > 0.5 else ' No away setback was active, so
-        the target was left alone.' }}
-      name: Living Room AC
-  mode: single
 - id: '1786413963544'
   alias: Bedroom AC — Dry Mode While Getting Ready (v2, Humidity-Gated)
   description: 'On waking on a workday, switches climate.bedroom_ac to hvac_mode dry
@@ -7174,7 +7157,7 @@
         - action: light.turn_on
           data:
             brightness: 255
-            kelvin: 6410
+            color_temp_kelvin: 6410
             transition: 5
           target:
             entity_id: light.living_room_lights
@@ -7195,7 +7178,7 @@
       - action: light.turn_on
         data:
           brightness: 255
-          kelvin: 6410
+          color_temp_kelvin: 6410
           transition: 5
         target:
           entity_id: light.living_room_lights
@@ -7225,3 +7208,190 @@
   max: 10
   max_exceeded: silent
   mode: queued
+- id: living_room_al_handback_failsafe
+  alias: Living Room — AL Handback Failsafe (Energize Trial, v1)
+  description: 'SAFETY NET for the Energize Morning Trial, added 2026-08-18 after
+    that trial''s first morning failed. The trial switches switch.adaptive_lighting_living_room_lights
+    OFF at 06:00 and relies on its own 10:00 window_close branch to switch it back
+    ON. That restore branch has never been observed firing. If it silently fails,
+    Adaptive Lighting stays off for the rest of the day, which breaks the 21:00/22:00
+    late-night sleep dim, the TV/movie lighting stack, and every bare light.turn_on
+    that depends on AL''s intercept to supply brightness and colour. Measured 2026-08-18:
+    with AL off, a bare turn_on left the lamps at 10% / 2200K, the values the bulbs
+    were still holding from the previous night''s sleep dim.
+
+
+    BEHAVIOUR: at 10:02, two minutes after the trial''s own restore should have run,
+    if AL is still off this REPAIRS it and then sends one push saying so. SILENT ON
+    SUCCESS by Lara''s explicit choice on 2026-08-18: she is at the office and wants
+    a failure ping only, not a confirmation.
+
+
+    calendar.tv GATE: a TV calendar event legitimately pauses AL ("TV Event Reminder"
+    turns it off 15 minutes ahead), and repairing AL mid-event would fight the Movie
+    scene. So this does nothing while calendar.tv is on.
+
+
+    DELETE THIS when the Energize trial is promoted or reverted; it has no purpose
+    outside that trial. See project memory lr-energize-morning-trial.'
+  triggers:
+  - at: '10:02:00'
+    trigger: time
+  conditions:
+  - condition: state
+    entity_id: switch.adaptive_lighting_living_room_lights
+    state: 'off'
+  - condition: state
+    entity_id: calendar.tv
+    state: 'off'
+  actions:
+  - alias: Repair first, so the house is correct even if the push is missed
+    action: switch.turn_on
+    target:
+      entity_id: switch.adaptive_lighting_living_room_lights
+  - action: notify.mobile_app_iphone
+    data:
+      title: ⚠️ AL handback failed
+      message: Adaptive Lighting was still OFF at 10:02, so the Energize trial's 10:00
+        restore did not run. I switched AL back on for you. Worth checking the trial's
+        traces when you get a minute.
+  mode: single
+- id: bedroom_air_quality_spike_alert
+  alias: Bedroom — Air Quality Spike Alert (v1)
+  description: 'Mirror of ''Living Room — Air Quality Spike Alert (v1)'' applied to
+    the bedside AirGuard (sensor.airguard_pm2_5 — this is the unit referred to as
+    ''the Sonoff''). Built 2026-08-17 after a sweep found the living room had a tiered
+    PM2.5 alert and the bedroom, with the same sensor class, had none, despite being
+    the room she sleeps 7-8h a night in. Same EPA breakpoints and the same anti-spam
+    tier tracker as the LR and outdoor alerts: 1=Elevated/USG (35), 2=Unhealthy (55),
+    3=Very Unhealthy (150), 4=Hazardous (250), tracked in input_number.bedroom_air_quality_alert_level_reached
+    so each band only alerts once per day even if the reading bounces inside it. Good/Moderate
+    below 35 stays silent to avoid noise. Observed range in the 12 days to 2026-08-17
+    was a daily max of 1-48 ug/m3 with a single tier-1 crossing (Aug 17, 48) and one
+    near-miss (Aug 10, 31), so expect this to be quiet - that is the point, it is
+    a smoke/wildfire/cooking-drift alarm, not a dashboard. Startup recheck included
+    for the same reason as the LR alert: numeric_state ''above'' only fires on the
+    crossing, so a spike already present across a restart would be missed. Vacation-gated
+    like the other personal comfort alerts. Companion daily reset: automation.bedroom_air_quality_alert_level_daily_reset.'
+  triggers:
+  - trigger: numeric_state
+    entity_id: sensor.airguard_pm2_5
+    above: 35
+    id: usg
+  - trigger: numeric_state
+    entity_id: sensor.airguard_pm2_5
+    above: 55
+    id: unhealthy
+  - trigger: numeric_state
+    entity_id: sensor.airguard_pm2_5
+    above: 150
+    id: very_unhealthy
+  - trigger: numeric_state
+    entity_id: sensor.airguard_pm2_5
+    above: 250
+    id: hazardous
+  - trigger: homeassistant
+    event: start
+    id: startup_recheck
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - alias: Wait for PM2.5 to have a real value (repopulates after a restart)
+    wait_template: '{{ states(''sensor.airguard_pm2_5'') | is_number }}'
+    timeout: 00:03:00
+    continue_on_timeout: true
+  - choose:
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.airguard_pm2_5
+        above: 250
+      - condition: numeric_state
+        entity_id: input_number.bedroom_air_quality_alert_level_reached
+        below: 4
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          title: "\U0001F6A8 Bedroom Air Quality: Hazardous"
+          message: Bedside PM2.5 just crossed 250 µg/m³ (currently {{ states('sensor.airguard_pm2_5')
+            }}). Do not sleep in here without filtration.
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_air_quality_alert_level_reached
+        data:
+          value: 4
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.airguard_pm2_5
+        above: 150
+      - condition: numeric_state
+        entity_id: input_number.bedroom_air_quality_alert_level_reached
+        below: 3
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          title: "\U0001F6A8 Bedroom Air Quality: Very Unhealthy"
+          message: Bedside PM2.5 just crossed 150 µg/m³ (currently {{ states('sensor.airguard_pm2_5')
+            }}).
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_air_quality_alert_level_reached
+        data:
+          value: 3
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.airguard_pm2_5
+        above: 55
+      - condition: numeric_state
+        entity_id: input_number.bedroom_air_quality_alert_level_reached
+        below: 2
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          title: '⚠️ Bedroom Air Quality: Unhealthy'
+          message: Bedside PM2.5 just crossed 55 µg/m³ (currently {{ states('sensor.airguard_pm2_5')
+            }}).
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_air_quality_alert_level_reached
+        data:
+          value: 2
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.airguard_pm2_5
+        above: 35
+      - condition: numeric_state
+        entity_id: input_number.bedroom_air_quality_alert_level_reached
+        below: 1
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          title: "\U0001F33F Bedroom Air Quality: Elevated"
+          message: Bedside PM2.5 just crossed 35 µg/m³ (currently {{ states('sensor.airguard_pm2_5')
+            }}). Sensitive individuals may notice.
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.bedroom_air_quality_alert_level_reached
+        data:
+          value: 1
+  mode: single
+  max_exceeded: silent
+- id: bedroom_air_quality_alert_level_daily_reset
+  alias: Bedroom — Air Quality Alert Level Daily Reset
+  description: 'Resets input_number.bedroom_air_quality_alert_level_reached to 0 at
+    midnight so ''Bedroom — Air Quality Spike Alert (v1)'' starts fresh each day.
+    Companion to that alert, mirroring the existing Living Room pair (automation.living_room_air_quality_alert_level_daily_reset)
+    and the Pollen Alert Level daily reset. Deliberately not vacation-gated: the tier
+    tracker must reset every day regardless of where she is, otherwise a spike reached
+    while away would suppress alerts on the day she gets back.'
+  triggers:
+  - trigger: time
+    at: 00:00:00
+  actions:
+  - action: input_number.set_value
+    target:
+      entity_id: input_number.bedroom_air_quality_alert_level_reached
+    data:
+      value: 0
+  mode: single
