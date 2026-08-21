@@ -14,6 +14,20 @@ sonos_broadcast:
     failure on Python 3.14); the bathroom Sonos Era 100 now covers the shower
     window. The homepod_players / homepod_volume fields and the
     homepod_tts_announce / homepod_tts_speak_once wrapper scripts were deleted.
+    2026-08-18: added the post-speak delay before sonos.restore. tts.speak
+    returns when playback STARTS, so restore was firing ~400ms into a multi-
+    second announcement and cutting it off — in every caller (commute
+    announcer, TV event reminder, Heat the car). sonos_say has had this delay
+    since 2026-06-08; it was simply never ported here. Same formula.
+    2026-08-18b: added the NON-SONOS GUARD. The players list is now filtered
+    against integration_entities('sonos') before any service call touches it,
+    so a non-Sonos entity can no longer reach media_player.unjoin and abort the
+    calling automation (which is exactly how a HomePod killed Heat the car
+    outright from 2026-08-12 to 2026-08-18). Dropped entities are recorded to
+    the logbook, not pushed. Registry-empty fallback is deliberate — see the
+    comment on _players_ok. This also collapsed the old raw-`players` vs
+    `_players_json` inconsistency: every step now reads one normalised
+    variable, `_players_ok`.
   mode: parallel
   fields:
     players:
@@ -58,13 +72,44 @@ sonos_broadcast:
         _ungroup: "{{ ungroup | default(true) }}"
         # Fields may arrive as JSON strings (when called from another script via tojson)
         # or as real lists (when called directly from YAML). Handle both.
-        _sonos_count: >
+        _requested: >
           {% set s = players | default('[]') %}
-          {{ ((s | from_json) if s is string else s) | length }}
+          {{ (s | from_json) if s is string else s }}
+
+        # NON-SONOS GUARD, added 2026-08-18. sonos.snapshot and sonos.restore
+        # no-op harmlessly on a non-Sonos entity, but media_player.unjoin HARD
+        # ERRORS and aborts the CALLING automation. On 2026-08-12 a HomePod
+        # (apple_tv platform) was added to Heat the car's players list; the
+        # unjoin below threw, the script died at step 3, and because that
+        # automation is mode: single the iPhone push after it never fired.
+        # Both halves of the nudge were dead for six days before the daily
+        # sweep caught it. Filtering here makes that class of mistake
+        # structurally impossible instead of relying on every caller
+        # remembering which entities are Sonos.
+        _sonos_known: "{{ integration_entities('sonos') }}"
+
+        # FALLBACK IS DELIBERATE: if the Sonos integration is mid-reload or
+        # broken, integration_entities returns [] and an unguarded filter would
+        # reject EVERY speaker — an announcement that silently goes nowhere,
+        # which is a worse failure than the one being fixed because it is
+        # inaudible. So only filter when the registry actually reported
+        # something; otherwise pass the caller's list through untouched.
+        _players_ok: >
+          {% if (_sonos_known | length) > 0 %}
+          {{ _requested | select('in', _sonos_known) | list }}
+          {% else %}
+          {{ _requested }}
+          {% endif %}
+        _players_bad: >
+          {% if (_sonos_known | length) > 0 %}
+          {{ _requested | reject('in', _sonos_known) | list }}
+          {% else %}
+          {{ [] }}
+          {% endif %}
+
+        _sonos_count: "{{ _players_ok | length }}"
         # Normalised players list as JSON, used as the volume fallback target.
-        _players_json: >
-          {% set s = players | default('[]') %}
-          {{ ((s | from_json) if s is string else s) | tojson }}
+        _players_json: "{{ _players_ok | tojson }}"
         # Normalise volume_map (dict or JSON string) into a native list of
         # {entity_id, level} pairs so the per-speaker volume step can for_each it.
         # 2026-07-12: removed the trailing `| tojson` — script variables render
@@ -80,6 +125,23 @@ sonos_broadcast:
           {% endfor %}
           {{ ns.pairs }}
 
+    # Record any entity the guard dropped. Logbook, not a push: a broadcast can
+    # fire several times a morning, so a persistent bad entity would mean repeat
+    # notifications. This is visible when you go looking and silent when you are
+    # not — the point is that a misconfigured caller leaves a trace at all.
+    - choose:
+        - conditions: "{{ (_players_bad | length) > 0 }}"
+          sequence:
+            - action: logbook.log
+              data:
+                name: Sonos — Broadcast
+                message: >-
+                  dropped {{ _players_bad | length }} non-Sonos player(s):
+                  {{ _players_bad | join(', ') }} — announcement continued on
+                  {{ _sonos_count }} valid speaker(s). Fix the calling
+                  automation's players list.
+                domain: script
+
     # Snapshot Sonos players FIRST — before any unjoin — and WITH group topology
     # so sonos.restore can rebuild the group and resume the queue from the
     # coordinator. Must precede unjoin and the volume change below so both are
@@ -89,7 +151,7 @@ sonos_broadcast:
           sequence:
             - action: sonos.snapshot
               target:
-                entity_id: "{{ players }}"
+                entity_id: "{{ _players_ok }}"
               data:
                 with_group: true
 
@@ -100,7 +162,7 @@ sonos_broadcast:
           sequence:
             - action: media_player.unjoin
               target:
-                entity_id: "{{ players }}"
+                entity_id: "{{ _players_ok }}"
 
     # Set volume — on volume_players if provided, otherwise all players
     - choose:
@@ -139,14 +201,27 @@ sonos_broadcast:
               target:
                 entity_id: tts.home_assistant_cloud
               data:
-                media_player_entity_id: "{{ players }}"
+                media_player_entity_id: "{{ _players_ok }}"
                 cache: false
                 message: "{{ message }}"
 
-    # Restore Sonos players
+    # Restore Sonos players.
+    # The delay below is REQUIRED, not padding. tts.speak returns as soon as
+    # playback STARTS, not when it finishes, so without a wait sonos.restore
+    # yanks the speakers back to the previous queue mid-sentence. Measured
+    # 2026-08-18 on the 07:25 commute run (trace b20863a0): tts.speak at
+    # :01.267, sonos.restore at :01.674 — 407ms into a ~3s announcement. Every
+    # multi-room announcement in the house was being clipped this way.
+    # Formula ported verbatim from scripts/sonos_say.yaml, which has carried it
+    # since 2026-06-08 and never exhibited the bug: ~12 spoken chars/second,
+    # rounded up, plus 2s of tail padding.
+    # Deliberately INSIDE the restore branch: a caller passing restore: false
+    # has nothing to race against and should not be slowed down.
     - choose:
         - conditions: "{{ _restore and (_sonos_count | int) > 0 }}"
           sequence:
+            - delay:
+                seconds: "{{ ((message | length) / 12) | round(0, 'ceil') + 2 }}"
             - action: sonos.restore
               target:
-                entity_id: "{{ players }}"
+                entity_id: "{{ _players_ok }}"
