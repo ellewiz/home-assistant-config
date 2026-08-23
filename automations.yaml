@@ -7459,4 +7459,199 @@
     target:
       entity_id: input_datetime.presence_last_arrival_today
   mode: single
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+- id: '1787464850803'
+  alias: 'Sleep: Arm the bed window on Guanfacine log'
+  description: 'Half one of two. When the Guanfacine dose is logged, stamp input_datetime.bed_window_at
+    75 minutes out; the bed-window nudge then triggers on that datetime. Built 2026-08-23.
+    WHY A STAMPED HELPER RATHER THAN A 75-MINUTE for: ON THE TRIGGER: a trigger''s
+    for: clock measures CONTINUOUS time in state, and every HA restart re-stamps last_changed
+    to start-up time, resetting the clock to zero. This instance is not restart-stable
+    (two SIGBUS crashes, most recently 2026-08-22 12:17 ET), so a for:-based window
+    would silently land late or never on any night HA bounced. Same reasoning and
+    same pattern as script.shut_down_bedtime writing input_datetime.living_room_off_at
+    for the living-room wind-down, which was moved off an in-memory delay for exactly
+    this reason. NO STALE GUARD NEEDED: the helper carries a date as well as a time,
+    so a value left over from a previous evening is simply in the past and never fires,
+    and this automation always writes a fresh future datetime. Ungated on purpose:
+    arming is free and the nudge half does all the gating, so if she logs the dose
+    and then goes straight to bed, the nudge just declines. The 75-minute offset is
+    the tunable knob and it lives here, in the timedelta.'
+  triggers:
+  - entity_id: input_boolean.guanfacine_taken
+    to: 'on'
+    trigger: state
+  actions:
+  - action: input_datetime.set_datetime
+    alias: Stamp the bed window 75 minutes after the dose is logged
+    data:
+      datetime: '{{ (now() + timedelta(minutes=75)).strftime(''%Y-%m-%d %H:%M:%S'')
+        }}'
+    target:
+      entity_id: input_datetime.bed_window_at
+  mode: single
+- id: '1787464878651'
+  alias: 'Sleep: Bed-window nudge (v2, Fri/Sat hard)'
+  description: 'Half two of two, armed by ''Sleep: Arm the bed window on Guanfacine
+    log''. v2 2026-08-23: SPLIT INTO TWO TIERS after a 200-night Oura export showed
+    the risk is concentrated, not uniform. Among nights she falls asleep early, Fri/Sat
+    evenings become couch nights 81 percent of the time (17 of 21) versus 20 percent
+    (12 of 61) every other evening: Fisher exact p<0.00001, risk ratio 4.1x. Monday
+    is 0 for 28 across the whole record. Fri+Sat carry 59 percent of all couch nights
+    on 28 percent of the calendar. CONFOUNDER RULED OUT: the detector keys on early
+    sleep onset, so the obvious objection is that weekends simply have earlier bedtimes,
+    but they do not - median onset is Fri 22:39 and Sat 22:52, the two LATEST evenings
+    of the week, against Wed 21:56 and Sun 22:07. The 81/20 split comes from holding
+    onset constant by looking only at early-onset nights. WHY TIERS: v1 fired a full
+    TV-pausing interruption seven nights a week at a two-night problem, which is how
+    an automation habituates and gets deleted. Fri/Sat now get the full treatment
+    (pause the Apple TV, lights to 70 percent, push, hold 30 min). Sun through Thu
+    get lights and a push only, no TV pause, 20 min hold - enough to undo the couch-dim
+    and register, without hijacking a midweek evening. WHY A TEMPLATE FOR THE WEEKDAY
+    rather than a native time+weekday condition: the native form reads the CURRENT
+    day, but a late-logged dose can push the fire past midnight (a 23:20 dose fires
+    at 00:35), at which point native would call a Friday evening ''Saturday''. Shifting
+    now() back 6 hours names the EVENING, which is what the finding is about. Verified
+    2026-08-23. Roughly 6 percent of dose events land late enough for this to matter.
+    TV LIMITATION: the TCL Roku was physically removed 2026-08-08, so the Apple TV
+    is the only pausable player, and Frndly is invisible to the ATV integration (idle,
+    app_id '''') so it cannot be paused at all; the lights-and-push half fires regardless.
+    v2 hardcodes the Apple TV and uses native state conditions rather than v1''s templated
+    player variable, since there is no second player left to choose between. The resume
+    step keys on the player actually being paused, so the soft tier never presses
+    play on something still playing. On success (in_bed goes on) the lamps restore
+    and go back to Adaptive Lighting but playback is NOT resumed, since she has left
+    the room. NOT YET LIVE-FIRED against a real evening.'
+  triggers:
+  - at: input_datetime.bed_window_at
+    id: bed_window_open
+    trigger: time
+  conditions:
+  - alias: 'The whole point: only nudge if she is not already in bed'
+    condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.guests
+    state: 'off'
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: person.lara_wiz
+    state: home
+  - after: '20:30:00'
+    alias: Safety net against an odd fire after a restart
+    before: 01:30:00
+    condition: time
+  actions:
+  - action: scene.create
+    alias: Snapshot the living-room lamps so we can restore them exactly
+    data:
+      scene_id: bed_window_nudge_restore
+      snapshot_entities:
+      - light.living_room_corner
+      - light.torchiere
+      - light.next_to_couch
+  - alias: Tier the nudge by which EVENING it is
+    choose:
+    - alias: HARD TIER - Fri or Sat evening, where 59 percent of couch nights live
+      conditions:
+      - condition: template
+        value_template: '{{ (now() - timedelta(hours=6)).strftime(''%a'') | lower
+          in [''fri'', ''sat''] }}'
+      sequence:
+      - alias: Pause the Apple TV if something is actually playing
+        if:
+        - condition: state
+          entity_id: media_player.living_room_4k_2
+          state:
+          - playing
+          - buffering
+        then:
+        - action: media_player.media_pause
+          target:
+            entity_id: media_player.living_room_4k_2
+      - action: light.turn_on
+        alias: Undo the couch-dim
+        data:
+          brightness_pct: 70
+          transition: 2
+        target:
+          entity_id: light.living_room_lights
+      - action: notify.mobile_app_iphone
+        data:
+          message: Lights up, TV paused. Friday and Saturday are where this actually
+            goes wrong. Releases in 30 min.
+          title: Bed window
+      - alias: Hold 30 min for in_bed, then release rather than nag forever
+        continue_on_timeout: true
+        timeout: 00:30:00
+        wait_for_trigger:
+        - entity_id: input_boolean.in_bed
+          to: 'on'
+          trigger: state
+    default:
+    - action: light.turn_on
+      alias: SOFT TIER - Sun through Thu. Lights and a push only, no TV pause.
+      data:
+        brightness_pct: 70
+        transition: 2
+      target:
+        entity_id: light.living_room_lights
+    - action: notify.mobile_app_iphone
+      data:
+        message: Lights up. Bed beats the couch from here. Releases in 20 min.
+        title: Bed window
+    - alias: Shorter hold on a midweek evening
+      continue_on_timeout: true
+      timeout: 00:20:00
+      wait_for_trigger:
+      - entity_id: input_boolean.in_bed
+        to: 'on'
+        trigger: state
+  - action: scene.turn_on
+    alias: Restore the lamps exactly as they were
+    data:
+      transition: 2
+    target:
+      entity_id: scene.bed_window_nudge_restore
+  - action: adaptive_lighting.set_manual_control
+    alias: Hand the lamps back to Adaptive Lighting
+    data:
+      entity_id: switch.adaptive_lighting_living_room_lights
+      lights:
+      - light.living_room_corner
+      - light.torchiere
+      - light.next_to_couch
+      manual_control: false
+  - alias: Branch on whether she actually went to bed
+    choose:
+    - alias: 'She went to bed: log it, leave the TV paused, she is not in the room'
+      conditions:
+      - condition: state
+        entity_id: input_boolean.in_bed
+        state: 'on'
+      sequence:
+      - action: logbook.log
+        data:
+          entity_id: input_boolean.in_bed
+          message: 'Bed-window nudge: went to bed during the hold'
+          name: Sleep Log
+    default:
+    - action: logbook.log
+      data:
+        entity_id: input_boolean.in_bed
+        message: 'Bed-window nudge: released on timeout, still up'
+        name: Sleep Log
+    - alias: Resume only if WE paused it - the soft tier never does
+      if:
+      - condition: state
+        entity_id: media_player.living_room_4k_2
+        state: paused
+      then:
+      - alias: Grace period so she is back in the room before audio resumes
+        delay: 00:00:15
+      - action: media_player.media_play
+        target:
+          entity_id: media_player.living_room_4k_2
+  mode: single
