@@ -172,7 +172,7 @@
             entity_id: scene.bedroom_energize
   mode: restart
 - id: '1639287271338'
-  alias: Bedroom — Motion Lights (v2, Nightlight After 10pm)
+  alias: Bedroom — Motion Lights (v3, Nightlight After 10pm)
   description: 'v2: Turns on bedroom lights on motion when dark (lux below bedroom_lux_on_threshold).
     Between 22:00 and 05:30 uses a dim red nightlight (10%, won''t disrupt sleep)
     instead of the full Natural Light scene; 05:30 hands off to early-morning/wake
@@ -181,7 +181,53 @@
     on — the old in-run wait_for_trigger missed lights turned on by the in_bed wake
     automation, buttons, or the Hue app (root cause of the 16h lights-on incident
     on 2026-06-04). No Nightlight scene exists in HA; if one is created later, swap
-    the red light.turn_on for it.'
+    the red light.turn_on for it.
+
+
+    v3 (2026-08-23, from the automation clash audit): added the wake-path stand-down
+    condition. WHY. This automation and ''Update in_bed when motion is detected''
+    share an identical trigger (binary_sensor.hue_motion_sensor_2_motion off to on)
+    and co-fire on EVERY bedroom motion event — confirmed from traces, which show
+    both starting on the same timestamp to the microsecond on all five stored runs.
+    On a dark morning wake both used to pass their conditions and both wrote the bedroom
+    lights, to two DIFFERENT scenes: this one applies scene.bedroom_natural_light_2
+    (transition 2) while the wake automation applies scene.bedroom_energize (transition
+    3) and then re-applies it after a 4-second delay. Energize did win, but only because
+    that delayed re-apply landed last. The room was ending up correct by timing accident
+    rather than by design, and nothing guaranteed the ordering.
+
+
+    THE CONDITION IS THE EXACT COMPLEMENT of what the wake automation requires (in_bed
+    on AND group.morning on), so this one stands down if and only if the wake path
+    is actually going to run. One owner per motion event.
+
+
+    WHY NOT THE TWO SIMPLER GATES, both considered and rejected:
+
+
+    1. ''in_bed off'' alone would BREAK THE RED NIGHTLIGHT. She is in bed at 3am,
+    which is exactly when the nightlight branch needs to fire for a bathroom trip.
+    This is the gate that looks obvious and is wrong.
+
+
+    2. ''group.morning off'' alone would kill the Natural Light branch for all motion
+    between 05:30 and 12:00, including walking back into a dark bedroom at 10am when
+    in_bed is already off. The wake automation would not fire then either (it needs
+    in_bed on), so nothing would light the room.
+
+
+    WINDOW ARITHMETIC, checked 2026-08-23 so the nightlight is provably safe: binary_sensor.early_morning
+    covers 05:30-08:00 and binary_sensor.morning covers 08:00-12:00, so group.morning
+    is 05:30-12:00. The nightlight branch is 22:00-05:30. The two windows are exactly
+    adjacent and never overlap, so this condition can never suppress the nightlight
+    no matter what in_bed reads.
+
+
+    SELF-LIMITING AFTER THE WAKE. The wake automation clears in_bed as its first action,
+    so a second motion event moments later would pass this condition again. In practice
+    scene.bedroom_energize has already lit the room well above the 8 lux threshold
+    by then, so the lux condition keeps this automation out. The lux gate is the real
+    backstop, not the in_bed one.'
   triggers:
   - trigger: state
     entity_id: binary_sensor.hue_motion_sensor_2_motion
@@ -191,6 +237,21 @@
   - condition: numeric_state
     entity_id: sensor.hue_motion_sensor_2_light_level
     below: input_number.bedroom_lux_on_threshold
+  - alias: Stand down when the wake path owns this motion event
+    condition: not
+    conditions:
+    - condition: and
+      conditions:
+      - condition: state
+        entity_id: input_boolean.in_bed
+        state: 'on'
+      - condition: state
+        entity_id: group.morning
+        state: 'on'
+    note: 'Exact complement of the conditions on ''Update in_bed when motion is detected'',
+      which shares this trigger and applies scene.bedroom_energize. Cannot affect
+      the 22:00-05:30 nightlight branch: group.morning is 05:30-12:00, so the two
+      windows never overlap.'
   actions:
   - choose:
     - alias: Late night (22:00–05:30) — dim red nightlight
@@ -4891,14 +4952,45 @@
       entity_id: switch.vanity_plug
   mode: single
 - id: '1786409326281'
-  alias: Laundry — Washer Cycle Finished (v2)
-  description: 'v2 (2026-08-12): fixes a v1 bug where the anti-spam duration check
-    only measured the FINAL on-burst before the washer went idle, not the whole cycle.
-    trigger.from_state.last_changed only reflects the start of the most recent on-segment,
-    so a Quick Wash whose last pre-idle segment was short (~8m50s here) fell under
-    the 10-min floor and the finished push silently never fired, even though the full
-    cycle ran ~37 min. Confirmed Aug 11 2026 ~8:52pm ET - caught only because Lara
-    asked why she hadn''t gotten a push. See [[project_washer_alert_missed_antispam_bug]].
+  alias: Laundry — Washer Cycle Finished (v3)
+  description: 'v3 (2026-08-23): guards the restart gap that v2 documented but did
+    not handle. CONFIRMED LIVE 2026-08-23: HA restarted at 12:44:41 mid-cycle for
+    an update install; input_boolean.laundry_washer_active_session has `initial: false`
+    set, which DISABLES last-state restore and forces it off on every restart. The
+    flag came back off at 12:44:39, so the next genuine off->on at 12:45:49 was read
+    as a NEW session and re-stamped input_datetime.laundry_washer_started_at. That
+    shortens the apparent session and can make the 10-min anti-spam floor SUPPRESS
+    a real finish push. Silent failure. That single load carried three start stamps:
+    11:51:01, 12:38:42 (after a false finish), 12:45:49 (after the restart).
+
+
+    v3 adds a ''recovered_running'' trigger on binary_sensor.washer_running going
+    from unknown/unavailable straight to on. That is the signature of HA restarting
+    while the washer was already running. It re-opens the session flag WITHOUT touching
+    laundry_washer_started_at, which restores correctly on its own because input_datetime
+    has no `initial` set. On 2026-08-23 this transition happened at 12:44:59, fifty
+    seconds before the bad re-stamp, so it closes the window with no delay and no
+    mode change. The existing ''started'' trigger cannot catch it because it requires
+    from: off.
+
+
+    KNOWN REMAINING GAP: if HA restarts during a brief mid-cycle dip while the sensor
+    reads off, the sensor recovers unknown->off, the flag stays off, and the next
+    off->on still re-stamps. The washer-threshold fix (ON boundary lowered from 30
+    W to 15 W so fills no longer read as off) shrinks that window substantially but
+    does not eliminate it. The complete fix is to remove `initial` from the helper,
+    which requires delete-and-recreate.
+
+
+    --- v2 (2026-08-12) ---
+
+    Fixes a v1 bug where the anti-spam duration check only measured the FINAL on-burst
+    before the washer went idle, not the whole cycle. trigger.from_state.last_changed
+    only reflects the start of the most recent on-segment, so a Quick Wash whose last
+    pre-idle segment was short (~8m50s here) fell under the 10-min floor and the finished
+    push silently never fired, even though the full cycle ran ~37 min. Confirmed Aug
+    11 2026 ~8:52pm ET - caught only because Lara asked why she hadn''t gotten a push.
+    See [[project_washer_alert_missed_antispam_bug]].
 
 
     v2 tracks session start explicitly via input_datetime.laundry_washer_started_at,
@@ -4908,9 +5000,10 @@
 
 
     The 5-min trigger debounce and 10-min anti-spam floor themselves are unchanged
-    - still validated by the measured washer profile (peak 148.7W, longest false sub-10W
-    dip only 10s; see [[project_laundry_cycle_alerts]]). The bug was in what the floor
-    was measured against, not the floor value.
+    - still validated by the measured washer profile. NOTE: the ''longest false sub-10W
+    dip only 10s'' claim in the v2 notes was superseded 2026-08-23 - the real risk
+    was never dip length, it was that an active FILL draws ~17W and read as off under
+    the old 30W ON threshold. See project memory.
 
 
     Session-active helper resets on every ''finished'' trigger regardless of whether
@@ -4926,24 +5019,26 @@
 
     The plug reached HA by being added via its IP address, NOT via the discovery card
     - its discovery beacon falsely advertises that it requires authentication. See
-    project memory before ever re-adding it.
-
-
-    Known gap, not yet guarded against: if HA restarts mid-cycle and misses the off->on
-    or on->off event, input_boolean.laundry_washer_active_session can be left stuck
-    in the wrong state, which would delay or skew the next session''s start stamp.'
+    project memory before ever re-adding it.'
   triggers:
   - entity_id: binary_sensor.washer_running
     from: 'off'
     id: started
-    platform: state
     to: 'on'
+    trigger: state
+  - entity_id: binary_sensor.washer_running
+    from:
+    - unknown
+    - unavailable
+    id: recovered_running
+    to: 'on'
+    trigger: state
   - entity_id: binary_sensor.washer_running
     for: 00:05:00
     from: 'on'
     id: finished
-    platform: state
     to: 'off'
+    trigger: state
   conditions: []
   actions:
   - choose:
@@ -4963,6 +5058,16 @@
           entity_id: input_datetime.laundry_washer_started_at
       - action: input_boolean.turn_on
         alias: Mark session active
+        target:
+          entity_id: input_boolean.laundry_washer_active_session
+    - alias: HA restarted mid-cycle - re-open the session flag, do NOT re-stamp the
+        start time
+      conditions:
+      - condition: trigger
+        id: recovered_running
+      sequence:
+      - action: input_boolean.turn_on
+        alias: Washer was already running when HA came back - session is still open
         target:
           entity_id: input_boolean.laundry_washer_active_session
     - alias: Cycle finished - evaluate total run time and notify
@@ -5981,23 +6086,77 @@
           title: ✅ AC back online
   mode: single
 - id: '1786621047539'
-  alias: Set WFH Today Flag from Wake-Up Calendar
-  description: Reads the description field on the daily 'Wake up' event on calendar.master_calendar
-    ('WFH' vs 'office') and sets input_boolean.wfh_today accordingly. Feeds the WFH-specific
-    AC automations (Bedroom AC WFH Away Preset, Living Room AC WFH Comfort Hold) so
-    they know whether today is a stay-home workday. Fires at the wake event's start
-    time (typically 6-7am), which is before the 8am AC automations check the flag.
+  alias: Set WFH Today Flag from Wake-Up Calendar (v2)
+  description: 'Reads the description field on the daily Wake up event on calendar.master_calendar
+    (''WFH'' vs ''office'') and sets input_boolean.wfh_today accordingly. Feeds the
+    WFH-specific AC automations (Bedroom AC WFH Warm Setback 78F, Living Room AC WFH
+    Comfort Hold 74F) so they know whether today is a stay-home workday. Fires at
+    the wake event''s start time (typically 6-7am), which is before the 8am AC automations
+    check the flag.
+
+
+    v2 (2026-08-23, from the automation clash audit). TWO FIXES.
+
+
+    1. THE SUMMARY TEST WAS EXACT EQUALITY AND IT WAS BREAKING REAL DAYS. v1 used
+    `summary == ''Wake up''`. Lara''s schedule is generated by a script that prepopulates
+    the week with ''Wake up'' / description ''office'', and she edits the ones that
+    differ - but she also retitles some, and the calendar for the week of 2026-08-24
+    contained ''Wake up late shift'' on Wednesday 08-26 with description ''WFH''.
+    Exact equality does not match that string, so on her ONE WFH day of that week
+    this automation would never have run and the flag would never have been set. Verified
+    by pulling the actual calendar, not inferred.
+
+
+    Every other consumer of this same event already used a case-insensitive substring
+    test: Sonos Wake Alarm, Sonos Wake Alarm Speaker Failsafe, Bedroom AC Gradual
+    Warm Before Alarm, Wake Trigger Mark Alarm Armed, and Commute Morning announcer
+    all use `''wake up'' in (summary | lower | trim)`. This automation was the sole
+    outlier out of six. v2 adopts the same test, so the whole family now agrees on
+    what counts as a wake event and a retitled event no longer silently drops just
+    this one consumer.
+
+
+    2. ADDED A DEFAULT BRANCH. v1 was a choose with exactly two branches and no default,
+    so a description that contained neither ''wfh'' nor ''office'' - blank, misspelled,
+    or reworded - meant NEITHER branch ran and the flag silently kept the previous
+    day''s value. The 04:00 daily reset (automation wfh_today_daily_reset_4am, built
+    the same day) makes the end state safe by defaulting the flag to off, but it cannot
+    tell Lara that a calendar entry was malformed. The default branch now pushes a
+    notification naming the actual summary and description, so a bad entry surfaces
+    the morning it happens rather than being absorbed.
+
+
+    WHY SUBSTRING AND NOT A STRICTER TEST. ''wake up'' as a substring is deliberately
+    loose so retitles like ''Wake up late shift'' or ''Wake up - early call'' keep
+    working without another edit here. The risk of a false match is low: the only
+    events on this calendar are her own, and no non-wake event has contained that
+    phrase.
+
+
+    BRANCH ORDER IS LOAD-BEARING. ''wfh'' is tested BEFORE ''office''. If a description
+    ends up containing both words (likely when she edits the prepopulated ''office''
+    by appending rather than replacing), WFH wins. That is the correct direction for
+    her workflow: the edit she made by hand beats the word the script put there.
+
+
+    NOT vacation-gated: this only sets a flag and both consumers independently require
+    binary_sensor.workday on.'
   triggers:
   - entity_id: calendar.master_calendar
     event: start
     id: wake_event
-    platform: calendar
+    trigger: calendar
   conditions:
   - condition: template
-    value_template: '{{ trigger.calendar_event.summary == ''Wake up'' }}'
+    value_template: '{{ ''wake up'' in (trigger.calendar_event.summary | default('''')
+      | lower | trim) }}'
+    alias: Any wake event, however it is retitled - matches the test the other five
+      consumers of this event already use
   actions:
   - choose:
-    - conditions:
+    - alias: WFH - tested first so a hand-edit beats the script's prepopulated 'office'
+      conditions:
       - condition: template
         value_template: '{{ ''wfh'' in (trigger.calendar_event.description | default('''')
           | lower) }}'
@@ -6008,9 +6167,11 @@
       - action: logbook.log
         data:
           entity_id: input_boolean.wfh_today
-          message: Set ON — Wake up event description says WFH.
+          message: Set ON — "{{ trigger.calendar_event.summary }}" description says
+            WFH.
           name: WFH Today
-    - conditions:
+    - alias: Office
+      conditions:
       - condition: template
         value_template: '{{ ''office'' in (trigger.calendar_event.description | default('''')
           | lower) }}'
@@ -6021,11 +6182,29 @@
       - action: logbook.log
         data:
           entity_id: input_boolean.wfh_today
-          message: Set OFF — Wake up event description says office.
+          message: Set OFF — "{{ trigger.calendar_event.summary }}" description says
+            office.
           name: WFH Today
+    default:
+    - alias: Description matched neither word - say so instead of silently keeping
+        yesterday's value
+      action: notify.mobile_app_iphone
+      data:
+        title: ⚠️ WFH flag not set
+        message: Today's wake event "{{ trigger.calendar_event.summary }}" has a description
+          of "{{ trigger.calendar_event.description | default('') | trim or '(blank)'
+          }}", which says neither WFH nor office. The flag stays OFF, so the house
+          will treat today as an office day. Edit the calendar entry if that is wrong.
+    - action: logbook.log
+      data:
+        entity_id: input_boolean.wfh_today
+        message: NOT SET — "{{ trigger.calendar_event.summary }}" description "{{
+          trigger.calendar_event.description | default('') | trim or '(blank)' }}"
+          matched neither WFH nor office. Flag left at its 4am default of OFF.
+        name: WFH Today
   mode: single
 - id: '1786621049944'
-  alias: Bedroom AC — WFH Warm Setback 78F (v2)
+  alias: Bedroom AC — WFH Warm Setback 78F (v3)
   description: 'At 8am on a WFH workday, parks climate.bedroom_ac at cool / preset
     none / 78F so it idles all day but still catches a real heat spike.
 
@@ -6043,7 +6222,32 @@
     eco has a baked-in ~73F reference that overrides an explicit target) plus set_temperature
     78. 78 chosen with Lara: high enough to idle, low enough that the bedtime pull-down
     to 65 isn''t a long expensive recovery. Short delays between calls because these
-    Midea entities clobber rapid sequential commands.'
+    Midea entities clobber rapid sequential commands.
+
+
+    v3 (2026-08-23, from the automation clash audit): added the vanity-window guard.
+    WHY. The office-morning vanity window (bedroom_ac_office_morning_vanity_window_v1)
+    opens on first bedroom motion between 05:00 and 09:00 on a workday and holds the
+    dial at the vanity target (default 73F) while she does her makeup at the vanity,
+    which sits directly beside the unit. On a WFH day she is home and it is a workday,
+    so that window is open at 08:00 and this automation was overwriting 73 with 78
+    without knowing it. Worse, it was not recoverable: the vanity window''s own close
+    leg only hands back to 76 when the dial reads BELOW 76, so at 78 it declines to
+    write and the vanity hold was cancelled silently, every WFH day. ''Bedroom AC
+    - Daytime Release to 76 (v2)'' already carries exactly this guard, with the note
+    ''the vanity window owns the dial while it is open''; this automation is the one
+    that missed it. The window closes on departure, on 30 minutes of stillness, or
+    at its 09:30 backstop, and this automation does not re-fire after that, so a WFH
+    morning now sits at the vanity number until the window closes and then at 76 via
+    the daytime release. That is the intended outcome: on a WFH day she is in the
+    room, so the vanity number should win over the idle-all-day number.
+
+
+    STILL OPEN after v3, deliberately not fixed here: this automation has no in_bed
+    gate, so on a WFH day where she sleeps past 08:00 it runs against a sleeping house
+    and briefly fights the Night Setpoint Manager''s in-bed climb (78 against 65-68).
+    The night manager recomputes every 15 minutes and wins, so the exposure is bounded
+    to one tick. Tracked as finding 1 gap B in _reports/automation-clash-audit-2026-08-23.md.'
   triggers:
   - trigger: time
     at: 08:00:00
@@ -6060,6 +6264,13 @@
   - condition: state
     entity_id: person.lara_wiz
     state: home
+  - condition: state
+    entity_id: input_boolean.bedroom_vanity_window
+    state: 'off'
+    note: The vanity window owns the bedroom dial while it is open. Without this,
+      08:00 on a WFH day overwrites the vanity target with 78, and the window's close
+      leg (which only writes 76 when the dial is below 76) can never undo it. Mirrors
+      the same guard on Bedroom AC - Daytime Release to 76 (v2).
   - condition: not
     conditions:
     - condition: state
@@ -7655,4 +7866,79 @@
         target:
           entity_id: media_player.living_room_4k_2
   mode: single
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+- id: wfh_today_daily_reset_4am
+  alias: WFH Today — Daily Reset at 4am
+  description: 'Clears input_boolean.wfh_today every morning at 04:00 so each day
+    starts as ''not WFH'' and only that morning''s Wake up calendar event can turn
+    it on.
+
+
+    WHY (2026-08-23, from the automation clash audit). The only thing that writes
+    this flag is ''Set WFH Today Flag from Wake-Up Calendar'', which is a choose with
+    exactly two branches: description contains ''wfh'' turns it on, description contains
+    ''office'' turns it off. There is no default branch. So if a Wake up event has
+    a blank description, a typo, or wording that is neither word, NEITHER branch runs
+    and the flag silently keeps the previous day''s value. Weekends have no Wake up
+    event at all, so the flag simply persists from Friday through Monday morning.
+    Observed live: it sat on continuously from Fri 2026-08-21 06:30 through Sun 2026-08-23.
+
+
+    This converts the flag from ''sticky until contradicted'' to ''default off, opt
+    in daily'', which is the same model Health Tags: Daily Reset at 4am already uses
+    for the medication flags.
+
+
+    WHY 04:00 AND NOT MIDNIGHT. It has to land after any late-night activity and before
+    the wake event that sets the flag for the real day. Recorded wake times (input_boolean.in_bed
+    going on to off) over 2026-08-13 to 2026-08-23 ranged 05:50 to 07:59, so 04:00
+    clears with at least 110 minutes of margin ahead of the earliest observed wake.
+    It also matches the existing 04:00 reset slot rather than inventing a new one.
+
+
+    WHAT THIS REPLACES. Lara''s first instinct was to clear the flag when binary_sensor.workday
+    goes off. That works (the workday sensor flips cleanly at exactly 00:00:00 local,
+    verified from the recorder for 2026-08-15, 08-17 and 08-22) and it fixes the weekend,
+    but it cannot fire between two consecutive workdays, so it would not catch a Thursday-WFH-then-Friday-office
+    day whose Wake up description was malformed. The daily reset covers both, and
+    also survives the wake event not firing at all.
+
+
+    DELIBERATELY NOT VACATION-GATED. This only clears a flag; it takes no comfort
+    action and sends no notification, so house style section 8 does not apply. Leaving
+    it ungated means the flag is also correct on the first day back from a trip.
+
+
+    CONSUMERS of input_boolean.wfh_today, checked 2026-08-23: ''Bedroom AC - WFH Warm
+    Setback 78F (v3)'' and ''Living Room AC - WFH Comfort Hold 74F (v2)'', both of
+    which read it at 08:00 and both of which also require binary_sensor.workday on.
+    Nothing else reads it.'
+  triggers:
+  - trigger: time
+    at: 04:00:00
+    id: daily_reset
+  conditions: []
+  actions:
+  - alias: Clear the flag, and log it only when it was actually left on, so a stuck
+      flag stays visible
+    if:
+    - condition: state
+      entity_id: input_boolean.wfh_today
+      state: 'on'
+    then:
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.wfh_today
+    - action: logbook.log
+      data:
+        name: WFH Today
+        entity_id: input_boolean.wfh_today
+        message: Reset to OFF for the new day. It was left ON overnight, which is
+          expected after a WFH day or a weekend. This morning's Wake up event will
+          set it again if today is WFH.
+    else:
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.wfh_today
+      note: Already off. Asserting it is a no-op and keeps the end state unconditional.
+  mode: single
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
