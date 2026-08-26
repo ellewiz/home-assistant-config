@@ -622,17 +622,31 @@
     an empty house / the sitter; the re-enable + AL housekeeping deliberately stays
     unconditional. Companion: ''TV Event — Nightly Reconcile'' catches the stranded-off
     case where a calendar.tv event is deleted mid-event and this end trigger never
-    fires.'
+    fires. 2026-08-26: added an input_boolean.in_bed gate to the sonos_say step, alongside
+    the existing vacation gate. Found in a sweep of every audible automation in the
+    config. This trigger is a calendar event END, so a TV event that runs long - a
+    game going to overtime, a late film - fires it after she has already gone to bed,
+    and the living room Arc then says ''Show''s over. Good night!'' at 0.65 to a person
+    who is asleep. House rule agreed the same day: an automation speaks while she
+    is in bed ONLY if being awake changes what happens next. This one is pure convenience,
+    so it now stays quiet. THE GATE IS ON THE ANNOUNCEMENT STEP ONLY - graceful_tv_exit,
+    the Adaptive Lighting resume and the automation re-enables below it remain unconditional,
+    exactly as the 2026-07-13 note already insisted, because skipping those would
+    strand the living room in Movie-scene state overnight.'
   triggers:
   - entity_id: calendar.tv
     event: end
-    platform: calendar
+    trigger: calendar
   actions:
-  - alias: 'Goodnight announcement — only when someone''s home to hear it (2026-07-13:
-      vacation gate; housekeeping below stays unconditional)'
+  - alias: Goodnight announcement - only when someone's home to hear it AND not already
+      in bed (2026-07-13 vacation gate; 2026-08-26 in_bed gate). Everything below
+      this stays unconditional housekeeping.
     if:
     - condition: state
       entity_id: calendar.vacation
+      state: 'off'
+    - condition: state
+      entity_id: input_boolean.in_bed
       state: 'off'
     then:
     - action: script.sonos_say
@@ -3136,48 +3150,109 @@
           interruption-level: active
 - id: '1782125200879'
   alias: Sonos Wake Alarm — in_bed Fallback
-  description: 'Safety net for the Sonos Wake Alarm, which only proceeds if input_boolean.in_bed
-    is on at trigger time. in_bed is normally set by a phone Shortcuts/companion-app
-    automation when Soundcore earbuds connect; if the phone misses (e.g. Low Power
-    Mode in the bedtime window, as on 2026-06-21 to 22), in_bed stays off and the
-    alarm skips. At 03:30 on a workday morning, if in_bed is still off while Lara
-    is home and not on vacation, this turns it on so the alarm runs and pushes a heads-up.
-    Moved from a -25min calendar offset (~6:35am) to a fixed 03:30 clock trigger on
-    2026-06-24: the old timing force-set in_bed on even when Lara had woken early
-    and gone downstairs, so the alarm fired at 7am while she was already up. 03:30
-    is reliably mid-sleep, so in_bed=off then genuinely means a missed phone trigger,
-    and with her asleep and the lights already off it cannot wrongly trip bedroom_lights_off_motion_clear_bright_in_bed.
-    The old calendar_event ''wake up'' template condition was dropped (a clock trigger
-    has no calendar event); binary_sensor.workday already gates it to wake-alarm days.'
+  description: 'Safety net for input_boolean.in_bed, normally set by a phone Shortcuts/companion-app
+    automation when the Soundcore earbuds connect. If the phone misses (e.g. Low Power
+    Mode in the bedtime window, as on 2026-06-21 to 22), in_bed stays off: the Sonos
+    Wake Alarm skips AND the whole sleep_wake_metrics package captures nothing for
+    the night. At 03:30, if in_bed is still off while Lara is home, not on vacation,
+    and the bedroom PIR shows she actually went to the bedroom, this turns it on and
+    pushes a heads-up. Moved from a -25min calendar offset (~6:35am) to a fixed 03:30
+    clock trigger on 2026-06-24: the old timing force-set in_bed on even when she
+    had woken early and gone downstairs, so the alarm fired at 7am while she was already
+    up. 03:30 is reliably mid-sleep on a work night, and with her asleep and the lights
+    already off it cannot wrongly trip bedroom_lights_off_motion_clear_bright_in_bed.
+
+
+    CHANGED 2026-08-26, two changes that must be understood together.
+
+
+    (1) WORKDAY GATE REMOVED. It previously required binary_sensor.workday on, so
+    a missed phone trigger was caught on work nights and caught by NOTHING on weekends,
+    holidays or PTO. PTO blocks live in the Workday integration''s add_holidays, so
+    a PTO week runs 5 straight nights with no net. There is no alarm to protect on
+    a day off, but the sleep metrics still need in_bed to bound the night.
+
+
+    (2) BEDROOM-PIR CONDITION ADDED, and it is load-bearing. Removing the workday
+    gate without it would force in_bed on during COUCH nights, when she is genuinely
+    not in the bedroom, fabricating a bedroom night out of an empty room. Per project
+    memory lr-sensing, the validated couch-night classifier is the bedroom PIR, NOT
+    living_room_presence: that sensor cannot hold a still person (79 state changes
+    and only 157 of ~360 minutes registered on a proven all-night couch night), so
+    its transitions are usable and its magnitude is NOT. Absence of bedroom motion
+    is the unambiguous couch signal: on the Aug 15-16 couch night binary_sensor.hue_motion_sensor_2_motion
+    recorded ZERO motion across 12 hours. The template therefore requires bedroom
+    motion since 21:00 the previous evening. This also closes a pre-existing latent
+    bug on workday couch nights, where the old version would have forced in_bed on
+    with no bedroom check at all.
+
+
+    CAVEAT on the PIR condition: it reads last_changed, which Home Assistant re-stamps
+    to start-up time on every restart. An HA restart between 21:00 and 03:30 would
+    therefore make the guard pass even on a couch night. Narrow, and still strictly
+    better than the previous unconditional behaviour, but if overnight restarts become
+    common, replace this with an input_datetime stamped on real bedroom motion (the
+    robust pattern in the HA best-practices automation guide).
+
+
+    SIDE EFFECT, NOW MARKED (fixed later the same day, 2026-08-26): this automation
+    stamps input_datetime.bedroom_in_bed_synthetic_at when it fires, and sleep_wake_metrics.yaml
+    compares that against bedroom_night_start. Couch doze now reads "not measurable"
+    instead of a fabricated Yes, couch minutes read n/a and record 0, and the summary
+    sensor exposes in_bed_synthetic so the daily report can disclose the partial temp
+    window. Before that fix, downstream metrics read the 03:30 stamp as real. Verified
+    on 2026-08-19, the last actual firing: that day''s report claimed couch doze Yes,
+    ''Moved to actual bed 3:30 AM'' and a 232-minute couch phase, all artifacts of
+    this automation rather than a real transfer; and the Overnight Temperature block
+    presented the 03:30-to-06:01 slice as the whole 6h23m night, labelling 03:30 ''At
+    bedtime''. HISTORICAL NIGHTS ARE STILL WRONG ON DISK: the marker only applies
+    from 2026-08-26 forward. Jul 27, Aug 5 and Aug 19 2026 reports each carry a fabricated
+    3:30 AM transfer and a truncated temp window, and those three feed the July/August
+    monthlies and the crossfactor report. See project memory sleep-note-flag-gate.'
   triggers:
-  - trigger: time
-    at: 03:30:00
+  - at: 03:30:00
     id: wake_fallback
+    note: Fixed clock, not a calendar offset. 03:30 is reliably mid-sleep on a work
+      night.
+    trigger: time
   conditions:
   - condition: state
     entity_id: input_boolean.in_bed
     state: 'off'
   - condition: state
-    entity_id: binary_sensor.workday
-    state: 'on'
+    entity_id: person.lara_wiz
+    state: home
   - condition: state
     entity_id: calendar.vacation
     state: 'off'
-  - condition: state
-    entity_id: person.lara_wiz
-    state: home
+  - condition: template
+    note: 'Couch-night guard: she must have actually been in the bedroom since 21:00
+      yesterday. Bedroom PIR is the validated couch classifier, not living_room_presence.'
+    value_template: '{% set m = states.binary_sensor.hue_motion_sensor_2_motion %}{{
+      m is not none and as_timestamp(m.last_changed, 0) > (as_timestamp(today_at(''21:00''))
+      - 86400) }}'
   actions:
-  - alias: Force in_bed on so the alarm runs
-    action: input_boolean.turn_on
+  - action: input_boolean.turn_on
+    note: Bounds the night so the alarm runs and sleep_wake_metrics captures.
     target:
       entity_id: input_boolean.in_bed
-  - alias: Tell Lara the phone trigger was missed
-    action: notify.mobile_app_iphone
+  - action: input_datetime.set_datetime
+    target:
+      entity_id: input_datetime.bedroom_in_bed_synthetic_at
     data:
+      timestamp: '{{ now().timestamp() }}'
+    note: Marks this in_bed as SYNTHETIC. sleep_wake_metrics.yaml compares this stamp
+      against input_datetime.bedroom_night_start (same 03:30, within 120s) and discloses
+      the night instead of reporting a fabricated couch doze or a truncated temp window
+      as a full one.
+  - action: notify.mobile_app_iphone
+    data:
+      message: in_bed was still off at 03:30 but the bedroom sensor says you are in
+        there, so I set it on. Your phone's earbud to in_bed trigger likely missed
+        (check Low Power Mode / Shortcuts). Tonight's report will show couch doze
+        as 'not measurable' and flag the temp window as partial - that is expected,
+        not a new fault.
       title: Alarm fallback fired
-      message: in_bed was still off this morning, so I set it on so your wake alarm
-        runs. Your phone's earbud→in_bed trigger likely missed (check Low Power Mode
-        / Shortcuts).
   mode: single
 - id: meds_guanfacine_tv_nudge
   alias: 'Meds — Guanfacine: TV nudge until logged'
@@ -7984,7 +8059,7 @@
       note: Already off. Asserting it is a no-op and keeps the end state unconditional.
   mode: single
 - id: alert_ting_hazard
-  alias: 'Alert: Ting Fire Hazard / Frozen Pipe (v2)'
+  alias: 'Alert: Ting Fire Hazard / Frozen Pipe (v3)'
   description: 'Sole consumer of the whisker_ting hazard sensors (device 710B782E7).
     Detect-and-clear pairs, modelled on ''Alert: AC Offline / Restored''.
 
@@ -8023,6 +8098,40 @@
     demote that branch to interruption-level active rather than deleting it.
 
 
+    SONOS BROADCAST ADDED 2026-08-26 (v3). Same reasoning as the voltage alert: she
+    was in the shower during the 2026-08-24 outage and a phone push reaches nobody
+    in a shower. script.sonos_broadcast at volume 0.85 (louder than the voltage alert''s
+    0.7), fired after the push, on the fire and electrical-fire branches ONLY.
+
+
+    DELIBERATELY NOT GATED ON input_boolean.in_bed. The voltage alert IS gated that
+    way, because a surge is property risk she cannot act on while asleep and a false
+    3 a.m. announcement costs more than it gains. This automation is the opposite
+    case: being asleep is precisely when a fire alert has to reach her. Do not copy
+    the in_bed gate across from the voltage automation. Same principle as the existing
+    no-vacation-gate rule above.
+
+
+    UNVERIFIED FIRE HAZARD DOES NOT SPEAK, and that is consistent with the 2026-08-25
+    decision to demote it from critical. It is Ting''s pre-review signal, the branch
+    most likely to be nothing; waking the house with a voice announcement for an unconfirmed
+    arc is the same trade she already rejected for the critical push. Frozen pipe
+    does not speak either - it is a slow-moving risk with hours of headroom.
+
+
+    THE PLAYER LIST IS A TEMPLATE, NOT A HARDCODED LIST. It resolves integration_entities(''sonos'')
+    at run time and rejects unavailable/unknown, because media_player.unjoin HARD
+    FAILS on a bad entity and aborts the calling automation - exactly how a HomePod
+    killed ''Heat the car'' outright for six days in Aug 2026 (see the sonos_broadcast
+    script header). The Sonos Move flaps to unavailable regularly and would be that
+    entity. On a fire alert an aborted announcement is not a cosmetic bug. Do not
+    ''clean this up'' into a fixed list.
+
+
+    The bathroom Era 100 is the speaker that covers the shower window; the HomePod
+    Mini that used to do that was pulled in Jun 2026 when pyatv RAOP TTS broke.
+
+
     mode queued (max 10) rather than single: fire and electrical-fire can plausibly
     trip in the same second, and single would silently drop the second.
 
@@ -8032,8 +8141,10 @@
 
 
     NOT LIVE-FIRE TESTED. The push path was verified 2026-08-24 with a marked test
-    notification. The trigger wiring has never been exercised, because forcing a fire-safety
-    sensor to read ''on'' was deliberately not done.
+    notification. The Sonos path added in v3 is unproven from here, though script.sonos_broadcast
+    itself runs daily via the commute announcer. The trigger wiring has never been
+    exercised, because forcing a fire-safety sensor to read ''on'' was deliberately
+    not done.
 
 
     2026-08-25 (rebuild): v1 was created 2026-08-24 and was absent from HA''s loaded
@@ -8114,6 +8225,18 @@
           message: 'Ting detected a fire hazard. {{ states(''sensor.710b782e7_hazard_message'')
             }} (status: {{ states(''sensor.710b782e7_hazard_status'') }})'
           title: "\U0001F6A8 TING: FIRE HAZARD"
+      - alias: Speak it on every available Sonos - NOT gated on in_bed, this one has
+          to wake her
+        action: script.sonos_broadcast
+        data:
+          players: '{{ integration_entities(''sonos'') | select(''match'',''media_player'')
+            | reject(''is_state'',''unavailable'') | reject(''is_state'',''unknown'')
+            | list }}'
+          volume: 0.85
+          restore: true
+          ungroup: true
+          message: Attention. Ting has detected a fire hazard. Repeat. Ting has detected
+            a fire hazard. Check the Ting app now.
     - alias: Confirmed electrical fire hazard - critical, breaks through Do Not Disturb
       conditions:
       - condition: trigger
@@ -8133,6 +8256,18 @@
             }}, level {{ states(''sensor.710b782e7_electrical_fire_hazard_level'')
             }})'
           title: "\U0001F6A8 TING: ELECTRICAL FIRE HAZARD"
+      - alias: Speak it on every available Sonos - NOT gated on in_bed, this one has
+          to wake her
+        action: script.sonos_broadcast
+        data:
+          players: '{{ integration_entities(''sonos'') | select(''match'',''media_player'')
+            | reject(''is_state'',''unavailable'') | reject(''is_state'',''unknown'')
+            | list }}'
+          volume: 0.85
+          restore: true
+          ungroup: true
+          message: Attention. Ting has detected an electrical fire hazard. Repeat.
+            An electrical fire hazard. Check the Ting app now.
     - alias: Unverified fire hazard - time-sensitive, NOT critical; titled UNVERIFIED
         so it is distinguishable at a glance
       conditions:
@@ -8326,4 +8461,243 @@
           it against {{ states('sensor.commute_leave_by') }}.
         title: "\U0001F501 Commute announcer resumed"
   mode: single
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+- id: alert_ting_voltage
+  alias: 'Alert: Ting Voltage Anomaly (v3)'
+  description: "Sole consumer of sensor.710b782e7_current_voltage. Created 2026-08-26,
+    the same evening the SignalR stream finally came alive on whisker_ting v1.1.2.\n\nWHY
+    THIS EXISTS: on 2026-08-24 Ting's own app reported a 134.8 V surge and nothing
+    in Home Assistant saw it. The KP115 plugs poll every 5-15 s and provably missed
+    it. This stream samples at roughly 2 Hz, so it is the first source in the house
+    fast enough to catch a real excursion. See [[project_power_outage_aug24_2026]].\n\nTHRESHOLDS
+    ARE PROVISIONAL — RETUNE AFTER A WEEK. They were set on ~18 minutes of live data
+    plus Ting's own rolling high/low, which is thin. Observed so far: service sits
+    very steady at 124.9-125.2 V, Ting's rolling high 125.6 V, rolling low 119.9 V.
+    Nominal here is ~125 V, not 120, so ANSI C84.1 Range A's 126 V upper bound would
+    false-alarm constantly and is deliberately NOT used.\n\n  surge         > 132
+    V, instant       time-sensitive\n  high          128-132 V for 2 min    active\n
+    \ sag           105-112 V for 2 min    active\n  severe sag    40-105 V for 10
+    s      time-sensitive\n  cleared       114-127 V for 5 min    active, latch-gated\n\nRanges
+    are deliberately DISJOINT so a single excursion produces one notification, not
+    two. A jump to 135 V fires surge only; it cannot also satisfy the 128-132 high
+    band.\n\nTHE LOWER BOUNDS ON THE SAG TRIGGERS ARE NOT DECORATION. 'above: 105'
+    and 'above: 40' stop a sensor glitch to 0 from being reported as a brownout. A
+    genuine total loss of power is not this automation's job — the Ting goes offline
+    and the WAN monitor and dead-man's switch cover it. See [[project_internet_wan_monitor]]
+    and [[project_core_deadmans_switch]].\n\nWHY THE input_boolean EXISTS: numeric_state
+    triggers can fire on the first reading after a restart, because there is no prior
+    value to have crossed from. Without a latch, the 'back to normal' branch would
+    push after every single HA restart, and this instance restarts often. The latch
+    is set by every alerting branch and is the condition on the clear branch, so a
+    clear can only follow an alert that actually happened. Do not remove it to 'simplify'.\n\nESCALATION:
+    deliberately NOT critical, anywhere. Unlike the fire hazards in 'Alert: Ting Fire
+    Hazard / Frozen Pipe (v2)', a voltage excursion is a property-risk signal she
+    cannot act on at 3 a.m. Surge and severe sag are time-sensitive so they break
+    through an allowed Focus; the rest are ordinary pushes. If a real event ever proves
+    worth waking for, that is the evidence to promote it.\n\nSONOS BROADCAST ADDED
+    2026-08-26 (v2), at Lara's request: 'If I'm in the shower again and there's a
+    surge, I won't be able to see a phone alert.' That is the literal use case - on
+    2026-08-24 she was in the shower during the outage and noticed nothing. The two
+    TIME-SENSITIVE branches (surge, brownout) now also speak on every Sonos at volume
+    0.7 after the push; the two 2-minute sustained branches and the clear branch deliberately
+    do NOT, because they are informational and would turn the house into a PA system
+    over nothing.\n\nTHE PLAYER LIST IS A TEMPLATE, NOT A HARDCODED LIST, and that
+    is deliberate. It resolves integration_entities('sonos') at run time and rejects
+    unavailable/unknown. Two reasons: (1) media_player.unjoin HARD FAILS on a bad
+    entity and aborts the calling automation - exactly how a HomePod killed 'Heat
+    the car' outright for six days in Aug 2026, see the sonos_broadcast script header;
+    the Sonos Move flaps to unavailable regularly and would be that entity. (2) It
+    self-maintains - a new speaker is included with no edit, unlike the three hand-synced
+    player lists in the commute announcer. Do not 'clean this up' into a fixed list.\n\nSNAPSHOT/RESTORE
+    is the script's job, not this automation's: restore true and ungroup true mean
+    whatever was playing resumes afterwards, at its previous volume. 0.7 is the ANNOUNCEMENT
+    volume only and never becomes the music volume.\n\nIN-BED GATE ON THE BROADCAST
+    ONLY (v3, 2026-08-26). She was offered clock-based quiet hours and chose state-based
+    instead: do not announce while input_boolean.in_bed is on. That is the better
+    answer and it is worth understanding why. A clock says 'it is 3 a.m.'; in_bed
+    says 'she is asleep'. Her bedtime is virtual and moves (input_datetime.bedroom_virtual_bedtime,
+    currently 23:00 but it drifts), she has documented couch-sleep nights, and she
+    is sometimes awake at 3 a.m. anyway - a fixed window would be wrong in all three
+    cases. The gate is on the SONOS STEP ONLY. The phone push still fires on every
+    branch at every hour, in bed or not, so nothing is ever silently dropped: the
+    alert always lands, only the loudspeaker is conditional. If in_bed is ever unavailable
+    the condition is false and the house stays quiet, which is the safe failure direction
+    for a property-risk alert (it is NOT the safe direction for fire - see the fire
+    hazard automation, which is deliberately NOT gated this way).\n\nmode queued (max
+    10) rather than single: a sag can cross two bands within seconds and single would
+    silently drop the second.\n\nWARNING: renaming the Ting device breaks this automation
+    SILENTLY, because the entity_id embeds the 710b782e7 serial. Rename first, then
+    update this automation.\n\nNOT LIVE-FIRE TESTED. The Sonos path is also unproven
+    here, though script.sonos_broadcast itself is used daily by the commute announcer.
+    Nothing in this automation has ever been exercised, because manufacturing a voltage
+    excursion was obviously not done. The push path itself was verified 2026-08-24
+    on the hazard automation and uses the same service.\n\nTODO v2: (1) retune every
+    threshold once there are 7+ days of history, using the actual observed spread
+    rather than these placeholders. (2) A separate stale-feed alert — if the stream
+    dies the sensor goes unknown and this automation simply stops having opinions,
+    which returns her silently to the pre-2026-08-26 state. Deliberately NOT bundled
+    here: it is integration health, not voltage, and it needs its own latch to survive
+    restarts. (3) Consider whether current_voltage should stay in the recorder at
+    all — ~2 Hz is roughly 165k rows/day for one entity against a DB already at 1112
+    MiB, see [[reference_recorder_db_size_baseline]].\n"
+  triggers:
+  - above: 132
+    entity_id: sensor.710b782e7_current_voltage
+    id: surge
+    trigger: numeric_state
+  - above: 128
+    below: 132
+    entity_id: sensor.710b782e7_current_voltage
+    for: 00:02:00
+    id: high
+    trigger: numeric_state
+  - above: 105
+    below: 112
+    entity_id: sensor.710b782e7_current_voltage
+    for: 00:02:00
+    id: sag
+    trigger: numeric_state
+  - above: 40
+    below: 105
+    entity_id: sensor.710b782e7_current_voltage
+    for: 00:00:10
+    id: severe_sag
+    trigger: numeric_state
+  - above: 114
+    below: 127
+    entity_id: sensor.710b782e7_current_voltage
+    for: 00:05:00
+    id: cleared
+    trigger: numeric_state
+  actions:
+  - choose:
+    - alias: Surge - instant, no debounce, because catching the spike IS the point
+      conditions:
+      - condition: trigger
+        id: surge
+      sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.ting_voltage_excursion_active
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              interruption-level: time-sensitive
+            tag: ting_voltage_excursion
+          message: '{{ trigger.to_state.state | float(0) | round(1) }} V on the panel.
+            Rolling high {{ states(''sensor.710b782e7_voltage_high'') }} V. Check
+            anything sensitive that was plugged in.'
+          title: '⚡ TING: VOLTAGE SURGE'
+      - alias: Speak it on every available Sonos - but not if she is in bed
+        if:
+        - condition: state
+          entity_id: input_boolean.in_bed
+          state: 'off'
+        then:
+        - alias: Speak it on every available Sonos - the shower case, where a phone
+            push is useless
+          action: script.sonos_broadcast
+          data:
+            players: '{{ integration_entities(''sonos'') | select(''match'',''media_player'')
+              | reject(''is_state'',''unavailable'') | reject(''is_state'',''unknown'')
+              | list }}'
+            volume: 0.7
+            restore: true
+            ungroup: true
+            message: Attention. A power surge has been detected. The panel is reading
+              {{ trigger.to_state.state | float(0) | round(0) }} volts. Check anything
+              sensitive that was plugged in.
+    - alias: Sustained high voltage - 2 min, ordinary push
+      conditions:
+      - condition: trigger
+        id: high
+      sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.ting_voltage_excursion_active
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              interruption-level: active
+            tag: ting_voltage_excursion
+          message: '{{ trigger.to_state.state | float(0) | round(1) }} V, sustained
+            over 2 minutes. Normal here is about 125 V.'
+          title: '⚠️ Ting: voltage running high'
+    - alias: Severe sag - 10 s only, this is the brownout case
+      conditions:
+      - condition: trigger
+        id: severe_sag
+      sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.ting_voltage_excursion_active
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              interruption-level: time-sensitive
+            tag: ting_voltage_excursion
+          message: '{{ trigger.to_state.state | float(0) | round(1) }} V. Motors and
+            compressors are at risk at this level — the ACs and the fridge are the
+            ones that care.'
+          title: '⚡ TING: BROWNOUT'
+      - alias: Speak it on every available Sonos - but not if she is in bed
+        if:
+        - condition: state
+          entity_id: input_boolean.in_bed
+          state: 'off'
+        then:
+        - alias: Speak it on every available Sonos - the shower case, where a phone
+            push is useless
+          action: script.sonos_broadcast
+          data:
+            players: '{{ integration_entities(''sonos'') | select(''match'',''media_player'')
+              | reject(''is_state'',''unavailable'') | reject(''is_state'',''unknown'')
+              | list }}'
+            volume: 0.7
+            restore: true
+            ungroup: true
+            message: Attention. A brownout has been detected. The panel is reading
+              {{ trigger.to_state.state | float(0) | round(0) }} volts. The air conditioners
+              and the fridge are the ones at risk.
+    - alias: Sustained sag - 2 min, ordinary push
+      conditions:
+      - condition: trigger
+        id: sag
+      sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.ting_voltage_excursion_active
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              interruption-level: active
+            tag: ting_voltage_excursion
+          message: '{{ trigger.to_state.state | float(0) | round(1) }} V, sustained
+            over 2 minutes. Normal here is about 125 V.'
+          title: '⚠️ Ting: voltage running low'
+    - alias: Back to normal - only if an excursion was actually reported, so a restart
+        cannot fake it
+      conditions:
+      - condition: trigger
+        id: cleared
+      - condition: state
+        entity_id: input_boolean.ting_voltage_excursion_active
+        state: 'on'
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              interruption-level: active
+            tag: ting_voltage_excursion
+          message: Steady at {{ trigger.to_state.state | float(0) | round(1) }} V
+            for 5 minutes.
+          title: '✅ Ting: voltage back to normal'
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.ting_voltage_excursion_active
+  max: 10
+  mode: queued
