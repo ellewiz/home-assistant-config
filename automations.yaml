@@ -7269,7 +7269,7 @@
   mode: single
   max_exceeded: silent
 - id: living_room_energize_morning_trial
-  alias: Living Room — Energize Morning Trial (v1)
+  alias: Living Room — Energize Morning Trial (v2)
   description: 'TRIAL, added 2026-08-17 at Lara''s request: "Let''s try Energize in
     the morning the next couple days." Scoped to 06:00-10:00 ONLY. Delete this one
     automation to revert completely; nothing else was changed.
@@ -7328,7 +7328,25 @@
     TODO once the trial ends: either promote this into the wider Hue-scene plan (Energize
     / Concentrate / Read / Relax / Rest scheduled by HA, AL removed from all three
     bulbs) or delete it and retune AL''s six currently-null sun anchors instead. See
-    project memory lr-adaptive-lighting-replacement-scoping.'
+    project memory lr-adaptive-lighting-replacement-scoping.
+
+
+    2026-08-25 (v2): THE AWAY-DIM CLAIM ABOVE WAS WRONG AND IS NOW FIXED. It said
+    the Ambient Manager''s away-dim is left alone rather than being blasted to full.
+    Measured 2026-08-25: Lara left at 07:24, Ambient Manager set brightness_pct 20
+    at 08:00:00 (correct), and at 10:00:01 this automation''s window_close branch
+    switched AL back on, which immediately ramped all three lamps to 100 percent at
+    4807K rising to 5494K. They ran that way in an empty house for over two and a
+    half hours until she spotted it in the Hue app. ROOT CAUSE: the away-dim protects
+    itself by pinning AL manual_control, and that pin only exists if AL is switched
+    ON when the brightness is set. This automation deliberately keeps AL off 06:00-10:00,
+    so any away-dim applied inside that window pins nothing; manual_control was confirmed
+    empty. FIX: window_close now re-applies brightness_pct 20 after the handback when
+    person.lara_wiz is not home and the group is on, which pins it properly. The 10s
+    delay lets AL finish its initial adaptation first so the override is seen as manual
+    control instead of racing it. Deliberately NOT gated on lux: if she is away and
+    the lamps are on for any reason, the occupied look wants 20 percent. Deliberately
+    NOT gated on guests either, matching Ambient Manager v3, which keys only off person.lara_wiz.'
   triggers:
   - at: 06:00:00
     id: window_open
@@ -7393,8 +7411,8 @@
           transition: 5
         target:
           entity_id: light.living_room_lights
-    - alias: 10:00 — close the window and hand the lamps back to Adaptive Lighting
-        (UNGATED on purpose)
+    - alias: 10:00 — close the window, hand the lamps back to Adaptive Lighting, and
+        re-assert the away-dim (UNGATED on purpose)
       conditions:
       - condition: trigger
         id: window_close
@@ -7402,6 +7420,30 @@
       - action: switch.turn_on
         target:
           entity_id: switch.adaptive_lighting_living_room_lights
+      - alias: Let Adaptive Lighting finish its initial adaptation before overriding,
+          so the override registers as manual control instead of racing it
+        delay:
+          seconds: 10
+      - alias: Re-assert the away-dim, because Ambient Manager set brightness_pct
+          20 while AL was switched off and so pinned nothing; setting it again now
+          that AL is on does pin manual_control, and person_arrived_home clears that
+          pin
+        if:
+        - condition: not
+          conditions:
+          - condition: state
+            entity_id: person.lara_wiz
+            state: home
+        - condition: state
+          entity_id: light.living_room_lights
+          state: 'on'
+        then:
+        - action: light.turn_on
+          target:
+            entity_id: light.living_room_lights
+          data:
+            brightness_pct: 20
+            transition: 5
     - alias: Backstop — if HA restarted and it is now outside the window, make sure
         AL is back on
       conditions:
@@ -7941,4 +7983,346 @@
         entity_id: input_boolean.wfh_today
       note: Already off. Asserting it is a no-op and keeps the end state unconditional.
   mode: single
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
+- id: alert_ting_hazard
+  alias: 'Alert: Ting Fire Hazard / Frozen Pipe (v2)'
+  description: 'Sole consumer of the whisker_ting hazard sensors (device 710B782E7).
+    Detect-and-clear pairs, modelled on ''Alert: AC Offline / Restored''.
+
+
+    WHY THIS EXISTS: the Ting integration surfaces hazards as binary_sensors and does
+    nothing else with them. Without this automation nothing in the house reacts to
+    an electrical fire hazard at all.
+
+
+    DELIBERATELY NOT GATED ON calendar.vacation. House style section 8 exempts security,
+    fridge and power-outage alerts from the vacation gate; a fire or a frozen pipe
+    matters more when she is away and Johnny is home, not less. Do not add the gate.
+
+
+    DEBOUNCE: 30 s on the three fire hazards, 5 min on frozen pipe. Triggers use from
+    ''off'' to ''on'' so an integration reload or a startup transition through unavailable
+    cannot fire a phantom fire alert. Per-hazard notification tags so a re-fire replaces
+    rather than stacks.
+
+
+    DETECTION LATENCY IS THE SCAN INTERVAL. The SignalR stream is dead, so hazard
+    status arrives only on the REST poll at 600 s. This alert can therefore be up
+    to ten minutes behind Ting''s own app, which pushes instantly. That is acceptable
+    only because HA is the second path, never the first. Do NOT raise scan_interval
+    toward the 3600 s maximum to quiet the logs.
+
+
+    ESCALATION CHANGED 2026-08-25 (v2). v1 used interruption-level time-sensitive
+    and deliberately avoided critical. Lara chose critical on the rebuild: the three
+    fire sensors now send iOS CRITICAL notifications (sound.critical 1, volume 1.0)
+    which bypass silent mode and Do Not Disturb; frozen pipe stays a normal push at
+    interruption-level active. unverified_fire_hazard is Ting''s pre-review signal,
+    meaning arcing was detected but no human reviewer has confirmed it, so it is both
+    the earliest available warning and the likeliest to be nothing. Its title says
+    UNVERIFIED so it is distinguishable at a glance. If it wakes her for nothing,
+    demote that branch to interruption-level active rather than deleting it.
+
+
+    mode queued (max 10) rather than single: fire and electrical-fire can plausibly
+    trip in the same second, and single would silently drop the second.
+
+
+    WARNING: renaming the Ting device breaks this automation SILENTLY, because every
+    entity_id embeds the 710b782e7 serial. Rename first, then update this automation.
+
+
+    NOT LIVE-FIRE TESTED. The push path was verified 2026-08-24 with a marked test
+    notification. The trigger wiring has never been exercised, because forcing a fire-safety
+    sensor to read ''on'' was deliberately not done.
+
+
+    2026-08-25 (rebuild): v1 was created 2026-08-24 and was absent from HA''s loaded
+    config by 2026-08-25 12:51 ET, leaving an orphaned registry entry reading unavailable
+    with restored true. Rebuilt against the same unique_id so the orphan was reclaimed.
+    The disk-level mechanism was NOT established: /Volumes/config serves stale file
+    contents, so on-disk evidence about this file is not admissible. Nothing watched
+    for fire between the loss and this rebuild.
+
+
+    2026-08-25 (later the same night): unverified_fire_hazard DEMOTED from critical
+    to interruption-level time-sensitive, at Lara''s decision after the tier was put
+    to her explicitly. Reasoning: it is Ting''s pre-review signal, so it is the branch
+    most likely to be nothing, and waking her at full volume past the mute switch
+    for an unconfirmed arc is the wrong trade. It still surfaces prominently and still
+    breaks through an allowed Focus. fire_hazard and electrical_fire_hazard REMAIN
+    critical. This lands close to where v1 was, which used time-sensitive for everything
+    and said the choice was deliberate. If a real unverified event ever proves urgent
+    enough to have wanted the full override, that is the evidence to promote it back.
+
+    '
+  triggers:
+  - entity_id: binary_sensor.710b782e7_fire_hazard
+    for: 00:00:30
+    from: 'off'
+    id: fire
+    to: 'on'
+    trigger: state
+  - entity_id: binary_sensor.710b782e7_electrical_fire_hazard
+    for: 00:00:30
+    from: 'off'
+    id: electrical
+    to: 'on'
+    trigger: state
+  - entity_id: binary_sensor.710b782e7_unverified_fire_hazard
+    for: 00:00:30
+    from: 'off'
+    id: unverified
+    to: 'on'
+    trigger: state
+  - entity_id: binary_sensor.710b782e7_frozen_pipe_risk
+    for: 00:05:00
+    from: 'off'
+    id: frozen_pipe
+    to: 'on'
+    trigger: state
+  - entity_id:
+    - binary_sensor.710b782e7_fire_hazard
+    - binary_sensor.710b782e7_electrical_fire_hazard
+    - binary_sensor.710b782e7_unverified_fire_hazard
+    for: 00:00:30
+    from: 'on'
+    id: fire_cleared
+    to: 'off'
+    trigger: state
+  - entity_id: binary_sensor.710b782e7_frozen_pipe_risk
+    for: 00:05:00
+    from: 'on'
+    id: frozen_pipe_cleared
+    to: 'off'
+    trigger: state
+  actions:
+  - choose:
+    - alias: Confirmed fire hazard - critical, breaks through Do Not Disturb
+      conditions:
+      - condition: trigger
+        id: fire
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              sound:
+                critical: 1
+                name: default
+                volume: 1
+            tag: ting_fire_hazard
+          message: 'Ting detected a fire hazard. {{ states(''sensor.710b782e7_hazard_message'')
+            }} (status: {{ states(''sensor.710b782e7_hazard_status'') }})'
+          title: "\U0001F6A8 TING: FIRE HAZARD"
+    - alias: Confirmed electrical fire hazard - critical, breaks through Do Not Disturb
+      conditions:
+      - condition: trigger
+        id: electrical
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              sound:
+                critical: 1
+                name: default
+                volume: 1
+            tag: ting_electrical_fire_hazard
+          message: 'Ting detected an electrical fire hazard. {{ states(''sensor.710b782e7_electrical_fire_hazard_message'')
+            }} (status: {{ states(''sensor.710b782e7_electrical_fire_hazard_status'')
+            }}, level {{ states(''sensor.710b782e7_electrical_fire_hazard_level'')
+            }})'
+          title: "\U0001F6A8 TING: ELECTRICAL FIRE HAZARD"
+    - alias: Unverified fire hazard - time-sensitive, NOT critical; titled UNVERIFIED
+        so it is distinguishable at a glance
+      conditions:
+      - condition: trigger
+        id: unverified
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              interruption-level: time-sensitive
+            tag: ting_unverified_fire_hazard
+          message: 'Ting detected possible arcing, not yet confirmed by review. {{
+            states(''sensor.710b782e7_unverified_fire_hazard_message'') }} (status:
+            {{ states(''sensor.710b782e7_unverified_fire_hazard_status'') }})'
+          title: '⚠️ TING: UNVERIFIED fire hazard'
+    - alias: Frozen pipe risk - normal push, deliberately not critical
+      conditions:
+      - condition: trigger
+        id: frozen_pipe
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              interruption-level: active
+            tag: ting_frozen_pipe
+          message: Ting flagged a frozen pipe risk. {{ states('sensor.710b782e7_hazard_message')
+            }}
+          title: "\U0001F9CA Ting: frozen pipe risk"
+    - alias: Any fire hazard cleared - normal push so the alert is closed out, not
+        left hanging
+      conditions:
+      - condition: trigger
+        id: fire_cleared
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              interruption-level: active
+            tag: ting_hazard_cleared
+          message: '{{ trigger.to_state.attributes.friendly_name }} went back to clear.
+            Current status: {{ states(''sensor.710b782e7_hazard_message'') }}'
+          title: '✅ Ting: hazard cleared'
+    - alias: Frozen pipe risk cleared
+      conditions:
+      - condition: trigger
+        id: frozen_pipe_cleared
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              interruption-level: active
+            tag: ting_frozen_pipe
+          message: Frozen pipe risk went back to clear.
+          title: '✅ Ting: frozen pipe risk cleared'
+  max: 10
+  mode: queued
+- id: '1787609008125'
+  alias: 'Commute: Resume announcer after restart'
+  description: 'Re-arms the commute announcer after an HA restart kills it mid-run.
+
+
+    THE GAP: automation.commute_morning_announcer_with_waze_v2 is mode single and
+    is a thin wrapper. It fires once on a calendar trigger and hands off to script.commute_time_announcer,
+    which counts down to sensor.commute_leave_by over roughly 60 minutes of 5-minute
+    TTS. Kill HA mid-run and nothing re-arms it, and afterwards the parent reads current
+    0 with last_triggered still at the original trigger time, which is INDISTINGUISHABLE
+    from a clean finish. Confirmed 2026-08-24 by the 06:47-06:51 utility outage: the
+    run died at 06:47 and Lara got no leave-by or traffic announcements until she
+    left.
+
+
+    GATES. calendar.vacation off is the only real condition, because it is the one
+    gate that is cheap and stable the instant HA starts. Everything else is volatile
+    at boot and lives inside the sequence behind the delay:
+
+
+    1. The parent''s last_triggered date == today. This is the load-bearing gate:
+    it means a run WAS in flight. Without it a 05:00 restart would start the countdown
+    on a morning the calendar trigger had not fired yet.
+
+    2. sensor.commute_leave_by is valid and today_at(leave_by) is still in the future.
+    This is also what stops ordinary midday and evening restarts from firing it.
+
+    3. script.commute_time_announcer is off, so a restart that did not actually kill
+    the script cannot double-start it.
+
+
+    THE 2-MINUTE DELAY IS LOAD-BEARING. HA boots faster than the router; on 2026-08-24
+    the Sonos were unavailable until 06:52:44, 53 s after start. It also gives sensor.commute_leave_by
+    and calendar.master_calendar time to restore, which is why the three checks above
+    sit after it rather than in conditions, which are evaluated the instant the trigger
+    fires.
+
+
+    DELIBERATELY NO HOME GATE. The parent''s person.lara_wiz == home gate was removed
+    2026-06-16 because a morning dog walk suppressed the whole announcer. Do not add
+    one back.
+
+
+    script.commute_time_announcer is mode restart, so a re-call is safe. It is a YAML/package
+    script, NOT in the UI script list, so ha_config_get_script returns RESOURCE_NOT_FOUND
+    for it.
+
+
+    The two best-practice warnings on save (date template, template in condition)
+    are read and OVERRIDDEN ON PURPOSE. ''Did the parent fire today'' has no native
+    form, and the leave-by check is a cross-entity derived comparison against a bare
+    HH:MM string sensor with no device_class, which condition: time cannot take as
+    an entity.
+
+
+    PLAYERS LIST IS DUPLICATED FROM THE PARENT BY HAND. If v2''s list changes, change
+    it here too. There is a THIRD consumer that also needs updating: the scheduled
+    commute-announcer-resume-check task watches the same speakers, and it silently
+    watched the wrong one for six weeks in 2026.
+
+
+    STILL UNPROVEN AT REAL FIRE. Never run for a genuine restart. Gating verified
+    by template eval only.
+
+
+    2026-08-25 (rebuild): originally created 2026-08-24 at 18:03 ET; absent from HA''s
+    loaded config by 2026-08-25 12:51 ET, leaving an orphaned registry entry. Rebuilt
+    against the same numeric unique_id so the orphan was reclaimed. Numeric UI-editor
+    id kept per house style section 3. The disk-level cause was NOT established: /Volumes/config
+    serves stale file contents, so on-disk evidence about automations.yaml is not
+    admissible.
+
+    '
+  triggers:
+  - event: start
+    id: ha_started
+    trigger: homeassistant
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - alias: Let the router, the Sonos, the calendar and the commute sensors finish
+      coming back
+    delay:
+      minutes: 2
+  - alias: Resume only if a run was actually in flight, departure has not passed,
+      and the script really is down
+    if:
+    - alias: The parent announcer fired today, so a run WAS in flight
+      condition: template
+      value_template: '{% set lt = state_attr(''automation.commute_morning_announcer_with_waze_v2'',
+        ''last_triggered'') %}{{ lt is not none and as_local(lt).date() == now().date()
+        }}'
+    - alias: leave_by is a real value, not a restore artefact
+      condition: not
+      conditions:
+      - condition: state
+        entity_id: sensor.commute_leave_by
+        state:
+        - unknown
+        - unavailable
+    - alias: Departure has not already passed
+      condition: template
+      value_template: '{{ now() < today_at(states(''sensor.commute_leave_by'')) }}'
+    - alias: The script is genuinely down, not still running
+      condition: state
+      entity_id: script.commute_time_announcer
+      state: 'off'
+    then:
+    - action: script.commute_time_announcer
+      alias: Restart the countdown against today's leave_by on the same four speakers
+        as the parent
+      data:
+        person_entity: person.lara_wiz
+        players:
+        - media_player.living_room_arc
+        - media_player.basement
+        - media_player.bedroom_frame
+        - media_player.bathroom
+        until_ts: '{{ as_timestamp(today_at(states(''sensor.commute_leave_by'')))
+          }}'
+    - action: notify.mobile_app_iphone
+      alias: Tell Lara it was resumed, so the silent stretch before it is explainable
+      data:
+        data:
+          push:
+            interruption-level: active
+          tag: commute_announcer_resumed
+        message: Home Assistant restarted mid-morning and killed the countdown. Restarted
+          it against {{ states('sensor.commute_leave_by') }}.
+        title: "\U0001F501 Commute announcer resumed"
+  mode: single
