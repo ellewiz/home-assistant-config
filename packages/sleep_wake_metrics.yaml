@@ -323,6 +323,14 @@ input_datetime:
     name: Bedroom Temp Min Time Last Night
     has_date: true
     has_time: true
+  # Stamped by automation.sonos_wake_alarm_in_bed_fallback when it FORCES in_bed
+  # on at 03:30 because the phone trigger missed. A night whose bedroom_night_start
+  # matches this stamp did not have a real observed bedtime: couch-doze is not
+  # measurable and the overnight-temp window is a partial slice, not the night.
+  bedroom_in_bed_synthetic_at:
+    name: Bedroom in_bed Synthetic Stamp (internal)
+    has_date: true
+    has_time: true
 
 input_text:
   bedroom_night_bed_exit_log:
@@ -479,17 +487,27 @@ template:
           in_bed_time: >-
             {% set ts = state_attr('input_datetime.bedroom_night_start','timestamp') | float(0) %}
             {{ ts | timestamp_custom('%-I:%M %p', true) if ts > 1577923200 else 'n/a' }}
+          in_bed_synthetic: >-
+            {% set sy = state_attr('input_datetime.bedroom_in_bed_synthetic_at','timestamp') | float(0) %}
+            {% set ns = state_attr('input_datetime.bedroom_night_start','timestamp') | float(0) %}
+            {{ sy > 1577923200 and ns > 1577923200 and ((sy - ns) | abs) <= 120 }}
           couch_doze_captured_today: >-
             {% set ts = state_attr('input_datetime.bedroom_couch_doze_captured','timestamp') | float(0) %}
             {{ ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') }}
           couch_doze: >-
             {% set ts = state_attr('input_datetime.bedroom_couch_doze_captured','timestamp') | float(0) %}
             {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
-            {{ ('yes' if is_state('input_boolean.bedroom_couch_doze_lastnight','on') else 'no') if captured else 'pending' }}
+            {% set sy = state_attr('input_datetime.bedroom_in_bed_synthetic_at','timestamp') | float(0) %}
+            {% set ns = state_attr('input_datetime.bedroom_night_start','timestamp') | float(0) %}
+            {% set synth = sy > 1577923200 and ns > 1577923200 and ((sy - ns) | abs) <= 120 %}
+            {{ 'not measurable' if (captured and synth) else (('yes' if is_state('input_boolean.bedroom_couch_doze_lastnight','on') else 'no') if captured else 'pending') }}
           couch_sleep_min: >-
             {% set ts = state_attr('input_datetime.bedroom_couch_doze_captured','timestamp') | float(0) %}
             {% set captured = ts > 1577923200 and (ts | timestamp_custom('%Y-%m-%d', true)) == now().strftime('%Y-%m-%d') %}
-            {{ (states('input_number.bedroom_couch_sleep_min_lastnight') | float(0) | round(0) | int) if captured else 'pending' }}
+            {% set sy = state_attr('input_datetime.bedroom_in_bed_synthetic_at','timestamp') | float(0) %}
+            {% set ns = state_attr('input_datetime.bedroom_night_start','timestamp') | float(0) %}
+            {% set synth = sy > 1577923200 and ns > 1577923200 and ((sy - ns) | abs) <= 120 %}
+            {{ 'n/a' if (captured and synth) else ((states('input_number.bedroom_couch_sleep_min_lastnight') | float(0) | round(0) | int) if captured else 'pending') }}
           temp_at_bedtime_f: "{{ states('input_number.bedroom_temp_at_bedtime') | float(0) | round(1) }}"
           temp_night_min_f: >-
             {% set ts = state_attr('input_datetime.bedroom_morning_wake_time','timestamp') | float(0) %}
@@ -1136,7 +1154,10 @@ automation:
           night_ts: "{{ state_attr('input_datetime.bedroom_night_start','timestamp') | float(0) }}"
           delta_min: >-
             {{ (((night_ts | float(0)) - (oura_start_ts | float(0))) / 60) | round(0) if ((oura_start_ts | float(0)) > 1577923200 and (night_ts | float(0)) > 1577923200) else 0 }}
-          is_doze: "{{ (delta_min | float(0)) >= (states('input_number.bedroom_couch_doze_threshold_min') | float(25)) }}"
+          is_synth: >-
+            {% set sy = state_attr('input_datetime.bedroom_in_bed_synthetic_at','timestamp') | float(0) %}
+            {{ sy > 1577923200 and (night_ts | float(0)) > 1577923200 and ((sy - (night_ts | float(0))) | abs) <= 120 }}
+          is_doze: "{{ (delta_min | float(0)) >= (states('input_number.bedroom_couch_doze_threshold_min') | float(25)) and not (is_synth | bool(false)) }}"
       - action: input_number.set_value
         target:
           entity_id: input_number.bedroom_couch_sleep_min_lastnight
