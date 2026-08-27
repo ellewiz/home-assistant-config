@@ -7788,34 +7788,88 @@
       entity_id: input_datetime.presence_last_arrival_today
   mode: single
 - id: '1787464850803'
-  alias: 'Sleep: Arm the bed window on Guanfacine log'
-  description: 'Half one of two. When the Guanfacine dose is logged, stamp input_datetime.bed_window_at
-    75 minutes out; the bed-window nudge then triggers on that datetime. Built 2026-08-23.
+  alias: 'Sleep: Arm the bed window (dose log, or 20:10 fallback)'
+  description: 'Half one of two. Stamps input_datetime.bed_window_at 75 minutes out;
+    the bed-window nudge then triggers on that datetime.
+
+
+    v2 2026-08-27 - ADDED THE 20:10 CLOCK FALLBACK. v1 armed ONLY on input_boolean.guanfacine_taken
+    going on, which made the entire nudge depend on the dose being LOGGED rather than
+    TAKEN. Confirmed live on Wed 2026-08-26: Lara took the guanfacine and did not
+    press the Orb button, so the flag never flipped, the window never armed, and the
+    nudge silently did not exist. The 20:10 TV nudge fired at her and nothing followed
+    it. A nudge that vanishes on exactly the nights she is least on top of her routine
+    is backwards.
+
+
+    The second trigger fires at 20:10 (same instant as automation.meds_guanfacine_tv_nudge_until_logged)
+    and arms the window ONLY if the dose is still unlogged, so a dose logged BEFORE
+    20:10 keeps its own earlier anchor and is not overwritten. A dose logged AFTER
+    20:10 re-stamps the helper later, and the later stamp wins, so dose-anchored timing
+    is preserved whenever it exists.
+
+
     WHY A STAMPED HELPER RATHER THAN A 75-MINUTE for: ON THE TRIGGER: a trigger''s
     for: clock measures CONTINUOUS time in state, and every HA restart re-stamps last_changed
     to start-up time, resetting the clock to zero. This instance is not restart-stable
     (two SIGBUS crashes, most recently 2026-08-22 12:17 ET), so a for:-based window
     would silently land late or never on any night HA bounced. Same reasoning and
     same pattern as script.shut_down_bedtime writing input_datetime.living_room_off_at
-    for the living-room wind-down, which was moved off an in-memory delay for exactly
-    this reason. NO STALE GUARD NEEDED: the helper carries a date as well as a time,
-    so a value left over from a previous evening is simply in the past and never fires,
-    and this automation always writes a fresh future datetime. Ungated on purpose:
-    arming is free and the nudge half does all the gating, so if she logs the dose
-    and then goes straight to bed, the nudge just declines. The 75-minute offset is
-    the tunable knob and it lives here, in the timedelta.'
+    for the living-room wind-down.
+
+
+    NO STALE GUARD NEEDED: the helper carries a date as well as a time, so a value
+    left over from a previous evening is simply in the past and never fires, and this
+    automation always writes a fresh future datetime. Otherwise ungated on purpose:
+    arming is free and the nudge half does all the gating (in_bed off, guests off,
+    vacation off, person home, 20:30-01:30), so arming on an evening she is out or
+    already in bed just means the nudge declines.
+
+
+    KNOWN LIMITATION, do not mistake this for a full fix: this closes the NEVER-ARMED
+    case (Wed 8/26). It does NOT close the FIRED-TOO-LATE case (Tue 8/25, where the
+    Oura report shows she was asleep on the couch at 20:14 and the window did not
+    open until 21:25). The 75-minute offset is the tunable knob and it lives here,
+    in the timedelta, but no clock-anchored offset can beat a 20:14 onset. See project_bed_window_nudge.'
   triggers:
   - entity_id: input_boolean.guanfacine_taken
+    id: dose_logged
+    note: The preferred anchor - real dose time.
     to: 'on'
     trigger: state
+  - at: '20:10:00'
+    id: fallback_clock
+    note: Backstop for the night she takes it but never presses the button.
+    trigger: time
+  conditions:
+  - alias: Arm on the dose log, or at 20:10 only if it is still unlogged
+    condition: or
+    conditions:
+    - condition: trigger
+      id: dose_logged
+    - condition: and
+      conditions:
+      - condition: trigger
+        id: fallback_clock
+      - condition: state
+        entity_id: input_boolean.guanfacine_taken
+        state: 'off'
   actions:
   - action: input_datetime.set_datetime
-    alias: Stamp the bed window 75 minutes after the dose is logged
+    alias: Stamp the bed window 75 minutes out
     data:
       datetime: '{{ (now() + timedelta(minutes=75)).strftime(''%Y-%m-%d %H:%M:%S'')
         }}'
     target:
       entity_id: input_datetime.bed_window_at
+  - action: logbook.log
+    alias: Record WHICH path armed it, so the record is countable later
+    data:
+      entity_id: input_datetime.bed_window_at
+      message: Bed window armed via {{ 'dose log' if trigger.id == 'dose_logged' else
+        '20:10 fallback (dose not logged)' }}, opens {{ (now() + timedelta(minutes=75)).strftime('%H:%M')
+        }}
+      name: Sleep Log
   mode: single
 - id: '1787464878651'
   alias: 'Sleep: Bed-window nudge (v2, Fri/Sat hard)'
@@ -8462,83 +8516,93 @@
         title: "\U0001F501 Commute announcer resumed"
   mode: single
 - id: alert_ting_voltage
-  alias: 'Alert: Ting Voltage Anomaly (v3)'
-  description: "Sole consumer of sensor.710b782e7_current_voltage. Created 2026-08-26,
-    the same evening the SignalR stream finally came alive on whisker_ting v1.1.2.\n\nWHY
-    THIS EXISTS: on 2026-08-24 Ting's own app reported a 134.8 V surge and nothing
-    in Home Assistant saw it. The KP115 plugs poll every 5-15 s and provably missed
-    it. This stream samples at roughly 2 Hz, so it is the first source in the house
-    fast enough to catch a real excursion. See [[project_power_outage_aug24_2026]].\n\nTHRESHOLDS
-    ARE PROVISIONAL — RETUNE AFTER A WEEK. They were set on ~18 minutes of live data
-    plus Ting's own rolling high/low, which is thin. Observed so far: service sits
-    very steady at 124.9-125.2 V, Ting's rolling high 125.6 V, rolling low 119.9 V.
-    Nominal here is ~125 V, not 120, so ANSI C84.1 Range A's 126 V upper bound would
-    false-alarm constantly and is deliberately NOT used.\n\n  surge         > 132
-    V, instant       time-sensitive\n  high          128-132 V for 2 min    active\n
-    \ sag           105-112 V for 2 min    active\n  severe sag    40-105 V for 10
-    s      time-sensitive\n  cleared       114-127 V for 5 min    active, latch-gated\n\nRanges
-    are deliberately DISJOINT so a single excursion produces one notification, not
-    two. A jump to 135 V fires surge only; it cannot also satisfy the 128-132 high
-    band.\n\nTHE LOWER BOUNDS ON THE SAG TRIGGERS ARE NOT DECORATION. 'above: 105'
-    and 'above: 40' stop a sensor glitch to 0 from being reported as a brownout. A
-    genuine total loss of power is not this automation's job — the Ting goes offline
-    and the WAN monitor and dead-man's switch cover it. See [[project_internet_wan_monitor]]
-    and [[project_core_deadmans_switch]].\n\nWHY THE input_boolean EXISTS: numeric_state
+  alias: 'Alert: Ting Voltage Anomaly (v4, corroborated)'
+  description: "Triggers on sensor.710b782e7_current_voltage (~2 Hz). Created 2026-08-26
+    the evening the SignalR stream came alive on whisker_ting v1.1.2.\n\nWHY THIS
+    EXISTS: on 2026-08-24 Ting's own app reported a 134.8 V surge and nothing in Home
+    Assistant saw it. The KP115 plugs poll every 5-15 s and provably missed it. This
+    stream is the only source in the house fast enough to catch a real transient.\n\n===
+    v4, 2026-08-27: RETUNED BANDS + CORROBORATION ===\n\nTwo discoveries drove this.\n\n(1)
+    THE HOUSE HAS SIX VOLTAGE SENSORS, NOT ONE. The five Kasa plugs report volts as
+    well as watts (living_room_ac, my_ac, living_room_tv, washer, dryer), all with
+    permanent hourly statistics back to June 2026. Three months of baseline the Ting
+    cannot offer. v1-v3 were written without knowing they existed.\n\n(2) THE OLD
+    BANDS WERE ANCHORED TO A WRONG NOMINAL. They assumed ~125 V, set from 18 minutes
+    of Ting data. Real baselines: the plugs average ~120.4 V across 82 days; the Ting
+    averages ~123.7 V over its first 41 hours. The Ting reads roughly 2 V ABOVE the
+    plugs - calibration, not a fault, since the six meters were never calibrated against
+    each other. Observed extremes over 82 days: living_room_ac daily max NEVER above
+    123.2, daily min normally 116-119, floor 115.9. Washer and dryer max ~124.5-124.9,
+    min ~118.7-119.1. Ting hourly extremes so far: 120.86 to 125.51.\n\nBAND CHANGES
+    (Ting scale):\n  severe sag  40-105  ->  40-108     10 s     time-sensitive\n
+    \ sag        105-112  -> 108-114     2 min    active, CORROBORATED\n  (hysteresis
+    gap now 114-116, was 112-114)\n  cleared    114-127  -> 116-127     5 min    active,
+    latch-gated\n  high       128-132  -> unchanged   2 min    active, CORROBORATED\n
+    \ surge         >132  -> unchanged   instant  time-sensitive\n\nThe sag ladder
+    moved UP because 105-112 sat far below anything this house has recorded, so a
+    genuine sag to 115 would have gone unreported. The clear floor moved up for the
+    same reason: declaring 'back to normal' at 114 V would have been declaring normal
+    on a reading below the observed floor. Surge and high were left alone - they are
+    not anchored to the nominal, and 128 still sits 2.5 V clear of the highest Ting
+    reading on record.\n\nRanges stay deliberately DISJOINT so one excursion produces
+    one notification. The 2 V gap between sag and cleared is hysteresis, not an oversight.\n\nCORROBORATION,
+    AND WHY IT IS NOT APPLIED EVERYWHERE. The two SUSTAINED branches (high, sag) now
+    require at least one plug to agree before pushing at all. A 2-minute excursion
+    is slow enough for a 5-second plug to see; if no plug agrees, the Ting is glitching
+    and there is nothing to report.\n\nThe two URGENT branches are deliberately NOT
+    gated for the push. Suppressing a real surge or brownout alert is the worst outcome
+    available here, so the phone always fires. On SEVERE SAG only, the Sonos broadcast
+    additionally requires TWO plugs to agree - a 10-second event is long enough for
+    them to see, and two independent plugs glitching at once is implausible.\n\nSURGE
+    IS NOT CORROBORATED AT ALL, on purpose. The plugs demonstrably cannot see transients
+    - that is the entire reason this automation exists, proven on 2026-08-24 when
+    they missed a 134.8 V spike. Requiring them to confirm a surge would suppress
+    the exact event it was built for.\n\nWHY CORROBORATION IS NOT THE ARTIFACT FIX
+    IT SOUNDS LIKE. The known bad readings are on the PLUGS, not the Ting: living_room_ac
+    logged 0 V on 5 Aug, 113.2 on 7 Aug and 84.7 on 10 Aug. On 10 Aug the washer and
+    dryer read a normal 120.4 and 120.7 at the same moment, so those are plug reconnect
+    artifacts, not voltage events. Plugs do not trigger this automation, so they could
+    never have caused a false push here. What corroboration actually buys is protection
+    against a TING glitch. The corroboration templates additionally require a plug
+    above 100 V (60 V on the severe branch) before it counts as agreeing, so a plug
+    reporting 0 during a reconnect cannot fake a brownout.\n\n=== STRUCTURAL DESIGN,
+    UNCHANGED SINCE v3 ===\n\nTHE LOWER BOUNDS ON THE SAG TRIGGERS ARE NOT DECORATION.
+    'above: 40' stops a sensor glitch to 0 being reported as a brownout. A genuine
+    total loss of power is not this automation's job - the Ting goes offline and the
+    WAN monitor and dead-man's switch cover it.\n\nWHY THE input_boolean EXISTS: numeric_state
     triggers can fire on the first reading after a restart, because there is no prior
-    value to have crossed from. Without a latch, the 'back to normal' branch would
-    push after every single HA restart, and this instance restarts often. The latch
-    is set by every alerting branch and is the condition on the clear branch, so a
-    clear can only follow an alert that actually happened. Do not remove it to 'simplify'.\n\nESCALATION:
-    deliberately NOT critical, anywhere. Unlike the fire hazards in 'Alert: Ting Fire
-    Hazard / Frozen Pipe (v2)', a voltage excursion is a property-risk signal she
-    cannot act on at 3 a.m. Surge and severe sag are time-sensitive so they break
-    through an allowed Focus; the rest are ordinary pushes. If a real event ever proves
-    worth waking for, that is the evidence to promote it.\n\nSONOS BROADCAST ADDED
-    2026-08-26 (v2), at Lara's request: 'If I'm in the shower again and there's a
-    surge, I won't be able to see a phone alert.' That is the literal use case - on
-    2026-08-24 she was in the shower during the outage and noticed nothing. The two
-    TIME-SENSITIVE branches (surge, brownout) now also speak on every Sonos at volume
-    0.7 after the push; the two 2-minute sustained branches and the clear branch deliberately
-    do NOT, because they are informational and would turn the house into a PA system
-    over nothing.\n\nTHE PLAYER LIST IS A TEMPLATE, NOT A HARDCODED LIST, and that
-    is deliberate. It resolves integration_entities('sonos') at run time and rejects
+    value to have crossed from. Without a latch the 'back to normal' branch would
+    push after every HA restart, and this instance restarts often (five in three days,
+    24-26 Aug). The latch is set by every alerting branch and is a condition on the
+    clear branch. Do not remove it to 'simplify'.\n\nESCALATION: deliberately NOT
+    critical anywhere. A voltage excursion is a property-risk signal she cannot act
+    on at 3 a.m. Surge and severe sag are time-sensitive so they break an allowed
+    Focus; the rest are ordinary pushes. All branches share tag ting_voltage_excursion
+    so a re-fire replaces rather than stacks.\n\nTHE PLAYER LIST IS A TEMPLATE, NOT
+    A HARDCODED LIST. It resolves integration_entities('sonos') at run time and rejects
     unavailable/unknown. Two reasons: (1) media_player.unjoin HARD FAILS on a bad
     entity and aborts the calling automation - exactly how a HomePod killed 'Heat
-    the car' outright for six days in Aug 2026, see the sonos_broadcast script header;
-    the Sonos Move flaps to unavailable regularly and would be that entity. (2) It
-    self-maintains - a new speaker is included with no edit, unlike the three hand-synced
-    player lists in the commute announcer. Do not 'clean this up' into a fixed list.\n\nSNAPSHOT/RESTORE
-    is the script's job, not this automation's: restore true and ungroup true mean
-    whatever was playing resumes afterwards, at its previous volume. 0.7 is the ANNOUNCEMENT
-    volume only and never becomes the music volume.\n\nIN-BED GATE ON THE BROADCAST
-    ONLY (v3, 2026-08-26). She was offered clock-based quiet hours and chose state-based
-    instead: do not announce while input_boolean.in_bed is on. That is the better
-    answer and it is worth understanding why. A clock says 'it is 3 a.m.'; in_bed
-    says 'she is asleep'. Her bedtime is virtual and moves (input_datetime.bedroom_virtual_bedtime,
-    currently 23:00 but it drifts), she has documented couch-sleep nights, and she
-    is sometimes awake at 3 a.m. anyway - a fixed window would be wrong in all three
-    cases. The gate is on the SONOS STEP ONLY. The phone push still fires on every
-    branch at every hour, in bed or not, so nothing is ever silently dropped: the
-    alert always lands, only the loudspeaker is conditional. If in_bed is ever unavailable
-    the condition is false and the house stays quiet, which is the safe failure direction
-    for a property-risk alert (it is NOT the safe direction for fire - see the fire
-    hazard automation, which is deliberately NOT gated this way).\n\nmode queued (max
-    10) rather than single: a sag can cross two bands within seconds and single would
-    silently drop the second.\n\nWARNING: renaming the Ting device breaks this automation
-    SILENTLY, because the entity_id embeds the 710b782e7 serial. Rename first, then
-    update this automation.\n\nNOT LIVE-FIRE TESTED. The Sonos path is also unproven
-    here, though script.sonos_broadcast itself is used daily by the commute announcer.
-    Nothing in this automation has ever been exercised, because manufacturing a voltage
-    excursion was obviously not done. The push path itself was verified 2026-08-24
-    on the hazard automation and uses the same service.\n\nTODO v2: (1) retune every
-    threshold once there are 7+ days of history, using the actual observed spread
-    rather than these placeholders. (2) A separate stale-feed alert — if the stream
-    dies the sensor goes unknown and this automation simply stops having opinions,
-    which returns her silently to the pre-2026-08-26 state. Deliberately NOT bundled
-    here: it is integration health, not voltage, and it needs its own latch to survive
-    restarts. (3) Consider whether current_voltage should stay in the recorder at
-    all — ~2 Hz is roughly 165k rows/day for one entity against a DB already at 1112
-    MiB, see [[reference_recorder_db_size_baseline]].\n"
+    the car' for six days in Aug 2026; the Sonos Move flaps to unavailable and would
+    be that entity. (2) It self-maintains. Do not 'clean this up' into a fixed list.\n\nIN-BED
+    GATE ON THE BROADCAST ONLY. She was offered clock-based quiet hours and chose
+    state-based: do not announce while input_boolean.in_bed is on. A clock says 'it
+    is 3 a.m.'; in_bed says 'she is asleep'. Her bedtime is virtual and moves, she
+    has documented couch-sleep nights, and she is sometimes awake at 3 a.m. anyway.
+    The gate is on the SONOS STEP ONLY - the phone push fires on every branch at every
+    hour, so nothing is silently dropped. If in_bed is unavailable the condition is
+    false and the house stays quiet, the safe direction for a property-risk alert
+    (NOT the safe direction for fire - the hazard automation is deliberately not gated
+    this way).\n\nmode queued (max 10) rather than single: a sag can cross two bands
+    within seconds and single would silently drop the second.\n\nWARNING: renaming
+    the Ting device breaks this SILENTLY - the entity_id embeds the 710b782e7 serial.
+    Rename first, then update. The same applies to the /energy-monitor/voltage dashboard
+    view.\n\nNOT LIVE-FIRE TESTED. Nothing here has ever been exercised, because manufacturing
+    a voltage excursion was obviously not done. The push path was verified 2026-08-24
+    on the hazard automation and uses the same service.\n\nTODO v5: (1) a separate
+    stale-feed alert - if the stream dies the sensor goes unknown and this automation
+    silently stops having opinions. Needs its own restart-surviving latch. (2) Revisit
+    the bands after a winter, when grid load patterns differ. (3) Sep 3 recorder DB
+    reading.\n"
   triggers:
   - above: 132
     entity_id: sensor.710b782e7_current_voltage
@@ -8550,19 +8614,19 @@
     for: 00:02:00
     id: high
     trigger: numeric_state
-  - above: 105
-    below: 112
+  - above: 108
+    below: 114
     entity_id: sensor.710b782e7_current_voltage
     for: 00:02:00
     id: sag
     trigger: numeric_state
   - above: 40
-    below: 105
+    below: 108
     entity_id: sensor.710b782e7_current_voltage
     for: 00:00:10
     id: severe_sag
     trigger: numeric_state
-  - above: 114
+  - above: 116
     below: 127
     entity_id: sensor.710b782e7_current_voltage
     for: 00:05:00
@@ -8570,7 +8634,8 @@
     trigger: numeric_state
   actions:
   - choose:
-    - alias: Surge - instant, no debounce, because catching the spike IS the point
+    - alias: Surge - instant, no debounce, NOT corroborated because plugs cannot see
+        transients
       conditions:
       - condition: trigger
         id: surge
@@ -8594,37 +8659,18 @@
           entity_id: input_boolean.in_bed
           state: 'off'
         then:
-        - alias: Speak it on every available Sonos - the shower case, where a phone
-            push is useless
-          action: script.sonos_broadcast
+        - action: script.sonos_broadcast
           data:
-            players: '{{ integration_entities(''sonos'') | select(''match'',''media_player'')
-              | reject(''is_state'',''unavailable'') | reject(''is_state'',''unknown'')
-              | list }}'
-            volume: 0.7
-            restore: true
-            ungroup: true
             message: Attention. A power surge has been detected. The panel is reading
               {{ trigger.to_state.state | float(0) | round(0) }} volts. Check anything
               sensitive that was plugged in.
-    - alias: Sustained high voltage - 2 min, ordinary push
-      conditions:
-      - condition: trigger
-        id: high
-      sequence:
-      - action: input_boolean.turn_on
-        target:
-          entity_id: input_boolean.ting_voltage_excursion_active
-      - action: notify.mobile_app_iphone
-        data:
-          data:
-            push:
-              interruption-level: active
-            tag: ting_voltage_excursion
-          message: '{{ trigger.to_state.state | float(0) | round(1) }} V, sustained
-            over 2 minutes. Normal here is about 125 V.'
-          title: '⚠️ Ting: voltage running high'
-    - alias: Severe sag - 10 s only, this is the brownout case
+            players: '{{ integration_entities(''sonos'') | select(''match'',''media_player'')
+              | reject(''is_state'',''unavailable'') | reject(''is_state'',''unknown'')
+              | list }}'
+            restore: true
+            ungroup: true
+            volume: 0.7
+    - alias: Severe sag - 10 s. Push always fires; the Sonos needs two plugs to agree.
       conditions:
       - condition: trigger
         id: severe_sag
@@ -8632,39 +8678,50 @@
       - action: input_boolean.turn_on
         target:
           entity_id: input_boolean.ting_voltage_excursion_active
+      - alias: Count plugs independently seeing a plausible brownout
+        variables:
+          agree_low: '{% set ns = namespace(n=0) %}{% for p in plugs %}{% set v =
+            states(p) | float(0) %}{% if v > 60 and v < 108 %}{% set ns.n = ns.n +
+            1 %}{% endif %}{% endfor %}{{ ns.n }}'
       - action: notify.mobile_app_iphone
         data:
           data:
             push:
               interruption-level: time-sensitive
             tag: ting_voltage_excursion
-          message: '{{ trigger.to_state.state | float(0) | round(1) }} V. Motors and
-            compressors are at risk at this level — the ACs and the fridge are the
-            ones that care.'
+          message: '{{ trigger.to_state.state | float(0) | round(1) }} V. {{ agree_low
+            }} of 5 plug meters agree. Motors and compressors are at risk at this
+            level — the ACs and the fridge are the ones that care.'
           title: '⚡ TING: BROWNOUT'
-      - alias: Speak it on every available Sonos - but not if she is in bed
+      - alias: Speak it only if she is up AND two plugs corroborate
         if:
         - condition: state
           entity_id: input_boolean.in_bed
           state: 'off'
+        - condition: template
+          value_template: '{{ agree_low | int(0) >= 2 }}'
         then:
-        - alias: Speak it on every available Sonos - the shower case, where a phone
-            push is useless
-          action: script.sonos_broadcast
+        - action: script.sonos_broadcast
           data:
-            players: '{{ integration_entities(''sonos'') | select(''match'',''media_player'')
-              | reject(''is_state'',''unavailable'') | reject(''is_state'',''unknown'')
-              | list }}'
-            volume: 0.7
-            restore: true
-            ungroup: true
             message: Attention. A brownout has been detected. The panel is reading
               {{ trigger.to_state.state | float(0) | round(0) }} volts. The air conditioners
               and the fridge are the ones at risk.
-    - alias: Sustained sag - 2 min, ordinary push
+            players: '{{ integration_entities(''sonos'') | select(''match'',''media_player'')
+              | reject(''is_state'',''unavailable'') | reject(''is_state'',''unknown'')
+              | list }}'
+            restore: true
+            ungroup: true
+            volume: 0.7
+    - alias: 'Sustained high - 2 min. CORROBORATED: at least one plug must also read
+        high.'
       conditions:
       - condition: trigger
-        id: sag
+        id: high
+      - alias: At least one plug above its own observed ceiling
+        condition: template
+        value_template: '{% set ns = namespace(n=0) %}{% for p in plugs %}{% if states(p)
+          | float(0) > 124.5 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}{{
+          ns.n >= 1 }}'
       sequence:
       - action: input_boolean.turn_on
         target:
@@ -8676,7 +8733,33 @@
               interruption-level: active
             tag: ting_voltage_excursion
           message: '{{ trigger.to_state.state | float(0) | round(1) }} V, sustained
-            over 2 minutes. Normal here is about 125 V.'
+            over 2 minutes, and the plug meters agree. Normal here runs about 120
+            to 125 V depending where it is measured.'
+          title: '⚠️ Ting: voltage running high'
+    - alias: 'Sustained sag - 2 min. CORROBORATED: at least one plug must also read
+        low.'
+      conditions:
+      - condition: trigger
+        id: sag
+      - alias: At least one plug plausibly low - above 100 so a reconnect artifact
+          at 0 cannot fake it
+        condition: template
+        value_template: '{% set ns = namespace(n=0) %}{% for p in plugs %}{% set v
+          = states(p) | float(0) %}{% if v > 100 and v < 114 %}{% set ns.n = ns.n
+          + 1 %}{% endif %}{% endfor %}{{ ns.n >= 1 }}'
+      sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.ting_voltage_excursion_active
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            push:
+              interruption-level: active
+            tag: ting_voltage_excursion
+          message: '{{ trigger.to_state.state | float(0) | round(1) }} V, sustained
+            over 2 minutes, and the plug meters agree. Normal here runs about 120
+            to 125 V depending where it is measured.'
           title: '⚠️ Ting: voltage running low'
     - alias: Back to normal - only if an excursion was actually reported, so a restart
         cannot fake it
@@ -8701,3 +8784,10 @@
           entity_id: input_boolean.ting_voltage_excursion_active
   max: 10
   mode: queued
+  variables:
+    plugs:
+    - sensor.living_room_ac_voltage
+    - sensor.my_ac_voltage
+    - sensor.living_room_tv_voltage
+    - sensor.washer_voltage
+    - sensor.dryer_voltage
