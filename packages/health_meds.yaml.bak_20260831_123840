@@ -1,0 +1,55 @@
+# ============================================================
+# Medication dose mirrors (git-ignored package)
+# Moved from templates/template.yaml 2026-07-13 during the code
+# review so med names stay out of the public repo (same policy
+# as the other health_* packages). unique_ids unchanged, so the
+# entities and their long-term statistics carry over.
+#
+# The counter.med_*_doses helpers accumulate doses logged from the
+# SONOFF Orb med button (automation.meds_log_dose_from_button).
+# Counters carry no state_class, so they get NO long-term statistics,
+# only ~10 days of raw history, useless for the monthly crossfactor
+# report. These mirrors expose each counter as a total_increasing
+# sensor so the recorder keeps permanent statistics. The crossfactor
+# report reads each sensor's daily delta as a separate per-med
+# correlation factor against Oura sleep/recovery. Same trick as
+# "Bedroom Temp at Bedtime (recorded)". Never reset the counters or
+# the daily delta breaks.
+#
+# Zepbound is discontinued (counter frozen at 4) — mirror kept so the
+# historical statistics stay queryable.
+# ============================================================
+
+template:
+  - sensor:
+      - name: "Med Adderall Doses (recorded)"
+        unique_id: med_adderall_doses_recorded
+        state_class: total_increasing
+        unit_of_measurement: "doses"
+        icon: mdi:pill
+        state: "{{ states('counter.med_adderall_doses') | int(0) }}"
+        availability: "{{ has_value('counter.med_adderall_doses') }}"
+
+      - name: "Med Lexapro Doses (recorded)"
+        unique_id: med_lexapro_doses_recorded
+        state_class: total_increasing
+        unit_of_measurement: "doses"
+        icon: mdi:pill
+        state: "{{ states('counter.med_lexapro_doses') | int(0) }}"
+        availability: "{{ has_value('counter.med_lexapro_doses') }}"
+
+      - name: "Med Guanfacine Doses (recorded)"
+        unique_id: med_guanfacine_doses_recorded
+        state_class: total_increasing
+        unit_of_measurement: "doses"
+        icon: mdi:pill
+        state: "{{ states('counter.med_guanfacine_doses') | int(0) }}"
+        availability: "{{ has_value('counter.med_guanfacine_doses') }}"
+
+      - name: "Med Zepbound Doses (recorded)"
+        unique_id: med_zepbound_doses_recorded
+        state_class: total_increasing
+        unit_of_measurement: "doses"
+        icon: mdi:needle
+        state: "{{ states('counter.med_zepbound_doses') | int(0) }}"
+        availability: "{{ has_value('counter.med_zepbound_doses') }}"

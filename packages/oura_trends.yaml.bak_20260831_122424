@@ -14,7 +14,7 @@ sensor:
   # 30-day rolling mean HRV — your personal baseline
   - platform: statistics
     name: "Oura HRV 30-Day Baseline"
-    entity_id: sensor.oura_daily_average_sleep_hrv
+    entity_id: sensor.oura_ring_average_sleep_hrv
     state_characteristic: mean
     max_age:
       days: 30

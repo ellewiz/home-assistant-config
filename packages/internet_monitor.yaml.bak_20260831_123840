@@ -79,7 +79,7 @@ automation:
       WAN watchdog, part 1 of 2. When binary_sensor.internet has been down for
       2 min (filters single-poll blips), record the drop time (the sensor's
       last_changed is the real moment it went down) into
-      input_datetime.internet_outage_start and bump input_number.internet_outage_count.
+      input_datetime.internet_outage_start and bump counter.internet_outages.
       No notification here: during an outage HA cannot reach the push service.
       The companion "Internet: Restored (Core alibi)" sends the after-the-fact
       alert once connectivity returns. Together they disambiguate a Healthchecks

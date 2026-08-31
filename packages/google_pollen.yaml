@@ -1,0 +1,166 @@
+# Wiz Manor — Species-Level Pollen (Google Pollen API)
+#
+# WHY: Kleenex Pollen Radar (Ewing) only reports three rolled-up buckets —
+# trees, grass, weeds. Lara asked (Aug 31 2026) for species-level detail so a
+# bad allergy day can be traced to an actual plant, not just "weeds are up."
+# A live test call confirmed this location DOES report individual species,
+# ragweed included (UPI 3 "Moderate", in season, same day Kleenex's weeds
+# bucket also read moderate) — see project_window_score.md.
+#
+# HOW: Native `rest:` platform, ONE request/day to Google's Pollen API
+# (pollen.googleapis.com/v1/forecast:lookup) for Ewing NJ (40.2596/-74.8283).
+# Auth via the X-Goog-Api-Key HEADER, not a URL query param, so the key never
+# lands in a URL or a log line — see secrets.yaml (google_pollen_api_key).
+# Pollen doesn't move hour to hour, so this polls once/day (86400s), not
+# every 30 min like air_quality.yaml's `rest:` block — comfortably inside the
+# free tier (5,000 calls/mo; this uses ~30).
+#
+# ARCHITECTURE: the `rest:` sensor schema only supports a flat `json_attributes`
+# list (top-level keys straight off the response) — no per-attribute templating.
+# So there's ONE rest sensor (Raw) carrying the full response as attributes,
+# and everything else is a `template:` sensor reading off Raw's attributes.
+# (First attempt used a `json_attributes_template` key on the rest sensors
+# directly — not a real option, HA rejected the whole resource. Fixed by
+# splitting it this way instead.)
+#
+# SCOPE (per Lara, Aug 31 2026): "any allergens they supply," not just
+# ragweed. Nothing below hardcodes a species allowlist — Raw and Dominant
+# Species both read off whatever plantInfo entries Google returns for this
+# location on a given day, so spring tree species (oak, birch, maple) show up
+# automatically in season without a config change.
+#
+# STATUS: Google Pollen is PRIMARY for the Window Score's pollen penalty
+# (automation.sleep_update_notify_window_score in automations.yaml); Kleenex
+# Pollen Radar stays wired in as a FALLBACK if Raw is unavailable (API
+# outage, key issue, etc.) — see that automation's `pp` block. Kleenex
+# sensors are not removed or replaced.
+#
+# See project memory: project_window_score.md, project_air_quality_openmeteo.md.
+
+rest:
+  - resource: "https://pollen.googleapis.com/v1/forecast:lookup?location.longitude=-74.8283&location.latitude=40.2596&days=1"
+    headers:
+      X-Goog-Api-Key: !secret google_pollen_api_key
+    scan_interval: 86400
+    sensor:
+      # State = count of species with current index data today. Attributes
+      # carry the FULL API response — both pollen-type rollups
+      # (grass/tree/weed) and every plant species Google reports for this
+      # location. Everything below reads off THIS sensor rather than
+      # re-requesting the API.
+      - name: "Google Pollen Raw"
+        unique_id: google_pollen_raw
+        value_template: >-
+          {{ (value_json.dailyInfo[0].plantInfo | selectattr('indexInfo','defined') | list | count) | int(0) }}
+        unit_of_measurement: "species"
+        icon: mdi:flower-pollen-outline
+        json_attributes_path: "$.dailyInfo[0]"
+        json_attributes:
+          - pollenTypeInfo
+          - plantInfo
+        availability: "{{ value_json.dailyInfo is defined and (value_json.dailyInfo | count) > 0 }}"
+
+template:
+  - sensor:
+      - name: "Google Pollen Grass"
+        unique_id: google_pollen_grass
+        state: >-
+          {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','GRASS') | list -%}
+          {%- set t = m[0] if (m | count) > 0 else {} -%}
+          {{ t.indexInfo.value | default(0) | int(0) }}
+        icon: mdi:grass
+        state_class: measurement
+        attributes:
+          category: >-
+            {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','GRASS') | list -%}
+            {%- set t = m[0] if (m | count) > 0 else {} -%}
+            {{ t.indexInfo.category | default('n/a') }}
+          in_season: >-
+            {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','GRASS') | list -%}
+            {%- set t = m[0] if (m | count) > 0 else {} -%}
+            {{ t.inSeason | default(false) }}
+        availability: "{{ state_attr('sensor.google_pollen_raw','pollenTypeInfo') is not none }}"
+
+      - name: "Google Pollen Tree"
+        unique_id: google_pollen_tree
+        state: >-
+          {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','TREE') | list -%}
+          {%- set t = m[0] if (m | count) > 0 else {} -%}
+          {{ t.indexInfo.value | default(0) | int(0) }}
+        icon: mdi:tree
+        state_class: measurement
+        attributes:
+          category: >-
+            {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','TREE') | list -%}
+            {%- set t = m[0] if (m | count) > 0 else {} -%}
+            {{ t.indexInfo.category | default('n/a') }}
+          in_season: >-
+            {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','TREE') | list -%}
+            {%- set t = m[0] if (m | count) > 0 else {} -%}
+            {{ t.inSeason | default(false) }}
+        availability: "{{ state_attr('sensor.google_pollen_raw','pollenTypeInfo') is not none }}"
+
+      - name: "Google Pollen Weed"
+        unique_id: google_pollen_weed
+        state: >-
+          {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','WEED') | list -%}
+          {%- set t = m[0] if (m | count) > 0 else {} -%}
+          {{ t.indexInfo.value | default(0) | int(0) }}
+        icon: mdi:sprout
+        state_class: measurement
+        attributes:
+          category: >-
+            {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','WEED') | list -%}
+            {%- set t = m[0] if (m | count) > 0 else {} -%}
+            {{ t.indexInfo.category | default('n/a') }}
+          in_season: >-
+            {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','WEED') | list -%}
+            {%- set t = m[0] if (m | count) > 0 else {} -%}
+            {{ t.inSeason | default(false) }}
+        availability: "{{ state_attr('sensor.google_pollen_raw','pollenTypeInfo') is not none }}"
+
+      - name: "Google Pollen Ragweed"
+        unique_id: google_pollen_ragweed
+        state: >-
+          {%- set m = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('code','equalto','RAGWEED') | list -%}
+          {%- set r = m[0] if (m | count) > 0 else {} -%}
+          {{ r.indexInfo.value | default(0) | int(0) }}
+        icon: mdi:flower-pollen
+        state_class: measurement
+        attributes:
+          category: >-
+            {%- set m = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('code','equalto','RAGWEED') | list -%}
+            {%- set r = m[0] if (m | count) > 0 else {} -%}
+            {{ r.indexInfo.category | default('n/a') }}
+          in_season: >-
+            {%- set m = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('code','equalto','RAGWEED') | list -%}
+            {%- set r = m[0] if (m | count) > 0 else {} -%}
+            {{ r.inSeason | default(false) }}
+        availability: "{{ state_attr('sensor.google_pollen_raw','plantInfo') is not none }}"
+
+      # Whichever plant Google currently has the HIGHEST reporting UPI for,
+      # out of every species it supplies for this location — not a fixed
+      # list. This is the "what's actually driving today" answer the 3
+      # rollups above can't give alone (e.g. weeds reading low overall while
+      # one specific late-blooming species is spiking).
+      - name: "Google Pollen Dominant Species"
+        unique_id: google_pollen_dominant_species
+        state: >-
+          {%- set reporting = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('indexInfo','defined') | list -%}
+          {%- set top = (reporting | sort(attribute='indexInfo.value', reverse=true))[0] if (reporting | count) > 0 else {} -%}
+          {{ top.displayName | default('None reporting') | trim }}
+        icon: mdi:flower-pollen
+        attributes:
+          value: >-
+            {%- set reporting = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('indexInfo','defined') | list -%}
+            {%- set top = (reporting | sort(attribute='indexInfo.value', reverse=true))[0] if (reporting | count) > 0 else {} -%}
+            {{ top.indexInfo.value | default(0) | int(0) }}
+          category: >-
+            {%- set reporting = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('indexInfo','defined') | list -%}
+            {%- set top = (reporting | sort(attribute='indexInfo.value', reverse=true))[0] if (reporting | count) > 0 else {} -%}
+            {{ top.indexInfo.category | default('n/a') }}
+          in_season: >-
+            {%- set reporting = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('indexInfo','defined') | list -%}
+            {%- set top = (reporting | sort(attribute='indexInfo.value', reverse=true))[0] if (reporting | count) > 0 else {} -%}
+            {{ top.inSeason | default(false) }}
+        availability: "{{ state_attr('sensor.google_pollen_raw','plantInfo') is not none }}"

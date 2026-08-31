@@ -410,7 +410,13 @@
   mode: single
 - id: '1718503009309'
   alias: TV off weekends and time off
-  description: ''
+  description: '2026-08-30 FIX: this automation''s own re-enable list had drifted
+    from the canonical one — it was missing automation.living_room_lights_on_morning
+    (the gap the 2026-08-23 clash audit flagged as open) and instead re-enabled automation.tv_event_reminder,
+    which nothing in this config ever actually disables (confirmed dead via search).
+    Replaced with a call to script.tv_nightly_automations_reenable, the single owned
+    copy of the correct 4-item list (also called by TV Event Over and TV Event — Nightly
+    Reconcile). See the automation duplication audit for detail.'
   triggers:
   - at: '23:00:00'
     trigger: time
@@ -429,15 +435,9 @@
     target:
       entity_id: script.graceful_tv_exit
     data: {}
-  - action: automation.turn_on
-    metadata: {}
-    data: {}
-    target:
-      entity_id:
-      - automation.tv_off_weekends_and_time_off
-      - automation.tv_event_reminder
-      - automation.tv_off_regular_night
-      - automation.living_room_ambient_manager
+  - alias: Re-enable the nightly automation set (owned by script.tv_nightly_automations_reenable,
+      no-op if already on)
+    action: script.tv_nightly_automations_reenable
   - action: switch.turn_on
     metadata: {}
     target:
@@ -632,7 +632,11 @@
     so it now stays quiet. THE GATE IS ON THE ANNOUNCEMENT STEP ONLY - graceful_tv_exit,
     the Adaptive Lighting resume and the automation re-enables below it remain unconditional,
     exactly as the 2026-07-13 note already insisted, because skipping those would
-    strand the living room in Movie-scene state overnight.'
+    strand the living room in Movie-scene state overnight. 2026-08-30: the inline
+    automation.turn_on re-enable list was replaced with a call to script.tv_nightly_automations_reenable,
+    which now owns that list in one place (was hand-copied across this automation,
+    TV Event — Nightly Reconcile, and TV off weekends and time off — see the duplication
+    audit).'
   triggers:
   - entity_id: calendar.tv
     event: end
@@ -661,13 +665,8 @@
     action: switch.turn_on
     target:
       entity_id: switch.adaptive_lighting_living_room_lights
-  - action: automation.turn_on
-    target:
-      entity_id:
-      - automation.living_room_ambient_manager
-      - automation.tv_off_regular_night
-      - automation.tv_off_weekends_and_time_off
-      - automation.living_room_lights_on_morning
+  - alias: Re-enable the nightly automation set (owned by script.tv_nightly_automations_reenable)
+    action: script.tv_nightly_automations_reenable
   - if:
     - condition: state
       entity_id: input_boolean.workday_tomorrow
@@ -2509,35 +2508,72 @@
     data syncs each morning, so the Cowork scheduled task ''oura-daily-sleep-note''
     (polls the flag every 30 min from 6am) can gate cheaply: flag off = exit in one
     call; flag on = write the iCloud Markdown sleep report then turn the flag off.
-    Triggers on EITHER sleep_score OR bedtime_end changing to a valid value. 2026-07-10
-    fix: bedtime_end was added because the original sleep_score-only trigger silently
-    missed mornings where last night''s score equaled the prior night''s (90 == 90
-    on Jul 10); an identical value is not a state change in HA, so the flag never
-    rose and no report was written. bedtime_end (the wake timestamp) differs every
-    night, so it fires reliably on each sync. Either trigger raising the flag is safe
-    (idempotent turn_on, mode single); the task''s own file-exists and freshness guards
-    prevent duplicate reports. Not gated on calendar.vacation: the note is harmless
-    while away and sleep data still syncs.'
+    Two branches, by trigger id: (1) ''sync'' - sleep_score OR bedtime_end changing
+    to a valid value, the normal daily path. (2) ''restart'' - homeassistant start,
+    a 1-min settle delay then a check that bedtime_end''s own timestamp date is today,
+    covering the case where HA restarts after today''s Oura sync already landed but
+    before this automation''s own reload could catch the live state-change event (a
+    documented restart-timing race, 2026-08-30). The restart check needs a template
+    because there is no native condition for ''does this entity''s own value fall
+    on today''s date'' - numeric_state/state conditions can''t parse a stored timestamp,
+    and condition:time only reads the current clock, not the entity''s value. Either
+    branch raising the flag is safe (idempotent turn_on, mode single); the Cowork
+    task''s own Step 1b freshness check and Step 2 file-exists dup-check absorb a
+    redundant or premature raise for free, so no separate catch-up automation or marker
+    helper is needed. 2026-07-10 fix: bedtime_end was added to the sync branch because
+    the original sleep_score-only trigger silently missed mornings where last night''s
+    score equaled the prior night''s (90 == 90 on Jul 10); an identical value is not
+    a state change in HA, so the flag never rose and no report was written. Not gated
+    on calendar.vacation: the note is harmless while away and sleep data still syncs.'
   triggers:
   - entity_id: sensor.oura_ring_sleep_score
+    id: sync
     not_to:
     - unknown
     - unavailable
-    platform: state
-  - platform: state
-    entity_id: sensor.oura_ring_bedtime_end
+    trigger: state
+  - entity_id: sensor.oura_ring_bedtime_end
+    id: sync
     not_to:
     - unknown
     - unavailable
-  conditions:
-  - condition: template
-    value_template: '{{ trigger.to_state.state not in [''unknown'', ''unavailable'',
-      ''none'', ''''] }}'
+    trigger: state
+  - event: start
+    id: restart
+    trigger: homeassistant
+  conditions: []
   actions:
-  - alias: Raise the pending flag for the Cowork sleep-note task
-    action: input_boolean.turn_on
-    target:
-      entity_id: input_boolean.oura_note_pending
+  - choose:
+    - conditions:
+      - condition: trigger
+        id:
+        - sync
+      - condition: template
+        value_template: '{{ trigger.to_state.state not in [''unknown'', ''unavailable'',
+          ''none'', ''''] }}'
+      sequence:
+      - action: input_boolean.turn_on
+        alias: Raise the pending flag for the Cowork sleep-note task
+        target:
+          entity_id: input_boolean.oura_note_pending
+    - conditions:
+      - condition: trigger
+        id:
+        - restart
+      sequence:
+      - delay: 00:01:00
+        note: Let entities finish restoring/reloading after boot before reading bedtime_end.
+      - if:
+        - condition: template
+          note: True only if today's Oura data had already synced before this restart.
+          value_template: '{{ states(''sensor.oura_ring_bedtime_end'') not in [''unknown'',
+            ''unavailable'', ''none'', ''''] and (states(''sensor.oura_ring_bedtime_end'')
+            | as_datetime | as_local).date() == now().date() }}'
+        then:
+        - action: input_boolean.turn_on
+          alias: Raise the pending flag after a restart, if today's data already synced
+          target:
+            entity_id: input_boolean.oura_note_pending
   mode: single
 - id: bedroom_lights_off_manager
   alias: Bedroom — Lights Off (Motion Clear / Bright / In Bed / Retry)
@@ -3256,12 +3292,13 @@
   mode: single
 - id: meds_guanfacine_tv_nudge
   alias: 'Meds — Guanfacine: TV nudge until logged'
-  description: '⚠️ ARCHIVED 2026-08-08 — the Roku TV was physically removed. The tv_player
-    variable''s Roku fallback (''elif media_player.55_tcl_roku_tv playing'') is inert,
-    so this nudge can only detect/pause/resume Apple TV playback now — anything playing
-    natively on the TV''s own apps won''t get paused or auto-resumed. Lights-only
-    nudge still fires regardless. When a new TV is set up: swap media_player.55_tcl_roku_tv
-    for its entity_id in the tv_player template. Label: TV Replacement Pending.
+  description: 'ROKU REFERENCE REMOVED 2026-08-30 — the tv_player template''s Roku
+    fallback branch (media_player.55_tcl_roku_tv) was deleted; the TV was physically
+    removed 2026-08-08 so the branch was already inert. This nudge is now Apple-TV-only:
+    it can pause/resume media_player.living_room_4k_2 and nothing else. If the replacement
+    TV should also be pausable/resumable by this nudge, that branch needs to be re-added
+    by hand with its new entity_id — it is no longer part of the standing TV-replacement
+    swap checklist for this automation.
 
 
     Evening nudge to take Guanfacine (resets off daily at 4am; normally logged ~9-10pm,
@@ -3273,17 +3310,16 @@
     yet). Then HOLD (no timeout, per Lara) until input_boolean.guanfacine_taken turns
     on, at which point: restore the lights to their exact prior state, hand them back
     to Adaptive Lighting, and resume the paused player. ''Whatever is playing'' =
-    Apple TV (media_player.living_room_4k_2) if playing/buffering, else TCL Roku (media_player.55_tcl_roku_tv)
-    if playing, else nothing (lights-only nudge). KNOWN LIMITATION: Frndly is invisible
-    to the ATV integration (sits idle, app_id '''') so it can''t be paused via HA
-    — lights still brighten. mode: restart so a new evening''s 8:10 trigger supersedes
-    any instance left waiting from an away night. Guests = input_boolean.guests (created
-    Jun 2026). NOTE no in_bed safety-release: Lara explicitly chose hold-until-logged
-    with no timeout.'
+    Apple TV (media_player.living_room_4k_2) if playing/buffering, else nothing (lights-only
+    nudge). KNOWN LIMITATION: Frndly is invisible to the ATV integration (sits idle,
+    app_id '''') so it can''t be paused via HA — lights still brighten. mode: restart
+    so a new evening''s 8:10 trigger supersedes any instance left waiting from an
+    away night. Guests = input_boolean.guests (created Jun 2026). NOTE no in_bed safety-release:
+    Lara explicitly chose hold-until-logged with no timeout.'
   triggers:
   - at: '20:10:00'
     id: evening_check
-    platform: time
+    trigger: time
   conditions:
   - condition: state
     entity_id: input_boolean.guests
@@ -3325,8 +3361,7 @@
   - alias: Capture which player is actively playing (for pause + later resume)
     variables:
       tv_player: '{% if states(''media_player.living_room_4k_2'') in [''playing'',
-        ''buffering''] %}media_player.living_room_4k_2{% elif states(''media_player.55_tcl_roku_tv'')
-        == ''playing'' %}media_player.55_tcl_roku_tv{% else %}none{% endif %}'
+        ''buffering''] %}media_player.living_room_4k_2{% else %}none{% endif %}'
   - alias: Snapshot the living-room lights so we can restore them exactly
     action: scene.create
     data:
@@ -4026,23 +4061,21 @@
     re-enable only covers non-work nights while home). This runs every day at 04:00:
     when no calendar.tv event is active, it re-enables all four and resumes the living-room
     AL switch. All actions are no-ops when everything is already on, so it''s safe
-    to fire nightly. Created 2026-07-13 (code review R10).'
+    to fire nightly. Created 2026-07-13 (code review R10). 2026-08-30: the inline
+    automation.turn_on re-enable list was replaced with a call to script.tv_nightly_automations_reenable,
+    which now owns that list in one place (was hand-copied across this automation,
+    TV Event Over, and TV off weekends and time off — see the duplication audit).'
   triggers:
-  - platform: time
-    at: 04:00:00
+  - at: 04:00:00
+    trigger: time
   conditions:
   - condition: state
     entity_id: calendar.tv
     state: 'off'
   actions:
-  - alias: Re-enable the nightly automation set (no-op if already on)
-    action: automation.turn_on
-    target:
-      entity_id:
-      - automation.living_room_ambient_manager
-      - automation.tv_off_regular_night
-      - automation.tv_off_weekends_and_time_off
-      - automation.living_room_lights_on_morning
+  - alias: Re-enable the nightly automation set (owned by script.tv_nightly_automations_reenable,
+      no-op if already on)
+    action: script.tv_nightly_automations_reenable
   - alias: Resume living-room Adaptive Lighting (no-op if already on)
     action: switch.turn_on
     target:
@@ -5663,7 +5696,8 @@
   max: 3
   mode: queued
 - id: '1786413800292'
-  alias: Bedroom AC — Gradual Warm Before Alarm (v2, Runs During Test Blocks)
+  alias: Bedroom AC — Gradual Warm Before Alarm (v3, Coordinated With Night Setpoint
+    Manager)
   description: 'Warms the bedroom by 3°F over the 30 minutes before wake, in three
     1°F steps 15 minutes apart, landing the final step exactly at wake time - so the
     room isn''t cold enough to make staying in bed tempting. Mirrors the Sonos Wake
@@ -5711,13 +5745,26 @@
 
 
     Self-corrects: during a block, the next bedtime fire re-applies the exact block
-    temperature, so the +3F does not accumulate.'
+    temperature, so the +3F does not accumulate.
+
+
+    v3 (2026-08-30) - COORDINATION FIX, found by a duplication/conflict audit. Night
+    Setpoint Manager''s in-bed climb (capped at 68F) had no idea this automation existed,
+    and its every-15-minute tick was clawing these +1/+2/+3F steps back down to 68
+    whenever a tick landed inside this 25-30 minute window - which is likely on most
+    mornings, since ticks are every 15 min and the window is 25-30 min wide. Fix:
+    this automation now turns on input_boolean.bedroom_wake_warm_up_active right after
+    capturing base_temp, and clears it after the final log line. Night Setpoint Manager
+    now skips its dial-writing entirely while that flag is on (with a 40-minute stale-flag
+    escape hatch in its own description). No change to the step values, timing, the
+    sweet-spot test skip, or the base_temp capture - this only stops another automation
+    from undoing the ramp.'
   triggers:
   - entity_id: calendar.master_calendar
     event: start
     id: wake_prep
     offset: -0:30:00
-    platform: calendar
+    trigger: calendar
   conditions:
   - condition: state
     entity_id: binary_sensor.workday
@@ -5743,6 +5790,10 @@
   actions:
   - variables:
       base_temp: '{{ state_attr(''climate.bedroom_ac'', ''temperature'') | float }}'
+  - action: input_boolean.turn_on
+    alias: 'Claim the dial: block Night Setpoint Manager for the duration of the ramp'
+    target:
+      entity_id: input_boolean.bedroom_wake_warm_up_active
   - action: climate.set_temperature
     alias: Step 1 of 3 — +1°F
     data:
@@ -5771,9 +5822,13 @@
         3 }}°F over 30 min. Sweet-spot block at the time: {{ states(''input_select.ac_sweet_spot_test_block'')
         }}.'
       name: Bedroom AC
+  - action: input_boolean.turn_off
+    alias: Release the dial back to Night Setpoint Manager
+    target:
+      entity_id: input_boolean.bedroom_wake_warm_up_active
   mode: single
 - id: '1786413806767'
-  alias: Living Room AC — Bedtime Setback (Unless Guests) (v3)
+  alias: Living Room AC — Bedtime Setback (Unless Guests) (v4)
   description: 'At bedtime (in_bed on), sets the living room AC to eco preset and
     relaxes its target temperature up 3°F, so it''s not working to hold a full daytime-comfort
     temperature all night in an empty room - just enough to keep it from getting too
@@ -5811,9 +5866,29 @@
     temperature) landed at 08:00:00 and left the unit reading preset ''eco'' instead
     of the ''none'' it had just been set to, while the same three calls issued manually
     with several seconds between them all stuck correctly. Same session also confirmed
-    the separate, worse ''away'' preset bug — see the away-eco automation''s v4 note.'
+    the separate, worse ''away'' preset bug — see the away-eco automation''s v4 note.
+
+
+    v4 (2026-08-30) — DEBOUNCED AGAINST RAPID RE-TRIGGERING. CORRECTED CAUSE (Lara,
+    same day): the original v4 note here blamed an HA restart at 06:47 for boot-time
+    entity flapping. That was wrong — the restart that morning was real (see [[project_restart_log_aug2026]])
+    but unrelated. What actually happened: Lara went to check what time input_boolean.in_bed
+    had turned off, mis-tapped the toggle a couple of times by accident while looking,
+    then tapped it once more to actually turn it off — five real on/off transitions
+    in under 90 seconds (06:44:19-06:45:46), all genuine manual taps, not a boot artifact.
+    This automation and its counterpart ''Morning Restore'' both key off that same
+    boolean, so the rapid taps fired them back-to-back and they raced: the restore''s
+    climate.set_temperature(74) landed, then a queued set_temperature(+3) call from
+    this automation (delayed 3s for the Midea settle pause) landed on top of it —
+    leaving the unit at 77°F while pre_setback_temp had already been zeroed by the
+    restore, i.e. the marker said ''no setback active'' while the unit sat setback-high
+    all day. Added for: 00:00:05 to the to:''on'' trigger so a transition has to hold
+    5 seconds before counting as a real bedtime — this protects against ANY rapid
+    re-triggering of in_bed (fat-fingered taps, a flaky physical button, or a future
+    boot-flapping scenario), not restart-specific.'
   triggers:
   - entity_id: input_boolean.in_bed
+    for: 00:00:05
     to: 'on'
     trigger: state
   conditions:
@@ -5870,7 +5945,7 @@
       name: Living Room AC
   mode: single
 - id: '1786413963544'
-  alias: Bedroom AC — Dry Mode While Getting Ready (v2, Humidity-Gated)
+  alias: Bedroom AC — Dry Mode While Getting Ready (v3, Hands Back to Vanity Window)
   description: 'On waking on a workday, switches climate.bedroom_ac to hvac_mode dry
     for the getting-ready stretch, so the room does not feel muggy while showering
     and dressing. Lara''s original request.
@@ -5925,7 +6000,19 @@
 
     RELATED, NOT YET BUILT: the office-morning vanity window that holds the wall sensor
     at 70-72 was deferred by Lara on 2026-08-15. When it is built, this automation''s
-    revert step should hand back to it rather than simply restoring cool.'
+    revert step should hand back to it rather than simply restoring cool.
+
+
+    v3 (2026-08-30) - VANITY HANDBACK, found by a duplication/conflict audit. This
+    automation''s own v2 note said ''when [the vanity window] is built, this automation''s
+    revert step should hand back to it rather than simply restoring cool'' - it was
+    built 2026-08-16 and this automation was never revisited. Fix: on exit, if input_boolean.bedroom_vanity_window
+    is still on, explicitly restate input_number.bedroom_vanity_dial_target instead
+    of leaving the number wherever dry mode left it. This does not stop dry mode from
+    running during the vanity window - that tradeoff (dehumidify vs. precise temp
+    for up to 25 min) is unchanged and was Lara''s deliberate call via the humidity
+    threshold and the 68F bail-out. It only fixes what happens the moment dry mode
+    ends.'
   triggers:
   - entity_id: input_boolean.in_bed
     id: woke
@@ -5989,6 +6076,32 @@
       hvac_mode: cool
     target:
       entity_id: climate.bedroom_ac
+  - alias: Hand back to the vanity window's target, if it is still open
+    note: Dry mode ignores the setpoint entirely while active, so whatever the vanity
+      window set before this automation took over never held. On exit, if the window
+      is still open, explicitly restate its target instead of leaving the number wherever
+      it happened to sit - this is the handoff this automation's own v2 description
+      said should exist once the vanity window was built.
+    if:
+    - condition: state
+      entity_id: input_boolean.bedroom_vanity_window
+      state: 'on'
+    - condition: not
+      conditions:
+      - condition: state
+        entity_id: climate.bedroom_ac
+        state:
+        - 'off'
+        - unavailable
+        - unknown
+    then:
+    - action: climate.set_temperature
+      alias: Restate the vanity dial target, skipping the unsettable 75
+      data:
+        temperature: '{% set t = states(''input_number.bedroom_vanity_dial_target'')
+          | int(73) %}{{ 74 if t == 75 else t }}'
+      target:
+        entity_id: climate.bedroom_ac
   - action: logbook.log
     alias: Log the exit, and say which way it ended
     data:
@@ -5999,7 +6112,7 @@
       name: Bedroom AC
   mode: single
 - id: '1786446832933'
-  alias: Living Room AC — Morning Restore After Bedtime Setback (v1)
+  alias: Living Room AC — Morning Restore After Bedtime Setback (v2)
   description: 'Closes the loop on ''Living Room AC — Bedtime Setback (Unless Guests)
     (v2)'', which raised the living room target +3°F at bedtime and had no exit. Found
     2026-08-11: the setback fired at 23:42 and the living room was still sitting at
@@ -6030,9 +6143,27 @@
 
     Gated on calendar.vacation off per house style section 8. No guests gate needed:
     if guests were on, the setback never ran, so the helper is 0 and this exits on
-    its own.'
+    its own.
+
+
+    v2 (2026-08-30) — DEBOUNCED AGAINST RAPID RE-TRIGGERING. CORRECTED CAUSE (Lara,
+    same day): the original v2 note here blamed an HA restart at 06:47 for boot-time
+    entity flapping. That was wrong — the restart that morning was real (see [[project_restart_log_aug2026]])
+    but unrelated. What actually happened: Lara went to check what time input_boolean.in_bed
+    had turned off, mis-tapped the toggle a couple of times by accident while looking,
+    then tapped it once more to actually turn it off — five real on/off transitions
+    in under 90 seconds (06:44:19-06:45:46), all genuine manual taps, not a boot artifact.
+    The woke_up trigger (on→off) fired three separate times in that window and raced
+    ''Living Room AC — Bedtime Setback'', which was retriggering off the same taps''
+    off→on edges. Net effect: the pre_setback_temp marker got zeroed (looked like
+    a completed restore) but the unit itself was left at the 77°F setback value instead
+    of 74°F — found live the same day. Added for: 00:00:05 to the woke_up trigger
+    only (backstop and unit_recovered aren''t exposed to this failure mode, since
+    neither depends on in_bed toggling) so a sub-5-second flap — mis-tap, flaky button,
+    or a future boot-flapping scenario — can no longer be read as a real wake.'
   triggers:
   - entity_id: input_boolean.in_bed
+    for: 00:00:05
     from: 'on'
     id: woke_up
     to: 'off'
@@ -6632,7 +6763,7 @@
       hvac_mode: cool
   mode: single
 - id: bedroom_night_setpoint_manager_v1
-  alias: Bedroom AC — Night Setpoint Manager (v3)
+  alias: Bedroom AC — Night Setpoint Manager (v4, Yields to Wake Warm-Up)
   description: 'Single owner of climate.bedroom_ac''s dial from the evening ramp through
     to wake. Built 2026-08-15 after Lara woke into a 62F bedroom: on the night of
     2026-08-14 the dial was parked at 61F (the unit''s minimum) as a fixed overnight
@@ -6779,7 +6910,20 @@
     STILL TRUE IN v3: read input_datetime.bedroom_night_setpoint_last_change, NOT
     last_triggered. Note the daytime release automation added the same day (Bedroom
     AC - Daytime Release to 76) deliberately does NOT stamp that helper, so it stays
-    a clean signal for THIS automation only.'
+    a clean signal for THIS automation only.
+
+
+    v4 (2026-08-30) - YIELD TO GRADUAL WARM, found by a duplication/conflict audit.
+    This automation''s ''single owner... through to wake'' claim was never actually
+    true: Bedroom AC - Gradual Warm Before Alarm runs a +1/+2/+3F ramp in the 25-30
+    minutes before wake, and this automation''s in-bed climb caps at 68F - so any
+    15-minute tick landing inside that window saw desired(68) != cur_temp(69-71) and
+    wrote 68 straight back over the ramp. Likely on most mornings, since ticks are
+    every 15 min and the window is 25-30 min wide. Fix: added a top-level OR condition
+    - proceed only if input_boolean.bedroom_wake_warm_up_active is off, or has been
+    on for 40+ minutes (stale-flag escape hatch, since Gradual Warm''s own ceiling
+    is 25 min). Gradual Warm sets that flag itself around its ramp. Nothing else about
+    the evening ramp, in-bed climb, or virtual-bedtime anchor changed.'
   triggers:
   - id: tick
     minutes: /15
@@ -6816,6 +6960,20 @@
     note: 'An unreachable unit reports None for the target. numeric_state evaluates
       false on None, which is the fail-safe direction: do nothing rather than write
       a number based on a missing reading.'
+  - condition: or
+    note: 'Defer to Gradual Warm Before Alarm''s 25-30 min pre-wake ramp instead of
+      clawing it back to the in-bed-climb cap on the next tick. The 40-min leg is
+      a stale-flag escape hatch: that automation''s own hard ceiling is 25 minutes,
+      so if it ever dies mid-run, this resumes ownership on its own rather than staying
+      locked out.'
+    conditions:
+    - condition: state
+      entity_id: input_boolean.bedroom_wake_warm_up_active
+      state: 'off'
+    - condition: state
+      entity_id: input_boolean.bedroom_wake_warm_up_active
+      state: 'on'
+      for: 00:40:00
   actions:
   - alias: Work out whether this automation owns the dial right now, and what the
       number should be
@@ -7902,7 +8060,13 @@
     step keys on the player actually being paused, so the soft tier never presses
     play on something still playing. On success (in_bed goes on) the lamps restore
     and go back to Adaptive Lighting but playback is NOT resumed, since she has left
-    the room. NOT YET LIVE-FIRED against a real evening.'
+    the room. FIRST HARD-TIER LIVE FIRE 2026-08-28 21:16:26 (Friday): lights went
+    to 70 percent and the push landed; the Apple TV was off, so nothing was paused.
+    v2.1 the same evening - the hard-tier push claimed ''TV paused'' unconditionally
+    even when there was nothing to pause. It now captures tv_was_playing BEFORE the
+    pause step and says ''Lights up.'' alone when no pause happened. That first run
+    was cut short at 21:31 by a user-initiated HA restart, so the full 30-minute hold
+    and the restore / hand-back-to-AL steps have still NOT been observed end to end.'
   triggers:
   - at: input_datetime.bed_window_at
     id: bed_window_open
@@ -7942,6 +8106,10 @@
         value_template: '{{ (now() - timedelta(hours=6)).strftime(''%a'') | lower
           in [''fri'', ''sat''] }}'
       sequence:
+      - variables:
+          tv_was_playing: '{{ states(''media_player.living_room_4k_2'') in [''playing'',
+            ''buffering''] }}'
+        alias: Capture whether the TV was actually playing, BEFORE we pause it
       - alias: Pause the Apple TV if something is actually playing
         if:
         - condition: state
@@ -7962,8 +8130,9 @@
           entity_id: light.living_room_lights
       - action: notify.mobile_app_iphone
         data:
-          message: Lights up, TV paused. Friday and Saturday are where this actually
-            goes wrong. Releases in 30 min.
+          message: '{{ ''Lights up, TV paused.'' if tv_was_playing else ''Lights up.''
+            }} Friday and Saturday are where this actually goes wrong. Releases in
+            30 min.'
           title: Bed window
       - alias: Hold 30 min for in_bed, then release rather than nag forever
         continue_on_timeout: true
@@ -8791,3 +8960,141 @@
     - sensor.living_room_tv_voltage
     - sensor.washer_voltage
     - sensor.dryer_voltage
+- id: '1788137532987'
+  alias: 'Sleep: Update & Notify Window Score'
+  description: 'Scores tonight''s window (today 21:00-tomorrow 06:00) for sleeping
+    with windows open, 0-100, from weather.kttn_daynight''s hourly forecast. Storm/lightning-rainy
+    or max overnight rain chance >=70% hard-vetoes to 0. Otherwise sums: rain chance
+    (0-30), overnight low temp band 55-68F ideal (0-25), max dew point comfort (0-20,
+    <55 crisp / >=70 muggy), max wind (0-10), and a bonus (0-15) for how far the low
+    sits below climate.bedroom_ac''s setpoint (no bonus if outside won''t actually
+    beat the AC). Then subtracts a pollen penalty (PRIMARY: sensor.google_pollen_grass/tree/weed
+    UPI, worst-of-3 tiered 0/-10/-22/-35, +8 kicker if ragweed specifically is High/Very-High
+    UPI and in season; FALLBACK to sensor.total_pollen_index/Kleenex weeds level if
+    the Google sensor is unavailable) and an AQI penalty from tomorrow''s sensor.air_quality_daily_forecast
+    entry (0 at <=50 ramping to -30 above 150). Runs every 3h and at HA start to keep
+    the dashboard tile fresh; only the 20:30 fire sends the iPhone push. Gated off
+    during calendar.vacation like the other Ewing-sensor automations (see [[project_pollen_report_travel]]).
+    Companion to sensor.mow_score / automation.update_mow_forecast_scores, same house
+    style.'
+  triggers:
+  - hours: /3
+    id: periodic
+    trigger: time_pattern
+  - event: start
+    id: startup
+    trigger: homeassistant
+  - at: '20:30:00'
+    id: evening_notify
+    trigger: time
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - action: weather.get_forecasts
+    data:
+      type: hourly
+    response_variable: wx
+    target:
+      entity_id: weather.kttn_daynight
+  - action: input_number.set_value
+    data:
+      value: '{% set entries = wx[''weather.kttn_daynight''][''forecast''] %}{% set
+        today = now().date() %}{% set tomorrow = (now() + timedelta(days=1)).date()
+        %}{% set ns = namespace(night=[], storm=false) %}{% for p in entries %}{%
+        set pdt = as_datetime(p.datetime).astimezone() %}{% if (pdt.date() == today
+        and pdt.hour >= 21) or (pdt.date() == tomorrow and pdt.hour <= 6) %}{% set
+        ns.night = ns.night + [p] %}{% set c = p.condition | lower %}{% if ''lightning''
+        in c or ''pouring'' in c or ''hail'' in c %}{% set ns.storm = true %}{% endif
+        %}{% endif %}{% endfor %}{% if ns.night | length == 0 %}{{ 0 }}{% else %}{%
+        set precips = ns.night | map(attribute=''precipitation_probability'') | list
+        %}{% set max_precip = precips | max %}{% set storm = ns.storm or max_precip
+        >= 70 %}{% if storm %}{{ 0 }}{% else %}{% set temps = ns.night | map(attribute=''temperature'')
+        | list %}{% set dews = ns.night | map(attribute=''dew_point'') | list %}{%
+        set winds = ns.night | map(attribute=''wind_speed'') | list %}{% set low =
+        temps | min %}{% set max_dew = dews | max %}{% set max_wind = winds | max
+        %}{% set r = 30 if max_precip<10 else (22 if max_precip<25 else (14 if max_precip<40
+        else (6 if max_precip<60 else 2))) %}{% set t = 25 if (low>=55 and low<=68)
+        else (18 if ((low>=50 and low<55) or (low>68 and low<=72)) else (10 if ((low>=45
+        and low<50) or (low>72 and low<=78)) else 3)) %}{% set d = 20 if max_dew<55
+        else (15 if max_dew<60 else (9 if max_dew<65 else (3 if max_dew<70 else 0)))
+        %}{% set w = 10 if max_wind<=10 else (6 if max_wind<=15 else (2 if max_wind<=20
+        else 0)) %}{% set setpoint = state_attr(''climate.bedroom_ac'',''temperature'')
+        | float(72) %}{% set diffpts = 15 if low<=setpoint-5 else (10 if low<=setpoint-2
+        else (4 if low<=setpoint+2 else 0)) %}{% set g_avail = states(''sensor.google_pollen_weed'')
+        not in [''unknown'',''unavailable'',''none''] %}{% if g_avail %}{% set gw
+        = states(''sensor.google_pollen_weed'')|float(0) %}{% set gt = states(''sensor.google_pollen_tree'')|float(0)
+        %}{% set gg = states(''sensor.google_pollen_grass'')|float(0) %}{% set worst
+        = [gw, gt, gg] | max %}{% set pp = 0 if worst<2 else (10 if worst<3 else (22
+        if worst<4 else 35)) %}{% set rag = states(''sensor.google_pollen_ragweed'')|float(0)
+        %}{% set rag_season = state_attr(''sensor.google_pollen_ragweed'',''in_season'')
+        %}{% set pp = pp + (8 if (rag>=4 and rag_season) else 0) %}{% set pp = [pp,
+        35] | min %}{% else %}{% set weeds_lvl = states(''sensor.kleenex_pollen_radar_ewing_weeds_level'')
+        | lower %}{% set idx = states(''sensor.total_pollen_index'') | float(0) %}{%
+        set pp = 0 if idx<75 else (10 if idx<150 else (22 if idx<200 else 35)) %}{%
+        set pp = pp + (8 if weeds_lvl in [''high'',''very-high'',''very high''] else
+        0) %}{% set pp = [pp, 35] | min %}{% endif %}{% set af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'')
+        or [] %}{% set avl = af | selectattr(''date'',''equalto'', tomorrow|string)
+        | map(attribute=''aqi'') | list %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|float(0)
+        %}{% set aqp = 0 if aq<=50 else (4 if aq<=75 else (10 if aq<=100 else (20
+        if aq<=150 else 30))) %}{{ [100, [0, r+t+d+w+diffpts-pp-aqp] | max] | min
+        }}{% endif %}{% endif %}'
+    target:
+      entity_id: input_number.window_score
+  - action: input_text.set_value
+    data:
+      value: '{% set entries = wx[''weather.kttn_daynight''][''forecast''] %}{% set
+        today = now().date() %}{% set tomorrow = (now() + timedelta(days=1)).date()
+        %}{% set ns = namespace(night=[], storm=false) %}{% for p in entries %}{%
+        set pdt = as_datetime(p.datetime).astimezone() %}{% if (pdt.date() == today
+        and pdt.hour >= 21) or (pdt.date() == tomorrow and pdt.hour <= 6) %}{% set
+        ns.night = ns.night + [p] %}{% set c = p.condition | lower %}{% if ''lightning''
+        in c or ''pouring'' in c or ''hail'' in c %}{% set ns.storm = true %}{% endif
+        %}{% endif %}{% endfor %}{% if ns.night | length == 0 %}No overnight forecast
+        yet — check back closer to bedtime.{% else %}{% set precips = ns.night | map(attribute=''precipitation_probability'')
+        | list %}{% set max_precip = precips | max %}{% set storm = ns.storm or max_precip
+        >= 70 %}{% if storm %}Storms or heavy rain expected overnight ({{ max_precip
+        }}% chance) — keep them closed.{% else %}{% set temps = ns.night | map(attribute=''temperature'')
+        | list %}{% set dews = ns.night | map(attribute=''dew_point'') | list %}{%
+        set winds = ns.night | map(attribute=''wind_speed'') | list %}{% set low =
+        temps | min %}{% set max_dew = dews | max %}{% set max_wind = winds | max
+        %}{% set setpoint = state_attr(''climate.bedroom_ac'',''temperature'') | float(72)
+        %}{% set diff = setpoint - low %}{% set g_avail = states(''sensor.google_pollen_weed'')
+        not in [''unknown'',''unavailable'',''none''] %}{% if g_avail %}{% set gw
+        = states(''sensor.google_pollen_weed'')|float(0) %}{% set gt = states(''sensor.google_pollen_tree'')|float(0)
+        %}{% set gg = states(''sensor.google_pollen_grass'')|float(0) %}{% set worst
+        = [gw, gt, gg] | max %}{% set worst_cat = ''Very High'' if worst>=5 else (''High''
+        if worst>=4 else (''Moderate'' if worst>=3 else (''Low'' if worst>=2 else
+        ''Very Low''))) %}{% set dom = states(''sensor.google_pollen_dominant_species'')
+        %}{% set dom_val = state_attr(''sensor.google_pollen_dominant_species'',''value'')|default(0)|int(0)
+        %}{% set pollen_phrase = ''Pollen '' ~ worst_cat ~ '' (top: '' ~ dom ~ ''
+        UPI '' ~ dom_val ~ '')'' %}{% else %}{% set weeds_lvl = states(''sensor.kleenex_pollen_radar_ewing_weeds_level'')
+        | title %}{% set idx = states(''sensor.total_pollen_index'') | float(0) %}{%
+        set pollen_phrase = ''Ragweed '' ~ weeds_lvl ~ '' (pollen idx '' ~ (idx|round(0)|int)
+        ~ '')'' %}{% endif %}{% set af = state_attr(''sensor.air_quality_daily_forecast'',''forecast'')
+        or [] %}{% set avl = af | selectattr(''date'',''equalto'', tomorrow|string)
+        | map(attribute=''aqi'') | list %}{% set aq = avl[0] if avl|length else states(''sensor.air_quality_us_aqi'')|float(0)
+        %}{% if diff > 0 %}Low {{ low }}°F ({{ diff|round(0)|int }}° below your AC
+        setpoint), dew point {{ max_dew }}, rain {{ max_precip }}%, wind {{ max_wind
+        }}mph. {{ pollen_phrase }}, AQI {{ aq|round(0)|int }}.{% else %}Low {{ low
+        }}°F (actually {{ (-diff)|round(0)|int }}° above your AC setpoint — little
+        cooling benefit), dew point {{ max_dew }}, rain {{ max_precip }}%, wind {{
+        max_wind }}mph. {{ pollen_phrase }}, AQI {{ aq|round(0)|int }}.{% endif %}{%
+        endif %}{% endif %}'
+    target:
+      entity_id: input_text.window_score_reason
+  - choose:
+    - conditions:
+      - condition: trigger
+        id:
+        - evening_notify
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          message: '{{ states(''input_text.window_score_reason'') }}'
+          title: "{% set s = states('input_number.window_score')|float(0)|round(0)|int
+            %}\U0001FA9F Window Score: {{ s }} — {{ 'Great night' if s>=75 else ('Good
+            night' if s>=55 else ('Marginal' if s>=35 else 'Skip it')) }}"
+  max_exceeded: silent
+  mode: single
