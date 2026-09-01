@@ -133,7 +133,7 @@ reported via Malwarebytes ScamGuard. Catch-all search for these senders:
 |---|---|---|
 | Political fundraising blasts | `shared1.ccsend.com, moody.senate.gov, cbcpac.org` | Label Review-Delete, skip inbox — confirm intent first, this is a content judgment call rather than a clear spam/vendor domain |
 | Recurring retail/beauty marketing | `ursamajorvt.com, zulily.com, pinchme.com, hello.us.mercari.com` | Label Shopping, skip inbox |
-| Google Cloud promo emails | `googlecloud@google.com` | Label Review-Delete, skip inbox — legit sender, but hit the inbox 3 days running (8/18, 8/20, 8/21) with pure marketing content each time, always sorted the same way |
+| ~~Google Cloud promo emails~~ | ~~`googlecloud@google.com`~~ | **Retracted 8/31** — this sender also sent a real billing notice ("You have upgraded to a paid Google Cloud account"), not just marketing. A blanket sender-based filter would have buried that. Don't filter this sender by address alone; the daily Routine needs to keep reading each one. |
 | Car-dealer lead-gen spam | `alstspecials.com, edealerhub.com, truecarmail.com` | Label Review-Delete, skip inbox — third-party marketing platforms, not real dealership/manufacturer mail |
 | Today's reported scam senders | `yourconcpway.cyou, zenbflowlink.cyou, gorainarmweb.rest, scalemetricproleaddevelop.xyz, onlineprivacytoday.xyz, marketselectgroupbasiscommand.xyz, worthcorefirmbeaconshield.xyz, stakerefinedportalsignalvertex.xyz` | Label Review-Delete or Spam, skip inbox |
 
