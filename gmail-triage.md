@@ -61,13 +61,14 @@ instead.
   "Real Estate" filter.
 
 ### 2. Known low-quality marketing → Review-Delete — done, update as new ones show up
-- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live`
+- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in`
 - **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
 - A recurring cluster of insurance/vehicle-protection marketing on throwaway
   domains — each one came back **suspicious** on a threat-intelligence check
   when it showed up in daily triage (`uphubroad.work` 8/2, `smartgudock.blog`
   8/14, `bestwloom.live` 8/14 — also marked Spam + reported, `paceleadc.live`
-  8/19 — also marked Spam + reported). They rotate domains often, so this
+  8/19 — also marked Spam + reported, `glyphhflow.co.in` and `cvlabflux.in`
+  9/6 — both marked Spam + reported). They rotate domains often, so this
   filter needs topping up each time a new one appears rather than staying
   static — check gmail-triage.md before assuming this list is current.
 
