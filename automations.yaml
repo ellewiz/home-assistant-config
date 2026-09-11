@@ -412,9 +412,9 @@
   - variables:
       lows: "{% set sensors = states.sensor\n   | selectattr('attributes.device_class','defined')\n
         \  | selectattr('attributes.device_class','equalto','battery')\n   | list
-        %}\n{% set out = [] %} {% for s in sensors %}\n  {% set v = s.state | float(default=9999)
-        %}\n  {% if v <= 20 %}\n    {% set _ = out.append(s.entity_id) %}\n  {% endif
-        %}\n{% endfor %} {{ out }}"
+        %}\n{% set ns = namespace(out=[]) %}\n{% for s in sensors %}\n  {% set v =
+        s.state | float(default=9999) %}\n  {% if v <= 20 %}\n    {% set ns.out =
+        ns.out + [s.entity_id] %}\n  {% endif %}\n{% endfor %}\n{{ ns.out }}"
   - choose:
     - conditions: '{{ lows | length > 0 }}'
       sequence:
@@ -1985,7 +1985,7 @@
             entity_id: input_boolean.oura_note_pending
   mode: single
 - id: bedroom_lights_off_manager
-  alias: Bedroom — Lights Off (Motion Clear / Bright / In Bed / Retry)
+  alias: Bedroom — Lights Off (Motion Clear / Bright / In Bed / Retry) (v2)
   triggers:
   - entity_id: binary_sensor.hue_motion_sensor_2_motion
     to: 'off'
@@ -2009,6 +2009,11 @@
     from: unavailable
     to: 'on'
     id: rejoined
+  - entity_id: binary_sensor.bedroom_bedroom_presence_sensor_presence
+    to: 'off'
+    for: 00:01:00
+    id: presence_clear
+    platform: state
   conditions:
   - condition: or
     conditions:
@@ -2019,10 +2024,20 @@
       value_template: '{{ trigger.id == ''rejoined'' }}'
   actions:
   - choose:
-    - alias: No motion for 3 min — turn off
+    - alias: No motion for 3 min — turn off (desk presence override)
       conditions:
-      - condition: trigger
-        id: motion_clear
+      - condition: or
+        conditions:
+        - condition: trigger
+          id: motion_clear
+        - condition: trigger
+          id: presence_clear
+      - condition: state
+        entity_id: binary_sensor.hue_motion_sensor_2_motion
+        state: 'off'
+      - condition: state
+        entity_id: binary_sensor.bedroom_bedroom_presence_sensor_presence
+        state: 'off'
       sequence:
       - action: light.turn_off
         target:
@@ -2690,17 +2705,20 @@
         }}"{% endif %}.
   mode: single
 - id: living_room_late_night_sleep_dim
-  alias: Living Room — Late-Night Sleep Dim (v1)
+  alias: Living Room — Late-Night Sleep Dim (v2)
   triggers:
   - at: '21:00:00'
     id: night_start_work
-    platform: time
+    trigger: time
   - at: '22:00:00'
     id: night_start_reg
-    platform: time
+    trigger: time
   - at: 05:30:00
     id: night_end
-    platform: time
+    trigger: time
+  - trigger: homeassistant
+    event: start
+    id: restart_check
   conditions: []
   actions:
   - choose:
@@ -2751,6 +2769,27 @@
       - action: switch.turn_off
         target:
           entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+    - alias: Self-heal - force sleep-dim off if a restart left it stuck on during
+        the day
+      conditions:
+      - condition: trigger
+        id: restart_check
+      - condition: time
+        after: 05:30:00
+        before: '21:00:00'
+      - condition: state
+        entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+        state: 'on'
+      sequence:
+      - action: switch.turn_off
+        target:
+          entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+      - action: persistent_notification.create
+        data:
+          title: Living Room Sleep Dim - Self-Healed
+          message: Restarted at {{ now().strftime('%-I:%M %p') }} and found sleep-dim
+            stuck on during the day. Turned it off.
+          notification_id: lr_sleep_dim_selfheal
   mode: single
 - id: bedroom_heat_alert_v2
   alias: Bedroom — Heat Alert (v8, Gate Matches the 76F Daytime Hold)
@@ -4165,8 +4204,7 @@
   max: 3
   mode: queued
 - id: '1786413800292'
-  alias: Bedroom AC — Gradual Warm Before Alarm (v3, Coordinated With Night Setpoint
-    Manager)
+  alias: Bedroom AC — Gradual Warm Before Alarm (v4, Now Wakes From Idle Shutoff)
   triggers:
   - entity_id: calendar.master_calendar
     event: start
@@ -4188,9 +4226,17 @@
     - condition: state
       entity_id: climate.bedroom_ac
       state:
-      - 'off'
       - unavailable
       - unknown
+    - condition: and
+      conditions:
+      - condition: state
+        entity_id: climate.bedroom_ac
+        state: 'off'
+      - condition: state
+        entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+        state: 'off'
+    note: Off is allowed through only when idle shutoff parked it there.
   - alias: Only 'Wake up' calendar events
     condition: template
     value_template: '{{ ''wake up'' in (trigger.calendar_event.summary | lower | trim)
@@ -4198,6 +4244,20 @@
   actions:
   - variables:
       base_temp: '{{ state_attr(''climate.bedroom_ac'', ''temperature'') | float }}'
+  - action: input_boolean.turn_off
+    alias: Clear the idle-shutoff marker — we're taking over the dial now
+    target:
+      entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+  - action: climate.set_hvac_mode
+    alias: Wake the unit if idle shutoff parked it off — this automation never had
+      an hvac step before
+    data:
+      hvac_mode: cool
+    target:
+      entity_id: climate.bedroom_ac
+  - alias: Let the unit settle, these Midea entities clobber rapid sequential commands
+    delay:
+      seconds: 3
   - action: input_boolean.turn_on
     alias: 'Claim the dial: block Night Setpoint Manager for the duration of the ramp'
     target:
@@ -4296,7 +4356,7 @@
       name: Living Room AC
   mode: single
 - id: '1786413963544'
-  alias: Bedroom AC — Dry Mode While Getting Ready (v3, Hands Back to Vanity Window)
+  alias: Bedroom AC — Dry Mode While Getting Ready (v5, Clears Idle-Shutoff Marker)
   triggers:
   - entity_id: input_boolean.in_bed
     id: woke
@@ -4317,9 +4377,17 @@
     - condition: state
       entity_id: climate.bedroom_ac
       state:
-      - 'off'
       - unavailable
       - unknown
+    - condition: and
+      conditions:
+      - condition: state
+        entity_id: climate.bedroom_ac
+        state: 'off'
+      - condition: state
+        entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+        state: 'off'
+    note: Off is allowed through only when idle shutoff parked it there.
   - above: input_number.bedroom_dry_mode_humidity_threshold
     condition: numeric_state
     entity_id: sensor.airguard_humidity
@@ -4331,6 +4399,10 @@
     note: Never add uncontrolled cooling to an already-cold room. This is the wall
       sensor on the vanity side, next to the unit.
   actions:
+  - action: input_boolean.turn_off
+    alias: Clear the idle-shutoff marker — we're taking over the dial now
+    target:
+      entity_id: input_boolean.bedroom_ac_idle_shutoff_active
   - action: climate.set_hvac_mode
     alias: Dry mode for the getting-ready window
     data:
@@ -4361,11 +4433,6 @@
     target:
       entity_id: climate.bedroom_ac
   - alias: Hand back to the vanity window's target, if it is still open
-    note: Dry mode ignores the setpoint entirely while active, so whatever the vanity
-      window set before this automation took over never held. On exit, if the window
-      is still open, explicitly restate its target instead of leaving the number wherever
-      it happened to sit - this is the handoff this automation's own v2 description
-      said should exist once the vanity window was built.
     if:
     - condition: state
       entity_id: input_boolean.bedroom_vanity_window
@@ -4378,6 +4445,11 @@
         - 'off'
         - unavailable
         - unknown
+    note: Dry mode ignores the setpoint entirely while active, so whatever the vanity
+      window set before this automation took over never held. On exit, if the window
+      is still open, explicitly restate its target instead of leaving the number wherever
+      it happened to sit - this is the handoff this automation's own v2 description
+      said should exist once the vanity window was built.
     then:
     - action: climate.set_temperature
       alias: Restate the vanity dial target, skipping the unsettable 75
@@ -4559,10 +4631,10 @@
         name: WFH Today
   mode: single
 - id: '1786621049944'
-  alias: Bedroom AC — WFH Warm Setback 78F (v3)
+  alias: Bedroom AC — WFH Warm Setback 78F (v5, Clears Idle-Shutoff Marker)
   triggers:
-  - trigger: time
-    at: 08:00:00
+  - at: 08:00:00
+    trigger: time
   conditions:
   - condition: state
     entity_id: binary_sensor.workday
@@ -4578,42 +4650,54 @@
     state: home
   - condition: state
     entity_id: input_boolean.bedroom_vanity_window
-    state: 'off'
     note: The vanity window owns the bedroom dial while it is open. Without this,
       08:00 on a WFH day overwrites the vanity target with 78, and the window's close
       leg (which only writes 76 when the dial is below 76) can never undo it. Mirrors
       the same guard on Bedroom AC - Daytime Release to 76 (v2).
+    state: 'off'
   - condition: not
     conditions:
     - condition: state
       entity_id: climate.bedroom_ac
       state:
-      - 'off'
       - unavailable
       - unknown
+    - condition: and
+      conditions:
+      - condition: state
+        entity_id: climate.bedroom_ac
+        state: 'off'
+      - condition: state
+        entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+        state: 'off'
+    note: Off is allowed through only when idle shutoff parked it there.
   actions:
-  - alias: Cancel any lingering Dry mode first
-    action: climate.set_hvac_mode
+  - action: input_boolean.turn_off
+    alias: Clear the idle-shutoff marker — we're taking over the dial now
     target:
-      entity_id: climate.bedroom_ac
+      entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+  - action: climate.set_hvac_mode
+    alias: Cancel any lingering Dry mode first
     data:
       hvac_mode: cool
-  - delay:
-      seconds: 3
-  - alias: Clear eco so its baked-in ~73F reference can't override the target
-    action: climate.set_preset_mode
     target:
       entity_id: climate.bedroom_ac
+  - delay:
+      seconds: 3
+  - action: climate.set_preset_mode
+    alias: Clear eco so its baked-in ~73F reference can't override the target
     data:
       preset_mode: none
-  - delay:
-      seconds: 3
-  - alias: Park it warm
-    action: climate.set_temperature
     target:
       entity_id: climate.bedroom_ac
+  - delay:
+      seconds: 3
+  - action: climate.set_temperature
+    alias: Park it warm
     data:
       temperature: 78
+    target:
+      entity_id: climate.bedroom_ac
   mode: single
 - id: '1786621053491'
   alias: Living Room AC — WFH Comfort Hold 74F (v2)
@@ -4797,7 +4881,8 @@
       hvac_mode: cool
   mode: single
 - id: bedroom_night_setpoint_manager_v1
-  alias: Bedroom AC — Night Setpoint Manager (v4, Yields to Wake Warm-Up)
+  alias: Bedroom AC — Night Setpoint Manager (v6, Flat 68F Overnight, Now Wakes From
+    Idle Shutoff)
   triggers:
   - id: tick
     minutes: /15
@@ -4824,9 +4909,18 @@
     - condition: state
       entity_id: climate.bedroom_ac
       state:
-      - 'off'
       - unavailable
       - unknown
+    - condition: and
+      conditions:
+      - condition: state
+        entity_id: climate.bedroom_ac
+        state: 'off'
+      - condition: state
+        entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+        state: 'off'
+    note: Off is allowed through only when idle shutoff parked it there (input_boolean.bedroom_ac_idle_shutoff_active
+      is on); a unit she turned off herself stays untouched.
   - above: 55
     attribute: temperature
     condition: numeric_state
@@ -4835,19 +4929,19 @@
       false on None, which is the fail-safe direction: do nothing rather than write
       a number based on a missing reading.'
   - condition: or
-    note: 'Defer to Gradual Warm Before Alarm''s 25-30 min pre-wake ramp instead of
-      clawing it back to the in-bed-climb cap on the next tick. The 40-min leg is
-      a stale-flag escape hatch: that automation''s own hard ceiling is 25 minutes,
-      so if it ever dies mid-run, this resumes ownership on its own rather than staying
-      locked out.'
     conditions:
     - condition: state
       entity_id: input_boolean.bedroom_wake_warm_up_active
       state: 'off'
     - condition: state
       entity_id: input_boolean.bedroom_wake_warm_up_active
-      state: 'on'
       for: 00:40:00
+      state: 'on'
+    note: 'Defer to Gradual Warm Before Alarm''s 25-30 min pre-wake ramp instead of
+      clawing it back to the in-bed-climb cap on the next tick. The 40-min leg is
+      a stale-flag escape hatch: that automation''s own hard ceiling is 25 minutes,
+      so if it ever dies mid-run, this resumes ownership on its own rather than staying
+      locked out.'
   actions:
   - alias: Work out whether this automation owns the dial right now, and what the
       number should be
@@ -4855,7 +4949,7 @@
     variables:
       cur_temp: '{{ state_attr(''climate.bedroom_ac'',''temperature'') | float(0)
         }}'
-      desired: '{% set ns = namespace(d = 0) %}{% set floor_t = 65 %}{% set ceil_t
+      desired: '{% set ns = namespace(d = 0) %}{% set floor_t = 68 %}{% set ceil_t
         = 68 %}{% set cur = state_attr(''climate.bedroom_ac'',''temperature'') | float(0)
         %}{% set start_h = 19 if is_state(''input_boolean.workday_tomorrow'',''on'')
         else 20 %}{% set vb = states(''input_datetime.bedroom_virtual_bedtime'') if
@@ -4885,17 +4979,28 @@
       change. Outside both windows nothing below here runs, so a daytime heat-alert
       boost is left alone to do its job.'
     value_template: '{{ in_window }}'
-  - alias: Inside a window, assert preset none even if the number is already right
+  - action: input_boolean.turn_off
+    alias: Clear the idle-shutoff marker — we're taking over the dial now
+    target:
+      entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+  - alias: Inside a window, assert preset none and wake the unit if it's parked off
     if:
-    - condition: not
+    - condition: or
       conditions:
-      - attribute: preset_mode
-        condition: state
+      - condition: not
+        conditions:
+        - attribute: preset_mode
+          condition: state
+          entity_id: climate.bedroom_ac
+          state: none
+      - condition: state
         entity_id: climate.bedroom_ac
-        state: none
+        state: 'off'
     note: eco's baked-in ~73F reference and the heat alert's 'boost' both override
       or ignore an explicit number. This is the step that makes the dial trustworthy
-      inside a window.
+      inside a window. Also fires when idle shutoff has the unit parked off, so cool
+      actually gets re-engaged instead of a number being written to a unit that's
+      off.
     then:
     - action: climate.set_hvac_mode
       data:
@@ -4947,7 +5052,7 @@
   max_exceeded: silent
   mode: single
 - id: bedroom_ac_daytime_release_76_v1
-  alias: Bedroom AC — Daytime Release to 76 (v2)
+  alias: Bedroom AC — Daytime Release to 76 (v3, Now Wakes From Idle Shutoff)
   triggers:
   - entity_id: input_boolean.in_bed
     from: 'on'
@@ -4969,10 +5074,10 @@
     state: 'off'
   - condition: state
     entity_id: input_boolean.bedroom_vanity_window
-    state: 'off'
     note: The vanity window owns the dial while it is open. Without this the 09:00
       backstop would overwrite the vanity target with 76 on a morning she is still
       home.
+    state: 'off'
   - condition: state
     entity_id: person.lara_wiz
     note: Do not fight away-eco while she is out; it owns the dial then.
@@ -4982,10 +5087,18 @@
     - condition: state
       entity_id: climate.bedroom_ac
       state:
-      - 'off'
       - unavailable
       - unknown
-    note: Never resurrect a unit that was switched off on purpose.
+    - condition: and
+      conditions:
+      - condition: state
+        entity_id: climate.bedroom_ac
+        state: 'off'
+      - condition: state
+        entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+        state: 'off'
+    note: Never resurrect a unit that was switched off on purpose. Off is allowed
+      through only when idle shutoff parked it there.
   - above: 55
     attribute: temperature
     condition: numeric_state
@@ -5014,14 +5127,24 @@
     below: 76
     condition: numeric_state
     entity_id: climate.bedroom_ac
-  - alias: Clear any preset that would make the number meaningless
+  - action: input_boolean.turn_off
+    alias: Clear the idle-shutoff marker — we're taking over the dial now
+    target:
+      entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+  - alias: Clear any preset that would make the number meaningless, and wake the unit
+      if it's parked off
     if:
-    - condition: not
+    - condition: or
       conditions:
-      - attribute: preset_mode
-        condition: state
+      - condition: not
+        conditions:
+        - attribute: preset_mode
+          condition: state
+          entity_id: climate.bedroom_ac
+          state: none
+      - condition: state
         entity_id: climate.bedroom_ac
-        state: none
+        state: 'off'
     then:
     - action: climate.set_hvac_mode
       data:
@@ -6261,4 +6384,464 @@
             %}\U0001FA9F Window Score: {{ s }} — {{ 'Great night' if s>=75 else ('Good
             night' if s>=55 else ('Marginal' if s>=35 else 'Skip it')) }}"
   max_exceeded: silent
+  mode: single
+- id: ac_season_wind_down_score_notify
+  alias: 'AC — Season Wind-Down: Score & Notify'
+  description: Rebuilt 2026-09-03 after automations.yaml SMB truncation lost the original.
+    Score/reason for when it's safe to shut the two AC units off for the season; see
+    project memory project_ac_season_wind_down.md for full design notes.
+  triggers:
+  - hours: /3
+    trigger: time_pattern
+  - event: start
+    trigger: homeassistant
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - action: weather.get_forecasts
+    data:
+      type: twice_daily
+    response_variable: wx
+    target:
+      entity_id: weather.kttn_daynight
+  - action: input_number.set_value
+    data:
+      value: '{% set periods = wx[''weather.kttn_daynight''][''forecast''] %}{% set
+        days7 = periods | selectattr(''is_daytime'',''eq'',true) | list %}{% set days7
+        = days7[:7] %}{% set nights7 = periods | selectattr(''is_daytime'',''eq'',false)
+        | list %}{% set nights7 = nights7[:7] %}{% set days_ok = days7 | selectattr(''temperature'',''le'',78)
+        | list | length %}{% set nights_ok = nights7 | selectattr(''temperature'',''le'',65)
+        | list | length %}{% set day_credit = (35 * days_ok / 7) | round(0,''common'')
+        | int %}{% set night_credit = (35 * nights_ok / 7) | round(0,''common'') |
+        int %}{% set act = states(''sensor.ac_cooling_time_3d'') | float(99) %}{%
+        set activity_score = 30 if act <= 0.1 else (15 if act <= 1.0 else 0) %}{{
+        [100, day_credit + night_credit + activity_score] | min }}'
+    target:
+      entity_id: input_number.ac_season_score
+  - action: input_text.set_value
+    data:
+      value: '{% set periods = wx[''weather.kttn_daynight''][''forecast''] %}{% set
+        days7 = periods | selectattr(''is_daytime'',''eq'',true) | list %}{% set days7
+        = days7[:7] %}{% set nights7 = periods | selectattr(''is_daytime'',''eq'',false)
+        | list %}{% set nights7 = nights7[:7] %}{% set days_ok = days7 | selectattr(''temperature'',''le'',78)
+        | list | length %}{% set nights_ok = nights7 | selectattr(''temperature'',''le'',65)
+        | list | length %}{% set max_day = (days7 | map(attribute=''temperature'')
+        | list | max) if days7 | length else 0 %}{% set min_night = (nights7 | map(attribute=''temperature'')
+        | list | min) if nights7 | length else 0 %}{% set act = states(''sensor.ac_cooling_time_3d'')
+        | float(99) %}{% set score = states(''input_number.ac_season_score'') | float(0)
+        %}{% set status = ''Ready — safe to shut them down for the season!'' if score
+        >= 94 else (''Getting close.'' if score >= 70 else ''Not yet — still needs
+        regular cooling.'') %}Next 7 days: highs up to {{ max_day | round(0) | int
+        }}F ({{ days_ok }}/7 <= 78F), lows down to {{ min_night | round(0) | int }}F
+        ({{ nights_ok }}/7 <= 65F). AC has run {{ act | round(1) }}h in the last 3
+        days. {{ status }}'
+    target:
+      entity_id: input_text.ac_season_reason
+  - choose:
+    - conditions:
+      - above: 94
+        condition: numeric_state
+        entity_id: input_number.ac_season_score
+      - condition: state
+        entity_id: input_boolean.ac_season_alert_sent
+        state: 'off'
+      sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.ac_season_shutoff_recommended
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.ac_season_alert_sent
+      - action: notify.mobile_app_iphone
+        data:
+          message: '{{ states(''input_text.ac_season_reason'') }}'
+          title: '❄️ AC Season Wind-Down: Ready'
+    - conditions:
+      - below: 70
+        condition: numeric_state
+        entity_id: input_number.ac_season_score
+      - condition: or
+        conditions:
+        - condition: state
+          entity_id: input_boolean.ac_season_shutoff_recommended
+          state: 'on'
+        - condition: state
+          entity_id: input_boolean.ac_season_alert_sent
+          state: 'on'
+      sequence:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.ac_season_shutoff_recommended
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.ac_season_alert_sent
+      - action: notify.mobile_app_iphone
+        data:
+          message: A late warm-up dropped the score back below 70 — holding off on
+            the shutoff recommendation. {{ states('input_text.ac_season_reason') }}
+          title: '❄️ AC Season Wind-Down: Hold Off'
+  mode: single
+- id: bedroom_ac_idle_shutoff_when_satisfied_v1
+  alias: Bedroom AC — Idle Shutoff When Satisfied (v1)
+  description: Built 2026-09-05 after data showed the bedroom AC fan idles ~14.5h/day
+    drawing ~120W with the compressor off and the room already below setpoint. Checks
+    every 15 min; if powered, compressor off, and bedside temp is at least 1F below
+    the dial, kills hvac_mode to stop the fan draw and marks input_boolean.bedroom_ac_idle_shutoff_active
+    so the restore half of this automation (and only this automation) knows it, not
+    her, turned it off. Restores to cool/none the moment bedside temp reaches the
+    dial again. Never touches a unit she turned off herself (marker stays off in that
+    case). Not tuned yet, first version.
+  triggers:
+  - id: tick
+    minutes: /15
+    trigger: time_pattern
+  - event: start
+    id: tick
+    trigger: homeassistant
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - choose:
+    - alias: Shut off — powered, compressor off, comfortably below setpoint
+      conditions:
+      - condition: not
+        conditions:
+        - condition: state
+          entity_id: climate.bedroom_ac
+          state:
+          - 'off'
+          - unavailable
+          - unknown
+      - condition: state
+        entity_id: binary_sensor.bedroom_my_ac_cooling
+        state: 'off'
+      - condition: template
+        value_template: '{{ states(''sensor.airguard_temperature'') | float(999) <=
+          (state_attr(''climate.bedroom_ac'',''temperature'') | float(999) - 1) }}'
+      sequence:
+      - action: climate.set_hvac_mode
+        data:
+          hvac_mode: 'off'
+        target:
+          entity_id: climate.bedroom_ac
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+      - action: logbook.log
+        data:
+          entity_id: climate.bedroom_ac
+          message: Idle shutoff — bedside {{ states('sensor.airguard_temperature')
+            }}F, dial was {{ state_attr('climate.bedroom_ac','temperature') }}F. Fan
+            stopped to save the idle draw.
+          name: Bedroom AC
+    - alias: Restore — we were the ones who turned it off, and it's warm enough to
+        need it again
+      conditions:
+      - condition: state
+        entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+        state: 'on'
+      - condition: template
+        value_template: '{{ states(''sensor.airguard_temperature'') | float(-999)
+          >= (state_attr(''climate.bedroom_ac'',''temperature'') | float(999)) }}'
+      sequence:
+      - action: climate.set_hvac_mode
+        data:
+          hvac_mode: cool
+        target:
+          entity_id: climate.bedroom_ac
+      - delay:
+          seconds: 3
+      - action: climate.set_preset_mode
+        data:
+          preset_mode: none
+        target:
+          entity_id: climate.bedroom_ac
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+      - action: logbook.log
+        data:
+          entity_id: climate.bedroom_ac
+          message: Idle shutoff restore — bedside {{ states('sensor.airguard_temperature')
+            }}F reached the dial again, back to cool/none.
+          name: Bedroom AC
+  mode: single
+- id: lr_ac_idle_shutoff_when_satisfied_v1
+  alias: Living Room AC — Idle Shutoff When Satisfied (v1)
+  description: 'Built 2026-09-05, companion to the bedroom version. LR fan idles ~16.9h/day
+    at ~122W with the compressor off. Every 15 min: if powered, compressor off, and
+    coffee-table temp is at least 1F below the dial, kills hvac_mode and marks input_boolean.lr_ac_idle_shutoff_active.
+    Restores to cool when temp reaches the dial again — preset goes back to none if
+    pre-cool (input_boolean.lr_ac_precool_active) is still running its peak-heat window,
+    otherwise eco (LR''s normal steady state). Never touches a unit she turned off
+    herself. Not tuned yet, first version.'
+  triggers:
+  - id: tick
+    minutes: /15
+    trigger: time_pattern
+  - event: start
+    id: tick
+    trigger: homeassistant
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - choose:
+    - alias: Shut off — powered, compressor off, comfortably below setpoint
+      conditions:
+      - condition: not
+        conditions:
+        - condition: state
+          entity_id: climate.living_room_ac
+          state:
+          - 'off'
+          - unavailable
+          - unknown
+      - condition: state
+        entity_id: binary_sensor.living_room_ac_cooling
+        state: 'off'
+      - condition: template
+        value_template: '{{ states(''sensor.living_room_airguard_coffee_table_temperature'')
+          | float(999) <= (state_attr(''climate.living_room_ac'',''temperature'')
+          | float(999) - 1) }}'
+      sequence:
+      - action: climate.set_hvac_mode
+        data:
+          hvac_mode: 'off'
+        target:
+          entity_id: climate.living_room_ac
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.lr_ac_idle_shutoff_active
+      - action: logbook.log
+        data:
+          entity_id: climate.living_room_ac
+          message: Idle shutoff — coffee table {{ states('sensor.living_room_airguard_coffee_table_temperature')
+            }}F, dial was {{ state_attr('climate.living_room_ac','temperature') }}F.
+            Fan stopped to save the idle draw.
+          name: Living Room AC
+    - alias: Restore — we were the ones who turned it off, and it's warm enough to
+        need it again
+      conditions:
+      - condition: state
+        entity_id: input_boolean.lr_ac_idle_shutoff_active
+        state: 'on'
+      - condition: template
+        value_template: '{{ states(''sensor.living_room_airguard_coffee_table_temperature'')
+          | float(-999) >= (state_attr(''climate.living_room_ac'',''temperature'')
+          | float(999)) }}'
+      sequence:
+      - action: climate.set_hvac_mode
+        data:
+          hvac_mode: cool
+        target:
+          entity_id: climate.living_room_ac
+      - delay:
+          seconds: 3
+      - action: climate.set_preset_mode
+        data:
+          preset_mode: '{{ ''none'' if is_state(''input_boolean.lr_ac_precool_active'',''on'')
+            else ''eco'' }}'
+        target:
+          entity_id: climate.living_room_ac
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.lr_ac_idle_shutoff_active
+      - action: logbook.log
+        data:
+          entity_id: climate.living_room_ac
+          message: Idle shutoff restore — coffee table {{ states('sensor.living_room_airguard_coffee_table_temperature')
+            }}F reached the dial again.
+          name: Living Room AC
+  mode: single
+- id: lr_ac_precool_ahead_of_peak_heat_v1
+  alias: Living Room AC — Pre-cool Ahead of Forecasted Peak Heat (v1)
+  description: 'Built 2026-09-05. Revives the precool idea shelved 2026-08-22 (proximity
+    trigger was killed by the pulldown-rate math) with a fix for the eco-override
+    bug found the same day this was built: eco carries its own ~73F internal reference
+    and ignores an explicit set_temperature, so nudging the dial while in eco does
+    nothing. Instead this LEAVES eco entirely (cool/none, full compressor power, same
+    explicit target it already had) for the forecast window, on days the twice_daily
+    forecast for weather.kttn_daynight puts today''s daytime high at 80F or above
+    — the bucket where LR''s Sept 4 duty cycle hit 82% and the room lost ground for
+    the first 3 hours of a 6h run. Restores eco at 18:00. Costs eco''s ~20-30% power
+    savings during the window; buys cooling margin before the real peak hits. Thresholds/times
+    not tuned yet, first version.'
+  triggers:
+  - at: '11:00:00'
+    id: start_precool
+    trigger: time
+  - at: '18:00:00'
+    id: end_precool
+    trigger: time
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - choose:
+    - alias: 11:00 — check forecast, leave eco if a hot day
+      conditions:
+      - condition: trigger
+        id: start_precool
+      - condition: not
+        conditions:
+        - condition: state
+          entity_id: climate.living_room_ac
+          state:
+          - 'off'
+          - unavailable
+          - unknown
+      - condition: state
+        entity_id: person.lara_wiz
+        state: home
+      sequence:
+      - action: weather.get_forecasts
+        data:
+          type: twice_daily
+        response_variable: wx
+        target:
+          entity_id: weather.kttn_daynight
+      - variables:
+          today_high: '{% set periods = wx[''weather.kttn_daynight''][''forecast'']
+            %}{% set today_day = periods | selectattr(''is_daytime'',''eq'',true)
+            | list | first %}{{ (today_day.temperature | float(0)) if today_day is
+            not none else 0 }}'
+      - else:
+        - action: logbook.log
+          data:
+            entity_id: climate.living_room_ac
+            message: Pre-cool check — forecast high {{ today_high }}F, below the 80F
+              threshold, staying in eco.
+            name: Living Room AC
+        if:
+        - condition: template
+          value_template: '{{ today_high | float(0) >= 80 }}'
+        then:
+        - action: climate.set_hvac_mode
+          data:
+            hvac_mode: cool
+          target:
+            entity_id: climate.living_room_ac
+        - delay:
+            seconds: 3
+        - action: climate.set_preset_mode
+          data:
+            preset_mode: none
+          target:
+            entity_id: climate.living_room_ac
+        - action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.lr_ac_precool_active
+        - action: logbook.log
+          data:
+            entity_id: climate.living_room_ac
+            message: Pre-cool started — forecast high {{ today_high }}F >= 80, left
+              eco for full-power cooling ahead of peak heat. Restores to eco at 18:00.
+            name: Living Room AC
+    - alias: 18:00 — restore eco if pre-cool ran today
+      conditions:
+      - condition: trigger
+        id: end_precool
+      - condition: state
+        entity_id: input_boolean.lr_ac_precool_active
+        state: 'on'
+      - condition: not
+        conditions:
+        - condition: state
+          entity_id: climate.living_room_ac
+          state:
+          - 'off'
+          - unavailable
+          - unknown
+      sequence:
+      - action: climate.set_preset_mode
+        data:
+          preset_mode: eco
+        target:
+          entity_id: climate.living_room_ac
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.lr_ac_precool_active
+      - action: logbook.log
+        data:
+          entity_id: climate.living_room_ac
+          message: Pre-cool window ended, restored eco.
+          name: Living Room AC
+  mode: single
+- id: bedroom_ac_snapshot_window_score_at_bedtime_v1
+  alias: Bedroom AC — Snapshot Window Score At Bedtime (v1)
+  description: Built 2026-09-05, feeds the morning mismatch check. Window Score recalculates
+    every 3h, so it drifts over the night; this freezes the value at the moment she
+    gets in bed into input_number.window_score_at_bedtime for a stable comparison
+    point the next morning.
+  triggers:
+  - entity_id: input_boolean.in_bed
+    for: 00:00:05
+    to: 'on'
+    trigger: state
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - action: input_number.set_value
+    data:
+      value: '{{ states(''input_number.window_score'') | float(0) }}'
+    target:
+      entity_id: input_number.window_score_at_bedtime
+  - action: logbook.log
+    data:
+      entity_id: input_number.window_score_at_bedtime
+      message: 'Snapshot: Window Score {{ states(''input_number.window_score_at_bedtime'')
+        }} captured at bedtime for tomorrow''s AC comparison.'
+      name: Bedroom AC
+  mode: single
+- id: bedroom_ac_overnight_cooling_vs_window_score_check_v1
+  alias: Bedroom AC — Overnight Cooling vs Window Score Check (v1)
+  description: 'Built 2026-09-05. Window Score only ever notifies, never touches the
+    AC — deliberately, since it can''t know whether windows were actually opened.
+    This just flags the mismatch: a good-or-better score (>=55) alongside real overnight
+    compressor runtime (>=20 min on the rolling 24h sensor). Quiet otherwise. Mirrors
+    the LR morning-restore trigger shape (woke_up + 10:00 backstop) for consistency.'
+  triggers:
+  - entity_id: input_boolean.in_bed
+    for: 00:00:05
+    from: 'on'
+    id: woke_up
+    to: 'off'
+    trigger: state
+  - at: '10:00:00'
+    id: backstop
+    trigger: time
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  actions:
+  - variables:
+      cooling_hours: '{{ states(''sensor.bedroom_my_ac_bedroom_ac_cooling_time_24h'')
+        | float(0) }}'
+      score: '{{ states(''input_number.window_score_at_bedtime'') | float(0) }}'
+  - if:
+    - condition: template
+      value_template: '{{ score >= 55 and cooling_hours >= 0.33 }}'
+    then:
+    - action: notify.mobile_app_iphone
+      data:
+        message: Window Score was {{ score | round(0) | int }} last night (good-or-better
+          for open windows) but the bedroom compressor still ran about {{ (cooling_hours*60)
+          | round(0) | int }} min in the last 24h.
+        title: "\U0001FA9F Window Score vs AC mismatch"
+    - action: logbook.log
+      data:
+        entity_id: input_number.window_score_at_bedtime
+        message: Mismatch flagged — score {{ score }}, {{ (cooling_hours*60) | round(0)
+          | int }} min compressor runtime.
+        name: Bedroom AC
   mode: single

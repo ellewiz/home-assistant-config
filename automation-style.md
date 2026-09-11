@@ -29,14 +29,17 @@ Reference: "Living Room — Ambient Manager" and "Living room lights on - Mornin
 - Newer automations use **descriptive snake_case IDs** (`oura_capture_bedroom_temp_bedtime`) or **date-prefixed** (`20260416_workday_tomorrow_refresh`). Prefer descriptive snake_case for new hand-written automations.
 - Legacy numeric timestamp IDs (`'1635902622080'`) exist from the UI editor — don't renumber them, just leave them.
 
-## 4. `description:` is for rationale and TODOs — write it
+## 4. `description:` — keep it short; changelog/rationale goes in the archive, not the file
 
-Non-trivial automations carry a real description that explains WHY and records future plans, not just what. This is a strong house convention. Examples:
+**Updated 2026-09-03.** The old convention here was "write a real description with full rationale and TODOs." That's been reversed: as of 2026-09-03, `automations.yaml` had 106 automations carrying 181,763 characters of description text (44% of the file's total size) — version histories, incident post-mortems, and design rationale that HA never reads (`description` has zero effect on trigger/condition/action behavior; it's cosmetic UI-editor text only). All of that was stripped out and moved to `automation_notes_archive.md` (same folder), keyed by alias + automation id.
 
-- Pollen Spike Alert documents the whole tier-tracker design and why it uses `moderate` not `medium`.
-- Power Outage / Restoration Alert is labelled `v1:` and notes "When voltage sensor is added, rewrite to v2 with brownout/sag detection."
+Going forward:
 
-For anything with branching or state-tracking, write a description covering the logic, edge cases handled, and any planned next version.
+- `description:` in the actual YAML: optional, one line, practical (what it does / a pointer), not a running log. A short "why" is fine if it's genuinely one or two sentences. If you don't have something that short to say, leave it out.
+- **Changelog-type notes — version history ("v3, corroborated"), incident write-ups, retry-branch rationale, "when X is added, rewrite to Y" TODOs, anything narrating how an automation evolved — go in `automation_notes_archive.md`, NOT in the automations.yaml file.** Add a new `##` section there under the automation's alias (matching the existing entries), not inline in the description field.
+- When editing an existing automation that still carries a long legacy description, migrate it: cut it to the archive file, leave a short (or empty) description behind.
+
+This keeps `automations.yaml` small and fast for HA to parse/save, while keeping the actual history and reasoning findable in one place instead of scattered across the file. See `automation_notes_archive.md`'s own header for the extraction log.
 
 ## 5. Mode
 
