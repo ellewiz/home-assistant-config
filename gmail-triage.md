@@ -61,7 +61,7 @@ instead.
   "Real Estate" filter.
 
 ### 2. Known low-quality marketing → Review-Delete — done, update as new ones show up
-- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in`
+- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in, nexusraklotp.in, vectviral.co.in`
 - **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
 - A recurring cluster of insurance/vehicle-protection marketing on throwaway
   domains — each one came back **suspicious** (or, for `mycelsmart.in`,
@@ -72,8 +72,10 @@ instead.
   reported, `glyphhflow.co.in` and `cvlabflux.in` 9/6 — both marked Spam +
   reported, `nexusotdgh.co.in` 9/7 — also marked Spam + reported,
   `trcelspire.in` 9/8 — also marked Spam + reported, `mycelsmart.in` 9/9 —
-  also marked Spam + reported). They rotate domains often, so this filter
-  needs topping up each time a new one appears rather than staying static —
+  also marked Spam + reported, `nexusraklotp.in` 9/10 and `vectviral.co.in`
+  9/11 — both marked Spam + reported). They rotate domains often, so this
+  filter needs topping up each time a new one appears rather than staying
+  static —
   check gmail-triage.md before assuming
   this list is current.
 
