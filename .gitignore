@@ -53,3 +53,6 @@ _to_delete/
 # ===== Working notes (scheduled-task output) =====
 MEMORY.md
 project_*.md
+
+scripts/dose_*.yaml
+*.bak_*
