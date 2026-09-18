@@ -137,10 +137,17 @@
     entity_id: binary_sensor.hue_motion_sensor_2_motion
     from: 'off'
     to: 'on'
+  - trigger: state
+    entity_id: binary_sensor.bedroom_bedroom_presence_sensor_presence
+    from: 'off'
+    to: 'on'
   conditions:
-  - condition: numeric_state
-    entity_id: sensor.hue_motion_sensor_2_light_level
-    below: input_number.bedroom_lux_on_threshold
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: binary_sensor.bedroom_hue_bedroom_motion_sensor_bedroom_room_bright
+      state: 'on'
+      for: 00:00:05
   - alias: Stand down when the wake path owns this motion event
     condition: not
     conditions:
@@ -540,6 +547,11 @@
     - condition: state
       entity_id: input_boolean.workday_tomorrow
       state: 'on'
+    - condition: time
+      after: '21:00:00'
+      before: 05:30:00
+      alias: Only if we're already inside the normal sleep-dim window (don't force
+        sleep mode on an early TV Event end)
     then:
     - action: switch.turn_on
       target:
@@ -1588,9 +1600,9 @@
 - id: '1777940949832'
   alias: "\U0001F985 Eagles Score - Flash Green"
   triggers:
-  - platform: state
-    entity_id: sensor.philadelphia_eagles
+  - entity_id: sensor.philadelphia_eagles
     attribute: team_score
+    trigger: state
   conditions:
   - condition: state
     entity_id: sensor.philadelphia_eagles
@@ -1612,11 +1624,32 @@
       - 187
       - 23
       pulses: 5
-  - alias: Resume Adaptive Lighting after snapshot restore
-    action: adaptive_lighting.set_manual_control
-    data:
-      entity_id: switch.adaptive_lighting_living_room_lights
-      manual_control: false
+  - alias: Resume Adaptive Lighting after snapshot restore (skip next_to_couch if
+      a movie/game dim is active there)
+    if:
+    - condition: not
+      conditions:
+      - condition: state
+        entity_id: media_player.living_room_4k_2
+        state:
+        - playing
+        - buffering
+        - paused
+    then:
+    - action: adaptive_lighting.set_manual_control
+      data:
+        entity_id: switch.adaptive_lighting_living_room_lights
+        manual_control: false
+    else:
+    - action: adaptive_lighting.set_manual_control
+      data:
+        entity_id: switch.adaptive_lighting_living_room_lights
+        manual_control: false
+        lights:
+        - light.living_room_corner
+        - light.torchiere
+      alias: 'ATV is active: only release the two lamps, leave next_to_couch pinned
+        to its movie dim'
   mode: single
   max_exceeded: silent
 - id: '1778432571562'
@@ -2587,9 +2620,11 @@
     state: home
   - alias: Capture which player is actively playing (for pause + later resume)
     variables:
-      tv_player: '{% if states(''media_player.living_room_4k_2'') in [''playing'',
-        ''buffering''] %}media_player.living_room_4k_2{% else %}none{% endif %}'
-  - alias: Snapshot the living-room lights so we can restore them exactly
+      tv_player: '{% if is_state(''calendar.tv'', ''off'') and states(''media_player.living_room_4k_2'')
+        in [''playing'', ''buffering''] %}media_player.living_room_4k_2{% else %}none{%
+        endif %}'
+  - alias: Snapshot the living-room lights so we can restore them exactly (skipped
+      implicitly if TV Event is active, since we won't brighten below)
     action: scene.create
     data:
       scene_id: guanfacine_nudge_restore
@@ -2605,18 +2640,26 @@
     - action: media_player.media_pause
       target:
         entity_id: '{{ tv_player }}'
-  - alias: Brighten the living-room lights to 70%
-    action: light.turn_on
-    target:
-      entity_id: light.living_room_lights
-    data:
-      brightness_pct: 70
-      transition: 2
-  - alias: Tell Lara why the TV paused
+  - alias: Brighten the living-room lights to 70% (skip during an active TV Event
+      so we don't stomp the movie scene)
+    if:
+    - condition: state
+      entity_id: calendar.tv
+      state: 'off'
+    then:
+    - action: light.turn_on
+      target:
+        entity_id: light.living_room_lights
+      data:
+        brightness_pct: 70
+        transition: 2
+  - alias: Tell Lara a dose is due (gentler wording if a TV Event is active)
     action: notify.mobile_app_iphone
     data:
       title: "\U0001F48A Guanfacine"
-      message: TV paused and lights up until you log tonight's dose.
+      message: '{% if is_state(''calendar.tv'', ''off'') %}TV paused and lights up
+        until you log tonight''s dose.{% else %}Reminder: log tonight''s guanfacine
+        dose when you get a chance.{% endif %}'
   - alias: Hold until the dose is logged (no timeout, per Lara)
     wait_for_trigger:
     - trigger: state
@@ -3067,10 +3110,10 @@
 - id: meds_guanfacine_nudge_restore_failsafe
   alias: 'Meds — Guanfacine: Nudge Restore Failsafe'
   triggers:
-  - platform: state
-    entity_id: input_boolean.guanfacine_taken
+  - entity_id: input_boolean.guanfacine_taken
     from: 'off'
     to: 'on'
+    trigger: state
   conditions:
   - condition: time
     after: '19:30:00'
@@ -3079,6 +3122,10 @@
     alias: Main nudge automation not mid-run (it handles its own restore)
     value_template: '{{ state_attr(''automation.meds_guanfacine_tv_nudge_until_logged'',
       ''current'') | int(0) == 0 }}'
+  - condition: state
+    entity_id: calendar.tv
+    state: 'off'
+    alias: Skip while a TV Event is actively running (don't stomp the movie scene/lighting)
   actions:
   - alias: Re-apply light snapshot if it survived (skip after restart)
     if:
@@ -3843,34 +3890,41 @@
             >= 600 }}'
         then:
         - action: input_datetime.set_datetime
-          alias: Stamp the finish time - drives the wet-clothes nag
-          data:
-            datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
-          target:
-            entity_id: input_datetime.laundry_washer_finished_at
-        - action: input_datetime.set_datetime
           alias: Stamp the permanent last-run record - never blanked, this is what
             Overview should read
           data:
             datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
           target:
             entity_id: input_datetime.laundry_washer_last_run_at
-        - choose:
-          - alias: Awake - notify immediately
-            conditions:
-            - condition: state
-              entity_id: input_boolean.in_bed
-              state: 'off'
-            sequence:
-            - action: script.notify_lara
-              data:
-                message: Cycle ran {{ run_min }} min. Clothes are ready to move over.
-                title: "\U0001F9FC Washer finished"
-          default:
-          - action: input_boolean.turn_on
-            alias: In bed - defer the push until she is up
+        - alias: Skip the wet-clothes nag if she's already moved the load to the dryer
+          if:
+          - condition: state
+            entity_id: binary_sensor.laundry_dryer_running
+            state: 'off'
+          then:
+          - action: input_datetime.set_datetime
+            alias: Stamp the finish time - drives the wet-clothes nag
+            data:
+              datetime: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}'
             target:
-              entity_id: input_boolean.laundry_done_pending_washer
+              entity_id: input_datetime.laundry_washer_finished_at
+          - choose:
+            - alias: Awake - notify immediately
+              conditions:
+              - condition: state
+                entity_id: input_boolean.in_bed
+                state: 'off'
+              sequence:
+              - action: script.notify_lara
+                data:
+                  message: Cycle ran {{ run_min }} min. Clothes are ready to move
+                    over.
+                  title: "\U0001F9FC Washer finished"
+            default:
+            - action: input_boolean.turn_on
+              alias: In bed - defer the push until she is up
+              target:
+                entity_id: input_boolean.laundry_done_pending_washer
   mode: single
 - id: '1786409377851'
   alias: Laundry — Wet Clothes Nag (v2)
@@ -3938,7 +3992,7 @@
       entity_id: input_boolean.laundry_done_pending_washer
   mode: single
 - id: '1786413232913'
-  alias: AC — Away Eco / Restore on Presence (v5)
+  alias: AC — Away Eco / Restore on Presence (v6, Wakes a Manually-Off Unit on Leaving)
   triggers:
   - entity_id: person.lara_wiz
     event: leave
@@ -3989,10 +4043,13 @@
               - condition: state
                 entity_id: climate.bedroom_ac
                 state:
-                - 'off'
                 - unavailable
                 - unknown
             then:
+            - action: input_boolean.turn_off
+              alias: Clear the idle-shutoff marker - we're taking it from here
+              target:
+                entity_id: input_boolean.bedroom_ac_idle_shutoff_active
             - alias: Store the pre-away target — only if no away setback is already
                 active
               if:
@@ -4032,10 +4089,13 @@
               - condition: state
                 entity_id: climate.living_room_ac
                 state:
-                - 'off'
                 - unavailable
                 - unknown
             then:
+            - action: input_boolean.turn_off
+              alias: Clear the idle-shutoff marker - we're taking it from here
+              target:
+                entity_id: input_boolean.lr_ac_idle_shutoff_active
             - alias: Store the pre-away target — only if no away setback is already
                 active
               if:
@@ -4077,10 +4137,13 @@
             - condition: state
               entity_id: climate.bedroom_ac
               state:
-              - 'off'
               - unavailable
               - unknown
           then:
+          - action: input_boolean.turn_off
+            alias: Clear the idle-shutoff marker - we're taking it from here
+            target:
+              entity_id: input_boolean.bedroom_ac_idle_shutoff_active
           - action: climate.set_hvac_mode
             data:
               hvac_mode: cool
@@ -4105,9 +4168,8 @@
             ~ '), deep setback to cool/none/80F' if states('person.johnny') not in
             ['home','unknown','unavailable'] else 'Johnny home or location unconfirmed
             (person.johnny = ' ~ states('person.johnny') ~ '), mild eco setback' }}.{{
-            ' Bedroom AC was off or unreachable, so this applied to the living room
-            only.' if states('climate.bedroom_ac') in ['off','unavailable','unknown']
-            else '' }}
+            ' Bedroom AC was unreachable, so this applied to the living room only.'
+            if states('climate.bedroom_ac') in ['unavailable','unknown'] else '' }}
           name: AC Away Eco
     - alias: BACK HOME (or a unit came back online while home) — restore eco AND the
         exact pre-away target
@@ -5680,6 +5742,11 @@
   - at: input_datetime.bed_window_at
     id: bed_window_open
     trigger: time
+  - trigger: state
+    entity_id: calendar.tv
+    to: 'off'
+    id: tv_event_ended
+    alias: Re-check when a TV Event ends, in case the window opened while it was running
   conditions:
   - alias: 'The whole point: only nudge if she is not already in bed'
     condition: state
@@ -5698,7 +5765,33 @@
     alias: Safety net against an odd fire after a restart
     before: 01:30:00
     condition: time
+  - alias: Skip while a TV Event is active; if one just ended, only fire if the window
+      time had already arrived
+    condition: or
+    conditions:
+    - condition: and
+      conditions:
+      - condition: trigger
+        id: bed_window_open
+      - condition: state
+        entity_id: calendar.tv
+        state: 'off'
+    - condition: and
+      conditions:
+      - condition: trigger
+        id: tv_event_ended
+      - condition: template
+        value_template: '{{ state_attr(''input_datetime.bed_window_at'', ''timestamp'')
+          is not none and now().timestamp() >= state_attr(''input_datetime.bed_window_at'',
+          ''timestamp'') }}'
   actions:
+  - alias: Let TV Event Over's AL handback + sleep-mode arm settle before we override,
+      so we don't race it
+    if:
+    - condition: trigger
+      id: tv_event_ended
+    then:
+    - delay: 00:00:10
   - action: scene.create
     alias: Snapshot the living-room lamps so we can restore them exactly
     data:
@@ -6844,4 +6937,78 @@
         message: Mismatch flagged — score {{ score }}, {{ (cooling_hours*60) | round(0)
           | int }} min compressor runtime.
         name: Bedroom AC
+  mode: single
+- id: '1789577700080'
+  alias: 'Sonos: Broadcast Health Check at Bedtime'
+  description: At bedtime, reloads the Sonos integration and silently probes the group-snapshot
+    call that breaks when the cross_fade coordinator-desync bug is present. Skips
+    for the night if any of the four speakers is still playing. Flags input_boolean.sonos_broadcast_check_failed
+    if the probe still errors after the reload.
+  triggers:
+  - entity_id: input_boolean.in_bed
+    from: 'off'
+    to: 'on'
+    trigger: state
+  conditions:
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id:
+      - media_player.living_room_arc
+      - media_player.basement
+      - media_player.bedroom_frame
+      - media_player.bathroom
+      match: any
+      state: playing
+  actions:
+  - action: input_boolean.turn_on
+    alias: Assume broken until the probe proves otherwise
+    target:
+      entity_id: input_boolean.sonos_broadcast_check_failed
+  - action: homeassistant.reload_config_entry
+    alias: Reload the Sonos integration (the fix)
+    data:
+      entry_id: 893af2796f94a940a4deacdc419ecba0
+  - alias: Give entities a moment to repopulate after reload
+    delay: 00:00:10
+  - action: sonos.snapshot
+    alias: Diagnostic-only group snapshot, no playback change — this is what throws
+      when the cross_fade desync is present
+    data:
+      with_group: true
+    target:
+      entity_id:
+      - media_player.living_room_arc
+      - media_player.basement
+      - media_player.bedroom_frame
+      - media_player.bathroom
+  - action: input_boolean.turn_off
+    alias: Probe succeeded — clear the failed flag
+    target:
+      entity_id: input_boolean.sonos_broadcast_check_failed
+  mode: single
+- id: '1789577718200'
+  alias: 'Alert: Sonos Broadcast Still Broken'
+  description: Notifies at wake-up if last night's Sonos health check found the cross_fade
+    group-desync bug still present after a reload.
+  triggers:
+  - entity_id: input_boolean.in_bed
+    from: 'on'
+    to: 'off'
+    trigger: state
+  conditions:
+  - condition: state
+    entity_id: input_boolean.sonos_broadcast_check_failed
+    state: 'on'
+  actions:
+  - action: notify.mobile_app_iphone
+    alias: Push the still-broken alert
+    data:
+      message: Last night's reload didn't clear the Bathroom cross_fade fault. Commute
+        announcer and other broadcasts will keep failing until it's fixed by hand.
+      title: ⚠️ Sonos broadcast still broken
+  - action: input_boolean.turn_off
+    alias: Clear the flag now that she's been told
+    target:
+      entity_id: input_boolean.sonos_broadcast_check_failed
   mode: single

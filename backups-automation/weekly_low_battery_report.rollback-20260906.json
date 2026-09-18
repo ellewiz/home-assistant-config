@@ -1,0 +1,12 @@
+{
+  "note": "Pre-fix rollback copy taken 2026-09-06 before replacing list.append() with namespace. config_hash 817f8cc3f3db51f7",
+  "id": "1755038589514",
+  "alias": "Weekly low-battery report",
+  "triggers": [{"trigger": "time", "at": "09:00:00"}],
+  "conditions": [{"condition": "time", "weekday": ["sun"]}],
+  "actions": [
+    {"variables": {"lows": "{% set sensors = states.sensor\n   | selectattr('attributes.device_class','defined')\n   | selectattr('attributes.device_class','equalto','battery')\n   | list %}\n{% set out = [] %} {% for s in sensors %}\n  {% set v = s.state | float(default=9999) %}\n  {% if v <= 20 %}\n    {% set _ = out.append(s.entity_id) %}\n  {% endif %}\n{% endfor %} {{ out }}"}},
+    {"choose": [{"conditions": "{{ lows | length > 0 }}", "sequence": [{"action": "notify.mobile_app_iphone", "data": {"title": "Low batteries (≤20%)", "message": "{{ lows | sort | join(', ') }}"}}]}], "default": [{"action": "logbook.log", "data": {"name": "Battery check", "message": "All good (no sensors ≤ 20%)."}}]}
+  ],
+  "mode": "single"
+}
