@@ -61,7 +61,7 @@ instead.
   "Real Estate" filter.
 
 ### 2. Known low-quality marketing → Review-Delete — done, update as new ones show up
-- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in, nexusraklotp.in, vectviral.co.in, leadlshard.in, edhubglyph.in, solboostflow.in, boostorbit.in`
+- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in, nexusraklotp.in, vectviral.co.in, leadlshard.in, edhubglyph.in, solboostflow.in, boostorbit.in, arcgetkocore.co.in`
 - **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
 - A recurring cluster of insurance/vehicle-protection marketing on throwaway
   domains — each one came back **suspicious** (or, for `mycelsmart.in`,
@@ -76,8 +76,9 @@ instead.
   9/11 — both marked Spam + reported, `leadlshard.in` 9/14 — also marked
   Spam + reported, `edhubglyph.in` 9/15 — also marked Spam + reported,
   `solboostflow.in` 9/18 — also marked Spam + reported, `boostorbit.in`
-  9/19 — also marked Spam + reported). They rotate domains often, so this
-  filter needs topping up each time a new one appears rather than staying
+  9/19 — also marked Spam + reported, `arcgetkocore.co.in` 9/20 — also
+  marked Spam + reported). They rotate domains often, so this filter
+  needs topping up each time a new one appears rather than staying
   static —
   check gmail-triage.md before assuming
   this list is current.
