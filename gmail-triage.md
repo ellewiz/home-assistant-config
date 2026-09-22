@@ -64,25 +64,15 @@ instead.
 - **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in, nexusraklotp.in, vectviral.co.in, leadlshard.in, edhubglyph.in, solboostflow.in, boostorbit.in, arcgetkocore.co.in, netmcodegrid.co.in`
 - **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
 - A recurring cluster of insurance/vehicle-protection marketing on throwaway
-  domains — each one came back **suspicious** (or, for `mycelsmart.in`,
-  **unknown** — treated the same way given the identical template/pattern)
-  on a threat-intelligence check when it showed up in daily triage
-  (`uphubroad.work` 8/2, `smartgudock.blog` 8/14, `bestwloom.live` 8/14 —
-  also marked Spam + reported, `paceleadc.live` 8/19 — also marked Spam +
-  reported, `glyphhflow.co.in` and `cvlabflux.in` 9/6 — both marked Spam +
-  reported, `nexusotdgh.co.in` 9/7 — also marked Spam + reported,
-  `trcelspire.in` 9/8 — also marked Spam + reported, `mycelsmart.in` 9/9 —
-  also marked Spam + reported, `nexusraklotp.in` 9/10 and `vectviral.co.in`
-  9/11 — both marked Spam + reported, `leadlshard.in` 9/14 — also marked
-  Spam + reported, `edhubglyph.in` 9/15 — also marked Spam + reported,
-  `solboostflow.in` 9/18 — also marked Spam + reported, `boostorbit.in`
-  9/19 — also marked Spam + reported, `arcgetkocore.co.in` 9/20 — also
-  marked Spam + reported, `netmcodegrid.co.in` 9/21 — also marked Spam +
-  reported). They rotate domains often, so this filter needs topping up
-  each time a new one appears rather than staying
-  static —
-  check gmail-triage.md before assuming
-  this list is current.
+  domains, first seen 8/2 and still showing up every few days as of 9/21
+  (17 domains caught so far). Every one has come back **suspicious** on a
+  threat-intelligence check (one exception, `mycelsmart.in`, came back
+  **unknown** but was treated the same way given the identical
+  template/pattern) and has been marked Spam + reported via Malwarebytes.
+  Per-domain dates live in the git history for this file, not here — they
+  rotate domains often, so this filter needs topping up each time a new
+  one appears rather than staying static. Check the From field above
+  before assuming this list is current.
 
 ### 3. Account/security alerts → Alerts — still to do
 - **From field:** `id.apple.com, email.apple.com, accounts.google.com`
