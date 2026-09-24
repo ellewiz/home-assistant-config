@@ -130,15 +130,24 @@ exclusion pattern each time.
 
 **Confirmed scams, reported to threat intel:** a "homeowner stimulus/mortgage
 relief" scam cluster on throwaway domains — `yourconcpway.cyou`,
-`zenbflowlink.cyou`, `gorainarmweb.rest` — plus a "debt relief/refinance"
-cluster of five `.xyz` domains (`scalemetricproleaddevelop.xyz`,
-`onlineprivacytoday.xyz`, `marketselectgroupbasiscommand.xyz`,
-`worthcorefirmbeaconshield.xyz`, `stakerefinedportalsignalvertex.xyz`). All 8
-reported via Malwarebytes ScamGuard. Catch-all search for these senders:
+`zenbflowlink.cyou`, `gorainarmweb.rest`, `aernport.in` (9/22, "Seize
+6-month refi") — plus a "debt relief/refinance" cluster of five `.xyz`
+domains (`scalemetricproleaddevelop.xyz`, `onlineprivacytoday.xyz`,
+`marketselectgroupbasiscommand.xyz`, `worthcorefirmbeaconshield.xyz`,
+`stakerefinedportalsignalvertex.xyz`). All 9 reported via Malwarebytes
+ScamGuard. Catch-all search for these senders:
 
 ```
-{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz}
+{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz}
 ```
+
+**Other reported scam (9/22):** `call@gridghub.in` — "Elevate Your
+Bathroom with a Complimentary Design Consultation!" — a home-improvement
+lead-gen sender on the same kind of throwaway `.in` domain as the
+insurance cluster in Part 1, but a different pitch (bathroom remodeling,
+not insurance). Suspicious verdict, marked Spam + reported. Only one seen
+so far — not added to a filter list yet, just noted here in case more
+domains in this vein show up.
 
 ### Filter candidates identified but not yet added
 
