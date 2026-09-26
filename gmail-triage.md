@@ -131,23 +131,30 @@ exclusion pattern each time.
 **Confirmed scams, reported to threat intel:** a "homeowner stimulus/mortgage
 relief" scam cluster on throwaway domains — `yourconcpway.cyou`,
 `zenbflowlink.cyou`, `gorainarmweb.rest`, `aernport.in` (9/22, "Seize
-6-month refi") — plus a "debt relief/refinance" cluster of five `.xyz`
-domains (`scalemetricproleaddevelop.xyz`, `onlineprivacytoday.xyz`,
+6-month refi") — plus a "debt relief/refinance" cluster of six domains
+(`scalemetricproleaddevelop.xyz`, `onlineprivacytoday.xyz`,
 `marketselectgroupbasiscommand.xyz`, `worthcorefirmbeaconshield.xyz`,
-`stakerefinedportalsignalvertex.xyz`). All 9 reported via Malwarebytes
-ScamGuard. Catch-all search for these senders:
+`stakerefinedportalsignalvertex.xyz`, `aervloopcode.in` 9/25 — "Don't let
+creditors control your life"). All 10 reported via Malwarebytes ScamGuard.
+Catch-all search for these senders:
 
 ```
-{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz}
+{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in}
 ```
 
-**Other reported scam (9/22):** `call@gridghub.in` — "Elevate Your
-Bathroom with a Complimentary Design Consultation!" — a home-improvement
-lead-gen sender on the same kind of throwaway `.in` domain as the
-insurance cluster in Part 1, but a different pitch (bathroom remodeling,
-not insurance). Suspicious verdict, marked Spam + reported. Only one seen
-so far — not added to a filter list yet, just noted here in case more
-domains in this vein show up.
+**Home-improvement lead-gen cluster (new, 9/22 on):** `gridghub.in` (9/22,
+"Elevate Your Bathroom with a Complimentary Design Consultation!") and
+`dataimark.in` (9/25, "Personalized Bathroom Design Consultation Awaits").
+Same throwaway-domain pattern as the insurance cluster in Part 1, but
+selling bathroom remodeling instead. Both marked Spam + reported. Two
+domains now — worth promoting to a proper filter entry in Part 1 if a
+third shows up.
+
+**Other reported, pattern unclear (9/25):** `stream@aerznodedock.co.in` —
+"6-month drop, long-term gain" — suspicious verdict, same throwaway-domain
+shape as the other clusters but the pitch itself is vague (possibly
+investment/crypto-adjacent). Marked Spam + reported; not enough signal yet
+to know which cluster it belongs with.
 
 ### Filter candidates identified but not yet added
 
