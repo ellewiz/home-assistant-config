@@ -61,11 +61,11 @@ instead.
   "Real Estate" filter.
 
 ### 2. Known low-quality marketing → Review-Delete — done, update as new ones show up
-- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in, nexusraklotp.in, vectviral.co.in, leadlshard.in, edhubglyph.in, solboostflow.in, boostorbit.in, arcgetkocore.co.in, netmcodegrid.co.in, gridbytefbot.co.in`
+- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in, nexusraklotp.in, vectviral.co.in, leadlshard.in, edhubglyph.in, solboostflow.in, boostorbit.in, arcgetkocore.co.in, netmcodegrid.co.in, gridbytefbot.co.in, bytevdockbot.in`
 - **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
 - A recurring cluster of insurance/vehicle-protection marketing on throwaway
-  domains, first seen 8/2 and still showing up every few days as of 9/26
-  (18 domains caught so far). Every one has come back **suspicious** on a
+  domains, first seen 8/2 and still showing up every few days as of 9/27
+  (19 domains caught so far). Every one has come back **suspicious** on a
   threat-intelligence check (one exception, `mycelsmart.in`, came back
   **unknown** but was treated the same way given the identical
   template/pattern) and has been marked Spam + reported via Malwarebytes.
@@ -135,11 +135,12 @@ relief" scam cluster on throwaway domains — `yourconcpway.cyou`,
 (`scalemetricproleaddevelop.xyz`, `onlineprivacytoday.xyz`,
 `marketselectgroupbasiscommand.xyz`, `worthcorefirmbeaconshield.xyz`,
 `stakerefinedportalsignalvertex.xyz`, `aervloopcode.in` 9/25 — "Don't let
-creditors control your life"). All 10 reported via Malwarebytes ScamGuard.
-Catch-all search for these senders:
+creditors control your life", `aerbyteibyte.in` 9/27 — "You're not out of
+options"). All 11 reported via Malwarebytes ScamGuard. Catch-all search
+for these senders:
 
 ```
-{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in}
+{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in}
 ```
 
 **Home-improvement lead-gen cluster (new, 9/22 on):** `gridghub.in` (9/22,
@@ -150,11 +151,13 @@ selling bathroom remodeling instead. Both marked Spam + reported. Two
 domains now — worth promoting to a proper filter entry in Part 1 if a
 third shows up.
 
-**Other reported, pattern unclear (9/25):** `stream@aerznodedock.co.in` —
-"6-month drop, long-term gain" — suspicious verdict, same throwaway-domain
-shape as the other clusters but the pitch itself is vague (possibly
-investment/crypto-adjacent). Marked Spam + reported; not enough signal yet
-to know which cluster it belongs with.
+**"6-month" cluster, pattern still unclear:** `stream@aerznodedock.co.in`
+(9/25, "6-month drop, long-term gain") and `guide@ztechplot.co.in` (9/27,
+"Leverage the 6-month low") — same throwaway-domain shape as the other
+clusters and both reference a vague "6-month" financial timeframe
+(possibly investment/crypto-adjacent). Both suspicious verdicts, marked
+Spam + reported. Two domains now, sharing distinctive phrasing — worth
+watching for a third before deciding what this pitch actually is.
 
 ### Filter candidates identified but not yet added
 
