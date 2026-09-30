@@ -131,16 +131,25 @@ exclusion pattern each time.
 **Confirmed scams, reported to threat intel:** a "homeowner stimulus/mortgage
 relief" scam cluster on throwaway domains — `yourconcpway.cyou`,
 `zenbflowlink.cyou`, `gorainarmweb.rest`, `aernport.in` (9/22, "Seize
-6-month refi") — plus a "debt relief/refinance" cluster of six domains
-(`scalemetricproleaddevelop.xyz`, `onlineprivacytoday.xyz`,
+6-month refi"), `aerznodedock.co.in` (9/25, "6-month drop, long-term
+gain"), `ztechplot.co.in` (9/27, "Leverage the 6-month low"),
+`bitclickbyte.in` (9/28, subject also "6-month drop, long-term gain" —
+this one's body confirmed the "6-month" subject lines are this same
+operator: "you were left off the list... homeowners eligible for the 3%
+rate program"), `aerbyteiload.in` (9/28, "Are you getting the best rate
+for your property?") — plus a "debt relief/refinance" cluster of seven
+domains (`scalemetricproleaddevelop.xyz`, `onlineprivacytoday.xyz`,
 `marketselectgroupbasiscommand.xyz`, `worthcorefirmbeaconshield.xyz`,
 `stakerefinedportalsignalvertex.xyz`, `aervloopcode.in` 9/25 — "Don't let
 creditors control your life", `aerbyteibyte.in` 9/27 — "You're not out of
-options"). All 11 reported via Malwarebytes ScamGuard. Catch-all search
-for these senders:
+options", `ionenpovport.in` 9/28 — "Federal Relief Program Eligibility
+Confirmed"). All 16 reported via Malwarebytes ScamGuard. (The "6-month"
+phrasing turned out to just be this mortgage-relief operator's subject
+line, not a separate cluster — merged in above rather than tracked on
+its own.) Catch-all search for these senders:
 
 ```
-{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in}
+{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in}
 ```
 
 **Home-improvement lead-gen cluster (new, 9/22 on):** `gridghub.in` (9/22,
@@ -150,14 +159,6 @@ Same throwaway-domain pattern as the insurance cluster in Part 1, but
 selling bathroom remodeling instead. Both marked Spam + reported. Two
 domains now — worth promoting to a proper filter entry in Part 1 if a
 third shows up.
-
-**"6-month" cluster, pattern still unclear:** `stream@aerznodedock.co.in`
-(9/25, "6-month drop, long-term gain") and `guide@ztechplot.co.in` (9/27,
-"Leverage the 6-month low") — same throwaway-domain shape as the other
-clusters and both reference a vague "6-month" financial timeframe
-(possibly investment/crypto-adjacent). Both suspicious verdicts, marked
-Spam + reported. Two domains now, sharing distinctive phrasing — worth
-watching for a third before deciding what this pitch actually is.
 
 ### Filter candidates identified but not yet added
 
