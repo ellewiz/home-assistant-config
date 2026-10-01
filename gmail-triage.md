@@ -61,11 +61,11 @@ instead.
   "Real Estate" filter.
 
 ### 2. Known low-quality marketing → Review-Delete — done, update as new ones show up
-- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in, nexusraklotp.in, vectviral.co.in, leadlshard.in, edhubglyph.in, solboostflow.in, boostorbit.in, arcgetkocore.co.in, netmcodegrid.co.in, gridbytefbot.co.in, bytevdockbot.in`
+- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in, nexusraklotp.in, vectviral.co.in, leadlshard.in, edhubglyph.in, solboostflow.in, boostorbit.in, arcgetkocore.co.in, netmcodegrid.co.in, gridbytefbot.co.in, bytevdockbot.in, scalecrest.in, gridipack.in, vporttool.in`
 - **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
 - A recurring cluster of insurance/vehicle-protection marketing on throwaway
-  domains, first seen 8/2 and still showing up every few days as of 9/27
-  (19 domains caught so far). Every one has come back **suspicious** on a
+  domains, first seen 8/2 and still showing up every few days as of 9/30
+  (22 domains caught so far). Every one has come back **suspicious** on a
   threat-intelligence check (one exception, `mycelsmart.in`, came back
   **unknown** but was treated the same way given the identical
   template/pattern) and has been marked Spam + reported via Malwarebytes.
@@ -143,13 +143,14 @@ domains (`scalemetricproleaddevelop.xyz`, `onlineprivacytoday.xyz`,
 `stakerefinedportalsignalvertex.xyz`, `aervloopcode.in` 9/25 — "Don't let
 creditors control your life", `aerbyteibyte.in` 9/27 — "You're not out of
 options", `ionenpovport.in` 9/28 — "Federal Relief Program Eligibility
-Confirmed"). All 16 reported via Malwarebytes ScamGuard. (The "6-month"
-phrasing turned out to just be this mortgage-relief operator's subject
-line, not a separate cluster — merged in above rather than tracked on
-its own.) Catch-all search for these senders:
+Confirmed", `aervloopflow.in` 9/29 — "Time to check your portfolio's
+interest rate!"). All 17 reported via Malwarebytes ScamGuard. (The
+"6-month" phrasing turned out to just be this mortgage-relief operator's
+subject line, not a separate cluster — merged in above rather than
+tracked on its own.) Catch-all search for these senders:
 
 ```
-{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in}
+{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in}
 ```
 
 **Home-improvement lead-gen cluster (new, 9/22 on):** `gridghub.in` (9/22,
