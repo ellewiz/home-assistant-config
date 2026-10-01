@@ -79,6 +79,16 @@ instead.
 - **Action:** Apply label "Alerts" (leave in Inbox — these can be
   time-sensitive, e.g. password-reset or account-recovery notices)
 
+### 4. Home-improvement lead-gen → Review-Delete — new, promoted from Part 3 on 10/1
+- **From field:** `gridghub.in, dataimark.in, solotpeanova.co.in`
+- **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
+- Same throwaway-domain marketing pattern as #2 above, but pitching
+  bathroom-remodeling "design consultations" instead of insurance.
+  First seen 9/22 (`gridghub.in`), then `dataimark.in` 9/25 and
+  `solotpeanova.co.in` 10/1 — three domains now, so promoted out of the
+  Part 3 notes into its own filter entry. All three suspicious verdicts,
+  marked Spam + reported.
+
 Everything else that used to get auto-sorted by MailSynth — priority calls
 like "Action Needed" vs. "Medium," or judgment calls like political
 fundraising blasts — can't be expressed as a sender/subject rule. That's what
@@ -153,13 +163,15 @@ tracked on its own.) Catch-all search for these senders:
 {from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in}
 ```
 
-**Home-improvement lead-gen cluster (new, 9/22 on):** `gridghub.in` (9/22,
-"Elevate Your Bathroom with a Complimentary Design Consultation!") and
-`dataimark.in` (9/25, "Personalized Bathroom Design Consultation Awaits").
-Same throwaway-domain pattern as the insurance cluster in Part 1, but
-selling bathroom remodeling instead. Both marked Spam + reported. Two
-domains now — worth promoting to a proper filter entry in Part 1 if a
-third shows up.
+(The home-improvement lead-gen cluster that used to be noted here was
+promoted to Part 1 filter #4 on 10/1 once a third domain showed up.)
+
+**Other reported scam (10/1):** `service@celldncnbbot.co.in` — "Do You
+Qualify for Medicare Benefits?" — same throwaway-domain shape as the
+other clusters but a new pitch (Medicare eligibility, not insurance
+shopping, debt relief, or home improvement). Suspicious verdict, marked
+Spam + reported. Only one seen so far — noted here in case more domains
+in this vein show up.
 
 ### Filter candidates identified but not yet added
 
