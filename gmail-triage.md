@@ -61,11 +61,11 @@ instead.
   "Real Estate" filter.
 
 ### 2. Known low-quality marketing → Review-Delete — done, update as new ones show up
-- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in, nexusraklotp.in, vectviral.co.in, leadlshard.in, edhubglyph.in, solboostflow.in, boostorbit.in, arcgetkocore.co.in, netmcodegrid.co.in, gridbytefbot.co.in, bytevdockbot.in, scalecrest.in, gridipack.in, vporttool.in, arcbytetdrop.co.in, tefldcore.co.in`
+- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in, nexusraklotp.in, vectviral.co.in, leadlshard.in, edhubglyph.in, solboostflow.in, boostorbit.in, arcgetkocore.co.in, netmcodegrid.co.in, gridbytefbot.co.in, bytevdockbot.in, scalecrest.in, gridipack.in, vporttool.in, arcbytetdrop.co.in, tefldcore.co.in, gridtroloop.co.in`
 - **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
 - A recurring cluster of insurance/vehicle-protection marketing on throwaway
-  domains, first seen 8/2 and still showing up every few days as of 10/2
-  (24 domains caught so far). Every one has come back **suspicious** on a
+  domains, first seen 8/2 and still showing up every few days as of 10/3
+  (25 domains caught so far). Every one has come back **suspicious** on a
   threat-intelligence check (one exception, `mycelsmart.in`, came back
   **unknown** but was treated the same way given the identical
   template/pattern) and has been marked Spam + reported via Malwarebytes.
@@ -80,14 +80,14 @@ instead.
   time-sensitive, e.g. password-reset or account-recovery notices)
 
 ### 4. Home-improvement lead-gen → Review-Delete — new, promoted from Part 3 on 10/1
-- **From field:** `gridghub.in, dataimark.in, solotpeanova.co.in`
+- **From field:** `gridghub.in, dataimark.in, solotpeanova.co.in, aerrporttool.co.in`
 - **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
 - Same throwaway-domain marketing pattern as #2 above, but pitching
   bathroom-remodeling "design consultations" instead of insurance.
-  First seen 9/22 (`gridghub.in`), then `dataimark.in` 9/25 and
-  `solotpeanova.co.in` 10/1 — three domains now, so promoted out of the
-  Part 3 notes into its own filter entry. All three suspicious verdicts,
-  marked Spam + reported.
+  First seen 9/22 (`gridghub.in`), then `dataimark.in` 9/25,
+  `solotpeanova.co.in` 10/1, and `aerrporttool.co.in` 10/3 — promoted out
+  of the Part 3 notes into its own filter entry once a third domain
+  showed up. All four suspicious verdicts, marked Spam + reported.
 
 Everything else that used to get auto-sorted by MailSynth — priority calls
 like "Action Needed" vs. "Medium," or judgment calls like political
@@ -147,22 +147,28 @@ gain"), `ztechplot.co.in` (9/27, "Leverage the 6-month low"),
 this one's body confirmed the "6-month" subject lines are this same
 operator: "you were left off the list... homeowners eligible for the 3%
 rate program"), `aerbyteiload.in` (9/28, "Are you getting the best rate
-for your property?") — plus a "debt relief/refinance" cluster of seven
-domains (`scalemetricproleaddevelop.xyz`, `onlineprivacytoday.xyz`,
-`marketselectgroupbasiscommand.xyz`, `worthcorefirmbeaconshield.xyz`,
-`stakerefinedportalsignalvertex.xyz`, `aervloopcode.in` 9/25 — "Don't let
-creditors control your life", `aerbyteibyte.in` 9/27 — "You're not out of
-options", `ionenpovport.in` 9/28 — "Federal Relief Program Eligibility
-Confirmed", `aervloopflow.in` 9/29 — "Time to check your portfolio's
-interest rate!", `viralbespan.in` 10/2 — "Cut your monthly payment: see
-your October refi breakdown"). All 18 reported via Malwarebytes
+for your property?"), `infocoretbot.co.in` (10/4, "Fixed 2.99% Rate for
+Qualified ZIP Codes"), `aerrloopload.co.in` (10/4, "Federal Home Loan
+Program... Lower Interest Rates"), `neonrnodebot.co.in` (10/3, "Market
+shift alert: check your October mortgage terms") — plus a "debt
+relief/refinance" cluster of nine domains (`scalemetricproleaddevelop.xyz`,
+`onlineprivacytoday.xyz`, `marketselectgroupbasiscommand.xyz`,
+`worthcorefirmbeaconshield.xyz`, `stakerefinedportalsignalvertex.xyz`,
+`aervloopcode.in` 9/25 — "Don't let creditors control your life",
+`aerbyteibyte.in` 9/27 — "You're not out of options", `ionenpovport.in`
+9/28 — "Federal Relief Program Eligibility Confirmed", `aervloopflow.in`
+9/29 — "Time to check your portfolio's interest rate!", `viralbespan.in`
+10/2 — "Cut your monthly payment: see your October refi breakdown",
+`bitrnodeplot.co.in` 10/4 — "Unlock Your Pre-Qualification" (National
+Debt Relief branding), `sparkeflow.co.in` 10/3 — "Unlock potential
+payment relief"). All 23 reported via Malwarebytes
 ScamGuard. (The "6-month" phrasing turned out to just be this
 mortgage-relief operator's subject line, not a separate cluster — merged
 in above rather than tracked on its own.) Catch-all search for these
 senders:
 
 ```
-{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in from:viralbespan.in}
+{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:infocoretbot.co.in from:aerrloopload.co.in from:neonrnodebot.co.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in from:viralbespan.in from:bitrnodeplot.co.in from:sparkeflow.co.in}
 ```
 
 (The home-improvement lead-gen cluster that used to be noted here was
