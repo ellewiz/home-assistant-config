@@ -67,14 +67,14 @@ template:
         state: >-
           {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','GRASS') | list -%}
           {%- set t = m[0] if (m | count) > 0 else {} -%}
-          {{ t.indexInfo.value | default(0) | int(0) }}
+          {{ (t.indexInfo | default({})).value | default(0) | int(0) }}
         icon: mdi:grass
         state_class: measurement
         attributes:
           category: >-
             {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','GRASS') | list -%}
             {%- set t = m[0] if (m | count) > 0 else {} -%}
-            {{ t.indexInfo.category | default('n/a') }}
+            {{ (t.indexInfo | default({})).category | default('n/a') }}
           in_season: >-
             {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','GRASS') | list -%}
             {%- set t = m[0] if (m | count) > 0 else {} -%}
@@ -86,14 +86,14 @@ template:
         state: >-
           {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','TREE') | list -%}
           {%- set t = m[0] if (m | count) > 0 else {} -%}
-          {{ t.indexInfo.value | default(0) | int(0) }}
+          {{ (t.indexInfo | default({})).value | default(0) | int(0) }}
         icon: mdi:tree
         state_class: measurement
         attributes:
           category: >-
             {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','TREE') | list -%}
             {%- set t = m[0] if (m | count) > 0 else {} -%}
-            {{ t.indexInfo.category | default('n/a') }}
+            {{ (t.indexInfo | default({})).category | default('n/a') }}
           in_season: >-
             {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','TREE') | list -%}
             {%- set t = m[0] if (m | count) > 0 else {} -%}
@@ -105,14 +105,14 @@ template:
         state: >-
           {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','WEED') | list -%}
           {%- set t = m[0] if (m | count) > 0 else {} -%}
-          {{ t.indexInfo.value | default(0) | int(0) }}
+          {{ (t.indexInfo | default({})).value | default(0) | int(0) }}
         icon: mdi:sprout
         state_class: measurement
         attributes:
           category: >-
             {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','WEED') | list -%}
             {%- set t = m[0] if (m | count) > 0 else {} -%}
-            {{ t.indexInfo.category | default('n/a') }}
+            {{ (t.indexInfo | default({})).category | default('n/a') }}
           in_season: >-
             {%- set m = (state_attr('sensor.google_pollen_raw','pollenTypeInfo') | default([])) | selectattr('code','equalto','WEED') | list -%}
             {%- set t = m[0] if (m | count) > 0 else {} -%}
@@ -124,14 +124,14 @@ template:
         state: >-
           {%- set m = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('code','equalto','RAGWEED') | list -%}
           {%- set r = m[0] if (m | count) > 0 else {} -%}
-          {{ r.indexInfo.value | default(0) | int(0) }}
+          {{ (r.indexInfo | default({})).value | default(0) | int(0) }}
         icon: mdi:flower-pollen
         state_class: measurement
         attributes:
           category: >-
             {%- set m = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('code','equalto','RAGWEED') | list -%}
             {%- set r = m[0] if (m | count) > 0 else {} -%}
-            {{ r.indexInfo.category | default('n/a') }}
+            {{ (r.indexInfo | default({})).category | default('n/a') }}
           in_season: >-
             {%- set m = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('code','equalto','RAGWEED') | list -%}
             {%- set r = m[0] if (m | count) > 0 else {} -%}

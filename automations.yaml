@@ -885,8 +885,8 @@
   - entity_id: calendar.master_calendar
     event: start
     id: wake_up_time
-    offset: -0:20:00
-    platform: calendar
+    offset: -0:15:00
+    trigger: calendar
   conditions:
   - after: 04:30:00
     before: 08:00:00
@@ -935,7 +935,7 @@
       - action: media_player.volume_set
         alias: Phase 1 — Set initial low volume
         data:
-          volume_level: 0.03
+          volume_level: 0.02
         target:
           entity_id: media_player.bedroom_frame
       - action: media_player.play_media
@@ -971,61 +971,61 @@
           shuffle: true
         target:
           entity_id: media_player.bedroom_frame
-      - delay: 00:02:00
+      - delay: 00:01:30
+      - action: media_player.volume_set
+        data:
+          volume_level: 0.03
+        target:
+          entity_id: media_player.bedroom_frame
+      - delay: 00:01:30
       - action: media_player.volume_set
         data:
           volume_level: 0.04
         target:
           entity_id: media_player.bedroom_frame
-      - delay: 00:02:00
+      - delay: 00:01:30
       - action: media_player.volume_set
         data:
           volume_level: 0.05
         target:
           entity_id: media_player.bedroom_frame
-      - delay: 00:02:00
+      - delay: 00:01:30
+      - action: media_player.volume_set
+        data:
+          volume_level: 0.06
+        target:
+          entity_id: media_player.bedroom_frame
+      - delay: 00:01:30
       - action: media_player.volume_set
         data:
           volume_level: 0.07
         target:
           entity_id: media_player.bedroom_frame
-      - delay: 00:02:00
+      - delay: 00:01:30
+      - action: media_player.volume_set
+        data:
+          volume_level: 0.08
+        target:
+          entity_id: media_player.bedroom_frame
+      - delay: 00:01:30
       - action: media_player.volume_set
         data:
           volume_level: 0.09
         target:
           entity_id: media_player.bedroom_frame
-      - delay: 00:02:00
+      - delay: 00:01:30
       - action: media_player.volume_set
         data:
-          volume_level: 0.11
+          volume_level: 0.1
         target:
           entity_id: media_player.bedroom_frame
-      - delay: 00:02:00
+      - delay: 00:01:30
       - action: media_player.volume_set
         data:
-          volume_level: 0.13
+          volume_level: 0.12
         target:
           entity_id: media_player.bedroom_frame
-      - delay: 00:02:00
-      - action: media_player.volume_set
-        data:
-          volume_level: 0.15
-        target:
-          entity_id: media_player.bedroom_frame
-      - delay: 00:02:00
-      - action: media_player.volume_set
-        data:
-          volume_level: 0.18
-        target:
-          entity_id: media_player.bedroom_frame
-      - delay: 00:02:00
-      - action: media_player.volume_set
-        data:
-          volume_level: 0.2
-        target:
-          entity_id: media_player.bedroom_frame
-      - delay: 00:02:00
+      - delay: 00:01:30
       - alias: Phase 2 — Skip if already out of bed
         condition: state
         entity_id: input_boolean.in_bed
@@ -1037,7 +1037,7 @@
             alias: Phase 2 — Set escalating alarm volume
             continue_on_error: true
             data:
-              volume_level: '{{ [0.42 + (repeat.index - 1) * 0.08, 1.0] | min }}'
+              volume_level: '{{ [0.28 + (repeat.index - 1) * 0.04, 0.70] | min }}'
             target:
               entity_id: media_player.bedroom_frame
           - action: media_player.play_media
@@ -1570,10 +1570,10 @@
 - id: '1777933283116'
   alias: 'Commute: Morning announcer with Waze (v2)'
   triggers:
-  - platform: calendar
-    entity_id: calendar.master_calendar
+  - entity_id: calendar.master_calendar
     event: end
     offset: '-1:0:0'
+    trigger: calendar
   conditions:
   - condition: state
     entity_id: calendar.vacation
@@ -1586,7 +1586,7 @@
   - variables:
       leave_by_ts: '{% set lb = states(''sensor.commute_leave_by'') %}{% if lb not
         in [''unknown'', ''unavailable''] %}{{ as_timestamp(today_at(lb)) }}{% else
-        %}{{ as_timestamp(trigger.calendar_event.end) }}{% endif %}'
+        %}{{ as_timestamp(trigger.calendar_event.end) - 300 }}{% endif %}'
   - action: script.commute_time_announcer
     data:
       until_ts: '{{ leave_by_ts }}'
@@ -1614,11 +1614,20 @@
   - condition: state
     entity_id: person.lara_wiz
     state: home
+  - condition: template
+    alias: 'Cooldown: skip a second score inside 60s (TD + extra point fires this
+      twice)'
+    value_template: '{{ state_attr(''automation.eagles_score_flash_green'', ''last_triggered'')
+      is none or (now() - state_attr(''automation.eagles_score_flash_green'', ''last_triggered'')).total_seconds()
+      > 60 }}'
   actions:
-  - alias: Flash living room Kelly Green (snapshot + restore via shared script)
+  - alias: Flash living room + kitchen LIFX strip Kelly Green (snapshot + restore
+      via shared script)
     action: script.alert_light_flash
     data:
-      targets: light.living_room_lights
+      targets:
+      - light.living_room_lights
+      - light.undercabinet_lights
       rgb_color:
       - 76
       - 187
@@ -2884,9 +2893,13 @@
       sequence:
       - action: notify.mobile_app_iphone
         data:
-          message: Bedroom is {{ states('sensor.temp_in_bedroom') }}°F. Turn down
-            the heat / crank the AC.
-          title: ⚠️ Bedroom warm
+          message: '{% if is_state(''input_boolean.bedroom_windows_open'',''on'')
+            %}Bedroom is {{ states(''sensor.temp_in_bedroom'') }}°F but the window
+            is open, so I left the AC off. Close it to cool.{% else %}Bedroom is {{
+            states(''sensor.temp_in_bedroom'') }}°F. Turn down the heat / crank the
+            AC.{% endif %}'
+          title: "{{ '\U0001FA9F Bedroom warm, window open' if is_state('input_boolean.bedroom_windows_open','on')
+            else '⚠️ Bedroom warm' }}"
       - action: input_datetime.set_datetime
         alias: Stamp anti-spam clock
         data:
@@ -2899,8 +2912,10 @@
           alias: Record that cooling could not be applied
           data:
             entity_id: climate.bedroom_ac
-            message: Heat alert sent, but Bedroom AC is unreachable so no cooling
-              was applied.
+            message: '{{ ''Heat alert sent, but the bedroom window is open so the
+              AC was left off.'' if is_state(''input_boolean.bedroom_windows_open'',''on'')
+              else ''Heat alert sent, but Bedroom AC is unreachable so no cooling
+              was applied.'' }}'
             name: Bedroom Heat Alert
         if:
         - condition: not
@@ -2910,6 +2925,10 @@
             state:
             - unavailable
             - unknown
+        - alias: Not while the bedroom window is open
+          condition: state
+          entity_id: input_boolean.bedroom_windows_open
+          state: 'off'
         then:
         - action: climate.set_hvac_mode
           alias: Actually cool it now (v3)
@@ -2937,8 +2956,12 @@
       sequence:
       - action: notify.mobile_app_iphone
         data:
-          message: Welcome home — bedroom is {{ states('sensor.temp_in_bedroom') }}°F.
-          title: ⚠️ Bedroom hot
+          message: '{% if is_state(''input_boolean.bedroom_windows_open'',''on'')
+            %}Bedroom is {{ states(''sensor.temp_in_bedroom'') }}°F but the window
+            is open, so I left the AC off. Close it to cool.{% else %}Welcome home
+            — bedroom is {{ states(''sensor.temp_in_bedroom'') }}°F.{% endif %}'
+          title: "{{ '\U0001FA9F Bedroom warm, window open' if is_state('input_boolean.bedroom_windows_open','on')
+            else '⚠️ Bedroom hot' }}"
       - action: input_datetime.set_datetime
         alias: Stamp anti-spam clock
         data:
@@ -2951,8 +2974,10 @@
           alias: Record that cooling could not be applied
           data:
             entity_id: climate.bedroom_ac
-            message: Heat alert sent, but Bedroom AC is unreachable so no cooling
-              was applied.
+            message: '{{ ''Heat alert sent, but the bedroom window is open so the
+              AC was left off.'' if is_state(''input_boolean.bedroom_windows_open'',''on'')
+              else ''Heat alert sent, but Bedroom AC is unreachable so no cooling
+              was applied.'' }}'
             name: Bedroom Heat Alert
         if:
         - condition: not
@@ -2962,6 +2987,10 @@
             state:
             - unavailable
             - unknown
+        - alias: Not while the bedroom window is open
+          condition: state
+          entity_id: input_boolean.bedroom_windows_open
+          state: 'off'
         then:
         - action: climate.set_hvac_mode
           alias: Actually cool it now (v3)
@@ -4045,6 +4074,24 @@
                 state:
                 - unavailable
                 - unknown
+            - alias: Skip the bedroom unit while its window is open
+              condition: state
+              entity_id: input_boolean.bedroom_windows_open
+              state: 'off'
+            - alias: Do not wake an OFF bedroom unit while it is cooler than 65F outside
+              condition: or
+              conditions:
+              - condition: not
+                conditions:
+                - condition: numeric_state
+                  entity_id: weather.kttn_daynight
+                  attribute: temperature
+                  below: 65
+              - condition: not
+                conditions:
+                - condition: state
+                  entity_id: climate.bedroom_ac
+                  state: 'off'
             then:
             - action: input_boolean.turn_off
               alias: Clear the idle-shutoff marker - we're taking it from here
@@ -4139,6 +4186,24 @@
               state:
               - unavailable
               - unknown
+          - alias: Skip the bedroom unit while its window is open
+            condition: state
+            entity_id: input_boolean.bedroom_windows_open
+            state: 'off'
+          - alias: Do not wake an OFF bedroom unit while it is cooler than 65F outside
+            condition: or
+            conditions:
+            - condition: not
+              conditions:
+              - condition: numeric_state
+                entity_id: weather.kttn_daynight
+                attribute: temperature
+                below: 65
+            - condition: not
+              conditions:
+              - condition: state
+                entity_id: climate.bedroom_ac
+                state: 'off'
           then:
           - action: input_boolean.turn_off
             alias: Clear the idle-shutoff marker - we're taking it from here
@@ -4156,9 +4221,10 @@
           data:
             preset_mode: eco
           target:
-            entity_id:
-            - climate.bedroom_ac
-            - climate.living_room_ac
+            entity_id: '{{ [''climate.living_room_ac''] if is_state(''input_boolean.bedroom_windows_open'',''on'')
+              or (is_state(''climate.bedroom_ac'',''off'') and (state_attr(''weather.kttn_daynight'',''temperature'')
+              | float(99)) < 65) else [''climate.bedroom_ac'',''climate.living_room_ac'']
+              }}'
       - action: logbook.log
         alias: Log the setback depth actually chosen — reads the SAME entity the branch
           did, so it can never disagree again
@@ -4194,9 +4260,8 @@
         data:
           preset_mode: eco
         target:
-          entity_id:
-          - climate.bedroom_ac
-          - climate.living_room_ac
+          entity_id: '{{ [''climate.living_room_ac''] if is_state(''input_boolean.bedroom_windows_open'',''on'')
+            else [''climate.bedroom_ac'',''climate.living_room_ac''] }}'
       - delay:
           seconds: 3
       - alias: Bedroom — put the exact pre-away target back, then clear the marker
@@ -4303,6 +4368,17 @@
     condition: template
     value_template: '{{ ''wake up'' in (trigger.calendar_event.summary | lower | trim)
       }}'
+  - alias: Skip while the bedroom window is open
+    condition: state
+    entity_id: input_boolean.bedroom_windows_open
+    state: 'off'
+  - alias: Skip while it is cooler than 65F outside (no point cooling)
+    condition: not
+    conditions:
+    - condition: numeric_state
+      entity_id: weather.kttn_daynight
+      attribute: temperature
+      below: 65
   actions:
   - variables:
       base_temp: '{{ state_attr(''climate.bedroom_ac'', ''temperature'') | float }}'
@@ -4460,6 +4536,17 @@
     entity_id: sensor.hue_motion_sensor_2_temperature
     note: Never add uncontrolled cooling to an already-cold room. This is the wall
       sensor on the vanity side, next to the unit.
+  - alias: Skip while the bedroom window is open
+    condition: state
+    entity_id: input_boolean.bedroom_windows_open
+    state: 'off'
+  - alias: Skip while it is cooler than 65F outside (no point cooling)
+    condition: not
+    conditions:
+    - condition: numeric_state
+      entity_id: weather.kttn_daynight
+      attribute: temperature
+      below: 65
   actions:
   - action: input_boolean.turn_off
     alias: Clear the idle-shutoff marker — we're taking over the dial now
@@ -4733,6 +4820,17 @@
         entity_id: input_boolean.bedroom_ac_idle_shutoff_active
         state: 'off'
     note: Off is allowed through only when idle shutoff parked it there.
+  - alias: Skip while the bedroom window is open
+    condition: state
+    entity_id: input_boolean.bedroom_windows_open
+    state: 'off'
+  - alias: Skip while it is cooler than 65F outside (no point cooling)
+    condition: not
+    conditions:
+    - condition: numeric_state
+      entity_id: weather.kttn_daynight
+      attribute: temperature
+      below: 65
   actions:
   - action: input_boolean.turn_off
     alias: Clear the idle-shutoff marker — we're taking over the dial now
@@ -5004,7 +5102,31 @@
       a stale-flag escape hatch: that automation''s own hard ceiling is 25 minutes,
       so if it ever dies mid-run, this resumes ownership on its own rather than staying
       locked out.'
+  - alias: Skip while it is cooler than 65F outside (no point cooling)
+    condition: not
+    conditions:
+    - condition: numeric_state
+      entity_id: weather.kttn_daynight
+      attribute: temperature
+      below: 65
   actions:
+  - alias: 'Window open: warn once at bedtime, then leave the AC alone'
+    if:
+    - condition: state
+      entity_id: input_boolean.bedroom_windows_open
+      state: 'on'
+    then:
+    - alias: Only on the got-in-bed trigger, not every 15-minute tick
+      if:
+      - condition: trigger
+        id: got_in_bed
+      then:
+      - action: notify.mobile_app_iphone
+        data:
+          title: "\U0001FA9F Bedroom window open"
+          message: You're in bed with the bedroom window open ({{ states('sensor.temp_in_bedroom')
+            }}°F inside), so the AC stays off. Close it to get cooling back.
+    - stop: Bedroom window is open, AC left alone
   - alias: Work out whether this automation owns the dial right now, and what the
       number should be
     note: in_bed wins over the clock, so getting into bed early ends the ramp immediately.
@@ -5168,6 +5290,17 @@
     note: 'An unreachable unit reports None for the target. numeric_state evaluates
       false on None, which is the fail-safe direction: do nothing rather than act
       on a missing reading.'
+  - alias: Skip while the bedroom window is open
+    condition: state
+    entity_id: input_boolean.bedroom_windows_open
+    state: 'off'
+  - alias: Skip while it is cooler than 65F outside (no point cooling)
+    condition: not
+    conditions:
+    - condition: numeric_state
+      entity_id: weather.kttn_daynight
+      attribute: temperature
+      below: 65
   actions:
   - alias: Decide whether this trigger is allowed to release the dial
     condition: or
@@ -6640,6 +6773,9 @@
       - condition: template
         value_template: '{{ states(''sensor.airguard_temperature'') | float(-999)
           >= (state_attr(''climate.bedroom_ac'',''temperature'') | float(999)) }}'
+      - condition: state
+        entity_id: input_boolean.bedroom_windows_open
+        state: 'off'
       sequence:
       - action: climate.set_hvac_mode
         data:
@@ -7011,4 +7147,286 @@
     alias: Clear the flag now that she's been told
     target:
       entity_id: input_boolean.sonos_broadcast_check_failed
+  mode: single
+- id: commute_update_fallback_minutes
+  alias: 'Commute: Update fallback commute time'
+  description: Nightly copy of the 5-day max Google commute time into input_number.commute_minutes_fallback.
+    Skips when the sensor has no recent data, so the last good value stays frozen.
+  triggers:
+  - at: 03:00:00
+    trigger: time
+  conditions:
+  - above: 0
+    condition: numeric_state
+    entity_id: sensor.office_google_travel_time_commute_travel_time_max_5d
+  actions:
+  - action: input_number.set_value
+    data:
+      value: '{{ states(''sensor.office_google_travel_time_commute_travel_time_max_5d'')
+        | float(0) | round(1) }}'
+    target:
+      entity_id: input_number.commute_minutes_fallback
+  mode: single
+- id: bedroom_windows_open_tap_toggle
+  alias: Bedroom — Windows Open Toggle (Tap Button 3)
+  description: Hue Tap button 3 flips input_boolean.bedroom_windows_open.
+  triggers:
+  - entity_id: event.hue_tap_switch_1_button_3
+    not_from:
+    - unknown
+    - unavailable
+    not_to:
+    - unknown
+    - unavailable
+    trigger: state
+  conditions: []
+  actions:
+  - action: input_boolean.toggle
+    target:
+      entity_id: input_boolean.bedroom_windows_open
+  max_exceeded: silent
+  mode: single
+- id: bedroom_window_opened_ac_off_v1
+  alias: Bedroom — Window Opened, AC Off (v1)
+  description: 'Marks the helper-on moment: turns the bedroom AC off and flags it
+    as automation-parked so the normal restore paths can bring it back after the window
+    closes.'
+  triggers:
+  - entity_id: input_boolean.bedroom_windows_open
+    id: window_opened
+    not_from:
+    - unknown
+    - unavailable
+    to: 'on'
+    trigger: state
+  conditions: []
+  actions:
+  - alias: Only if the AC is actually running
+    if:
+    - condition: not
+      conditions:
+      - condition: state
+        entity_id: climate.bedroom_ac
+        state:
+        - 'off'
+        - unavailable
+        - unknown
+    then:
+    - action: climate.set_hvac_mode
+      data:
+        hvac_mode: 'off'
+      target:
+        entity_id: climate.bedroom_ac
+    - action: input_boolean.turn_on
+      alias: Flag it as automation-parked, so the restore paths may wake it once the
+        window is closed
+      target:
+        entity_id: input_boolean.bedroom_ac_idle_shutoff_active
+    - action: notify.mobile_app_iphone
+      data:
+        message: Bedroom window is open, so I turned the AC off. Once it's closed,
+          the AC comes back when the room needs cooling.
+        title: "\U0001FA9F Bedroom AC off"
+    - action: logbook.log
+      data:
+        entity_id: climate.bedroom_ac
+        message: Bedroom window opened, AC turned off and flagged as automation-parked.
+        name: Bedroom Window
+  mode: single
+- id: bedroom_windows_open_too_cold_v1
+  alias: Bedroom — Windows Open, Too Cold Outside (v1)
+  description: Pushes when the bedroom windows are open and outdoor temp is under
+    45F, while you are not in bed. Re-alerts at most every 3h while still cold; always
+    alerts on a fresh window-open. Overnight cold is covered by the 9pm Cold Overnight
+    check.
+  triggers:
+  - attribute: temperature
+    below: 45
+    entity_id: weather.kttn_daynight
+    for: 00:10:00
+    id: outdoor_cold
+    trigger: numeric_state
+  - entity_id: input_boolean.bedroom_windows_open
+    id: window_opened
+    not_from:
+    - unknown
+    - unavailable
+    to: 'on'
+    trigger: state
+  - id: recheck
+    minutes: /30
+    trigger: time_pattern
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.bedroom_windows_open
+    state: 'on'
+  - attribute: temperature
+    below: 45
+    condition: numeric_state
+    entity_id: weather.kttn_daynight
+  - alias: Re-alert at most once every 3h, but a fresh window-open always counts
+    condition: or
+    conditions:
+    - condition: trigger
+      id: window_opened
+    - condition: template
+      value_template: '{{ this.attributes.last_triggered is none or (now() - this.attributes.last_triggered).total_seconds()
+        > 10800 }}'
+  - alias: Not once you are in bed, you cannot act on it asleep (the 9pm check covers
+      overnight)
+    condition: state
+    entity_id: input_boolean.in_bed
+    state: 'off'
+  actions:
+  - action: notify.mobile_app_iphone
+    data:
+      message: It's {{ state_attr('weather.kttn_daynight','temperature') | round(0)
+        }}°F outside and the bedroom window is open (room is {{ states('sensor.temp_in_bedroom')
+        }}°F). Close it before the room chills.
+      title: "\U0001F976 Bedroom window open, too cold"
+  max_exceeded: silent
+  mode: single
+- id: bedroom_close_windows_before_leaving_v1
+  alias: Bedroom — Close Windows Before Leaving (v1)
+  description: 'Office days: 15 min before the Wake up event ends, pushes a close-the-windows
+    notice if the bedroom windows are open and the forecast until 6pm is 80F+, 40%+
+    rain/snow, or drops below 45F from 1 hour after leaving on (the cool morning you
+    leave in is ignored).'
+  triggers:
+  - entity_id: calendar.master_calendar
+    event: end
+    id: pre_leave
+    offset: -0:15:00
+    trigger: calendar
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.bedroom_windows_open
+    state: 'on'
+  - condition: state
+    entity_id: binary_sensor.workday
+    state: 'on'
+  - condition: state
+    entity_id: input_boolean.wfh_today
+    state: 'off'
+  - condition: state
+    entity_id: person.lara_wiz
+    state: home
+  - alias: Only 'Wake up' calendar events
+    condition: template
+    value_template: '{{ ''wake up'' in (trigger.calendar_event.summary | lower | trim)
+      }}'
+  actions:
+  - action: weather.get_forecasts
+    alias: Hourly NWS forecast
+    continue_on_error: true
+    data:
+      type: hourly
+    response_variable: fc
+    target:
+      entity_id: weather.kttn_daynight
+  - alias: Boil the hours from now to 6pm down to high, low (from 1h after leaving),
+      and rain/snow chance
+    variables:
+      w: '{% set rows = (fc | default({}, true)).get(''weather.kttn_daynight'', {}).get(''forecast'',
+        []) %}{% set ns = namespace(hi=-99, lo=999, pp=0, snow=false, rain=false,
+        n=0) %}{% for f in rows %}{% set t = as_datetime(f.datetime) %}{% if t is
+        not none and t >= now() - timedelta(hours=1) and t <= today_at(''18:00'')
+        %}{% set ns.n = ns.n + 1 %}{% if f.temperature is number %}{% set ns.hi =
+        [ns.hi, f.temperature] | max %}{% if t >= now() + timedelta(hours=1) %}{%
+        set ns.lo = [ns.lo, f.temperature] | min %}{% endif %}{% endif %}{% set p
+        = f.precipitation_probability | float(0) %}{% set ns.pp = [ns.pp, p] | max
+        %}{% if p >= 40 %}{% if f.condition in [''snowy'', ''snowy-rainy''] %}{% set
+        ns.snow = true %}{% else %}{% set ns.rain = true %}{% endif %}{% endif %}{%
+        endif %}{% endfor %}{{ {''n'': ns.n, ''hi'': ns.hi, ''lo'': ns.lo, ''pp'':
+        ns.pp | int, ''snow'': ns.snow, ''rain'': ns.rain} }}'
+  - alias: 'No usable forecast hours: log it and stop, rather than failing silently'
+    if:
+    - condition: template
+      value_template: '{{ w.n == 0 }}'
+    then:
+    - action: logbook.log
+      data:
+        message: Windows are open but no forecast hours were available between now
+          and 6pm, so no check was made.
+        name: Close Windows
+    - stop: No forecast hours available
+  - alias: Stop unless it is too hot, too cold, or likely rain/snow
+    condition: template
+    value_template: '{{ w.hi >= 80 or w.lo < 45 or w.snow or w.rain }}'
+  - action: notify.mobile_app_iphone
+    data:
+      message: '{% set ns = namespace(r=[]) %}{% if w.hi >= 80 %}{% set ns.r = ns.r
+        + [''hot, up to '' ~ (w.hi | round(0) | int) ~ ''°F''] %}{% endif %}{% if
+        w.lo < 45 %}{% set ns.r = ns.r + [''cold, down to '' ~ (w.lo | round(0) |
+        int) ~ ''°F''] %}{% endif %}{% if w.snow or w.rain %}{% set ns.r = ns.r +
+        [(''rain or snow'' if w.snow and w.rain else ''snow'' if w.snow else ''rain'')
+        ~ '' likely, up to '' ~ w.pp ~ ''%''] %}{% endif %}Close them before you leave.
+        Forecast until 6pm: {{ ns.r | join(''; '') }}.{% if w.hi >= 80 %} The AC stays
+        off while the window is open.{% endif %}'
+      title: "\U0001FA9F Close the bedroom windows"
+  mode: single
+- id: bedroom_windows_open_cold_overnight_v1
+  alias: Bedroom — Windows Open, Cold Overnight (v1)
+  description: '9pm: if the bedroom windows are open and the forecast until 7am drops
+    below 45F, pushes while you can still close them.'
+  triggers:
+  - at: '21:00:00'
+    id: evening_check
+    trigger: time
+  conditions:
+  - condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.bedroom_windows_open
+    state: 'on'
+  - condition: state
+    entity_id: person.lara_wiz
+    state: home
+  actions:
+  - action: weather.get_forecasts
+    alias: Hourly NWS forecast
+    continue_on_error: true
+    data:
+      type: hourly
+    response_variable: fc
+    target:
+      entity_id: weather.kttn_daynight
+  - alias: Boil the hours from now to 7am down to the overnight low and when it first
+      gets cold
+    variables:
+      w: '{% set rows = (fc | default({}, true)).get(''weather.kttn_daynight'', {}).get(''forecast'',
+        []) %}{% set end = today_at(''07:00'') + timedelta(days=1) %}{% set ns = namespace(lo=999,
+        n=0, first='''') %}{% for f in rows %}{% set t = as_datetime(f.datetime) %}{%
+        if t is not none and t >= now() - timedelta(hours=1) and t <= end and f.temperature
+        is number %}{% set ns.n = ns.n + 1 %}{% set ns.lo = [ns.lo, f.temperature]
+        | min %}{% if f.temperature < 45 and ns.first == '''' %}{% set ns.first =
+        t.strftime(''%-I%p'') | lower %}{% endif %}{% endif %}{% endfor %}{{ {''n'':
+        ns.n, ''lo'': ns.lo, ''first'': ns.first} }}'
+  - alias: 'No usable forecast hours: log it and stop, rather than failing silently'
+    if:
+    - condition: template
+      value_template: '{{ w.n == 0 }}'
+    then:
+    - action: logbook.log
+      data:
+        message: Windows are open but no forecast hours were available between now
+          and 7am, so no check was made.
+        name: Cold Overnight
+    - stop: No forecast hours available
+  - alias: Stop unless the overnight low is below 45F
+    condition: template
+    value_template: '{{ w.lo < 45 }}'
+  - action: notify.mobile_app_iphone
+    data:
+      message: Bedroom windows are open and it's forecast to drop to {{ w.lo | round(0)
+        | int }}°F overnight (below 45°F from about {{ w.first }}). Close them before
+        bed.
+      title: "\U0001F976 Close the bedroom windows tonight"
   mode: single
