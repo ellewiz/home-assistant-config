@@ -7,7 +7,8 @@ create_wake_up_events:
     binary_sensor.workday) whether each date is a working day; non-workdays
     (weekends are already excluded by the Mon–Fri window, plus any configured
     public holidays / excludes) are skipped so no Wake up event is created on
-    them. Edit WFH days to 6:30–8:00, late shift to 7:00–9:30, and remove
+    them. Days that already have a Wake up event are also skipped, so a
+    double tap is harmless. Edit WFH days to 6:30–8:00, late shift to 7:00–9:30, and remove
     "office" from the description for non-office days.
   mode: single
   sequence:
@@ -28,11 +29,23 @@ create_wake_up_events:
             data:
               check_date: "{{ target_date }}"
             response_variable: workday_check
-          - alias: Only create the Wake up event on workdays
+          - alias: Look up what is already on the calendar that day
+            action: calendar.get_events
+            target:
+              entity_id: calendar.master_calendar
+            data:
+              start_date_time: "{{ target_date }}T00:00:00"
+              end_date_time: "{{ (as_datetime(target_date) + timedelta(days=1)).strftime('%Y-%m-%d') }}T00:00:00"
+            response_variable: existing_events
+          - alias: Only create the Wake up event on workdays with no Wake up event yet
             if:
               - condition: template
                 value_template: >
                   {{ workday_check['binary_sensor.workday']['workday'] }}
+              - condition: template
+                value_template: >
+                  {{ existing_events['calendar.master_calendar']['events']
+                     | selectattr('summary', 'search', '(?i)wake up') | list | length == 0 }}
             then:
               - action: calendar.create_event
                 target:

@@ -70,9 +70,18 @@ commute_time_announcer:
             timeout: "00:04:59"
             continue_on_timeout: true
 
+          # 2026-10-06: Google Travel Time polling is off (call budget), so refresh
+          # it once per loop tick. Failure just falls back to the stored max.
+          - action: homeassistant.update_entity
+            target:
+              entity_id: sensor.google_travel_time
+            continue_on_error: true
+
           - variables:
               leave_by: "{{ states('sensor.commute_leave_by') }}"
-              waze_min: "{{ states('sensor.waze_travel_time') | float(0) | round | int }}"
+              waze_min: >
+                {% set live = states('sensor.google_travel_time') | float(0) %}
+                {{ (live if live > 0 else states('input_number.commute_minutes_fallback') | float(0)) | round | int }}
               mins_until_leave: >
                 {% set lb = states('sensor.commute_leave_by') %}
                 {% if lb not in ['unknown', 'unavailable'] %}
@@ -84,6 +93,8 @@ commute_time_announcer:
                 {% set lb = states('sensor.commute_leave_by') %}
                 {% if lb not in ['unknown', 'unavailable'] %}
                   {{ today_at(lb).strftime('%I:%M %p').lstrip('0') }}
+                {% elif until_ts | float(0) > 0 %}
+                  {{ (until_ts | float(0)) | timestamp_custom('%-I:%M %p') }}
                 {% else %}
                   unknown
                 {% endif %}
@@ -125,7 +136,9 @@ commute_time_announcer:
                   message: >
                     The time is {{ now().strftime('%I:%M %p').lstrip('0') }}.
                     {%- if mins_until_leave > 0 and mins_until_leave <= 60 and waze_min > 0 and leave_by_display != 'unknown' %}
-                      Commute is {{ waze_min }} minute{{ 's' if waze_min != 1 else '' }}. Leave by {{ leave_by_display }}.
+                      Commute is {{ 'about ' if state_attr('sensor.commute_leave_by', 'source') == 'fallback' else '' }}{{ waze_min }} minute{{ 's' if waze_min != 1 else '' }}. Leave by {{ leave_by_display }}.
+                    {%- elif leave_by in ['unknown', 'unavailable'] and mins_until_leave > 0 and mins_until_leave <= 60 and leave_by_display != 'unknown' %}
+                      Leave by {{ leave_by_display }}.
                     {%- elif mins_until_leave <= 0 %}
                       Time to leave!
                     {%- endif %}

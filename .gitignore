@@ -4,6 +4,8 @@ secrets.yaml
 .storage/
 ssh/
 .mcp_proxy_config.json
+.mcp_proxy_dcr_secret
+.mcp_proxy_heartbeat
 
 # ===== Databases & runtime state =====
 *.db

@@ -7,14 +7,19 @@
       icon: mdi:car-clock
       state: >
         {% set arrival = states('input_datetime.commute_target_arrival') %}
-        {% set waze = states('sensor.waze_travel_time') | float(0) %}
-        {% if has_value('input_datetime.commute_target_arrival') and waze > 0 %}
-          {% set leave_dt = today_at(arrival) - timedelta(minutes=waze) %}
+        {% set live = states('sensor.google_travel_time') | float(0) %}
+        {% set mins = live if live > 0 else states('input_number.commute_minutes_fallback') | float(0) %}
+        {% if has_value('input_datetime.commute_target_arrival') and mins > 0 %}
+          {% set leave_dt = today_at(arrival) - timedelta(minutes=mins) %}
           {{ leave_dt.strftime('%H:%M') }}
         {% else %}unavailable{% endif %}
       availability: >
         {{ has_value('input_datetime.commute_target_arrival')
-           and has_value('sensor.waze_travel_time') }}
+           and (has_value('sensor.google_travel_time')
+                or states('input_number.commute_minutes_fallback') | float(0) > 0) }}
+      attributes:
+        source: >
+          {{ 'live' if states('sensor.google_travel_time') | float(0) > 0 else 'fallback' }}
 
     - name: "Sunrise"
       unique_id: sunrise_formatted_hass
