@@ -150,7 +150,8 @@ rate program"), `aerbyteiload.in` (9/28, "Are you getting the best rate
 for your property?"), `infocoretbot.co.in` (10/4, "Fixed 2.99% Rate for
 Qualified ZIP Codes"), `aerrloopload.co.in` (10/4, "Federal Home Loan
 Program... Lower Interest Rates"), `neonrnodebot.co.in` (10/3, "Market
-shift alert: check your October mortgage terms") — plus a "debt
+shift alert: check your October mortgage terms"), `smarttrwave.in` (10/6,
+"A fresh seasonal look at your mortgage for October") — plus a "debt
 relief/refinance" cluster of nine domains (`scalemetricproleaddevelop.xyz`,
 `onlineprivacytoday.xyz`, `marketselectgroupbasiscommand.xyz`,
 `worthcorefirmbeaconshield.xyz`, `stakerefinedportalsignalvertex.xyz`,
@@ -161,26 +162,32 @@ relief/refinance" cluster of nine domains (`scalemetricproleaddevelop.xyz`,
 10/2 — "Cut your monthly payment: see your October refi breakdown",
 `bitrnodeplot.co.in` 10/4 — "Unlock Your Pre-Qualification" (National
 Debt Relief branding), `sparkeflow.co.in` 10/3 — "Unlock potential
-payment relief"). All 23 reported via Malwarebytes
+payment relief"). All 24 reported via Malwarebytes
 ScamGuard. (The "6-month" phrasing turned out to just be this
 mortgage-relief operator's subject line, not a separate cluster — merged
 in above rather than tracked on its own.) Catch-all search for these
 senders:
 
 ```
-{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:infocoretbot.co.in from:aerrloopload.co.in from:neonrnodebot.co.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in from:viralbespan.in from:bitrnodeplot.co.in from:sparkeflow.co.in}
+{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:infocoretbot.co.in from:aerrloopload.co.in from:neonrnodebot.co.in from:smarttrwave.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in from:viralbespan.in from:bitrnodeplot.co.in from:sparkeflow.co.in}
 ```
 
 (The home-improvement lead-gen cluster that used to be noted here was
 promoted to Part 1 filter #4 on 10/1 once a third domain showed up.)
 
-**Other reported scams, pattern unclear:** `service@celldncnbbot.co.in`
-(10/1, "Do You Qualify for Medicare Benefits?") and
+**Medicare-benefits pitch cluster (new, 10/1 on):** `celldncnbbot.co.in`
+(10/1, "Do You Qualify for Medicare Benefits?") and `rowthshift.in` (10/6,
+"Discover Additional Benefits With a Medicare Advantage Plan") — same
+throwaway-domain shape as the other clusters, both pitching Medicare
+eligibility/enrollment. Two domains now — worth promoting to a proper
+Part 1 filter entry if a third shows up. Both marked Spam + reported.
+
+**Other reported scam, pattern unclear:**
 `service@netcoretmode.co.in` (10/2, "Turning 'Oh no' into 'It's okay'" —
 body had no real pitch text, just marketing-automation boilerplate).
-Same throwaway-domain shape as the other clusters but neither matches an
-existing pitch category. Both marked Spam + reported; noted here in case
-more domains in either vein show up.
+Same throwaway-domain shape as the other clusters but doesn't match an
+existing pitch category. Marked Spam + reported; noted here in case
+more domains in this vein show up.
 
 ### Filter candidates identified but not yet added
 
