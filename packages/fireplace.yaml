@@ -1,0 +1,70 @@
+# Fireplace draft scoring — built 2026-10-06.
+# Open masonry fireplace, exterior-wall chimney (hardest case for cold starts).
+# Cold-start draft scales with the indoor/outdoor temperature gap:
+#   gap >= 40 F Great | 25-40 Good | 15-25 Marginal (prime the flue) | < 15 Poor
+# Wind: live gust > 25 mph (forecast sustained > 15 mph) drops one grade.
+# Dryer running adds a "crack a window" warning (house depressurizes).
+# Thresholds are starting values; tune against real fires.
+# Dashboard: dashboard-weather, view "fireplace".
+
+template:
+  - sensor:
+      - name: "Fire Score"
+        unique_id: fire_score
+        icon: mdi:fireplace
+        availability: >
+          {{ has_value('sensor.weather_518_temperature')
+             and has_value('sensor.living_room_airguard_coffee_table_temperature') }}
+        state: >
+          {% set gap = states('sensor.living_room_airguard_coffee_table_temperature')|float
+                     - states('sensor.weather_518_temperature')|float %}
+          {% set g = 3 if gap >= 40 else (2 if gap >= 25 else (1 if gap >= 15 else 0)) %}
+          {% set g = [g - 1, 0]|max if states('sensor.weather_518_wind_gust')|float(0) > 25 else g %}
+          {{ ['Poor', 'Marginal', 'Good', 'Great'][g] }}
+        attributes:
+          gap: >
+            {{ (states('sensor.living_room_airguard_coffee_table_temperature')|float(0)
+              - states('sensor.weather_518_temperature')|float(0))|round(1) }}
+          windy: "{{ states('sensor.weather_518_wind_gust')|float(0) > 25 }}"
+          dryer_running: "{{ is_state('binary_sensor.laundry_dryer_running', 'on') }}"
+
+  - triggers:
+      - trigger: time_pattern
+        minutes: 7
+      - trigger: homeassistant
+        event: start
+      - trigger: event
+        event_type: event_template_reloaded
+    actions:
+      - action: weather.get_forecasts
+        target:
+          entity_id: weather.kttn_daynight
+        data:
+          type: hourly
+        response_variable: wx
+    sensor:
+      - name: "Fire Score Tonight"
+        unique_id: fire_score_tonight
+        icon: mdi:fireplace
+        availability: >
+          {{ has_value('sensor.living_room_airguard_coffee_table_temperature')
+             and wx is defined and wx['weather.kttn_daynight'] is defined }}
+        state: >
+          {% set target = today_at('19:00') if now().hour < 19 else today_at('19:00') + timedelta(days=1) %}
+          {% set f = wx['weather.kttn_daynight']['forecast']
+                     | selectattr('datetime', 'ge', target.isoformat()) | list %}
+          {% if f|length == 0 %}unknown{% else %}
+          {% set gap = states('sensor.living_room_airguard_coffee_table_temperature')|float - f[0].temperature|float %}
+          {% set g = 3 if gap >= 40 else (2 if gap >= 25 else (1 if gap >= 15 else 0)) %}
+          {% set g = [g - 1, 0]|max if f[0].wind_speed|float(0) > 15 else g %}
+          {{ ['Poor', 'Marginal', 'Good', 'Great'][g] }}{% endif %}
+        attributes:
+          label: "{{ 'Tonight 7 pm' if now().hour < 19 else 'Tomorrow 7 pm' }}"
+          forecast_temp: >
+            {% set target = today_at('19:00') if now().hour < 19 else today_at('19:00') + timedelta(days=1) %}
+            {% set f = wx['weather.kttn_daynight']['forecast'] | selectattr('datetime', 'ge', target.isoformat()) | list %}
+            {{ f[0].temperature if f|length > 0 else none }}
+          forecast_wind: >
+            {% set target = today_at('19:00') if now().hour < 19 else today_at('19:00') + timedelta(days=1) %}
+            {% set f = wx['weather.kttn_daynight']['forecast'] | selectattr('datetime', 'ge', target.isoformat()) | list %}
+            {{ f[0].wind_speed if f|length > 0 else none }}
