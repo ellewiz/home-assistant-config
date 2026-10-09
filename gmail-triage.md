@@ -151,8 +151,10 @@ for your property?"), `infocoretbot.co.in` (10/4, "Fixed 2.99% Rate for
 Qualified ZIP Codes"), `aerrloopload.co.in` (10/4, "Federal Home Loan
 Program... Lower Interest Rates"), `neonrnodebot.co.in` (10/3, "Market
 shift alert: check your October mortgage terms"), `smarttrwave.in` (10/6,
-"A fresh seasonal look at your mortgage for October") — plus a "debt
-relief/refinance" cluster of nine domains (`scalemetricproleaddevelop.xyz`,
+"A fresh seasonal look at your mortgage for October"), `bitonodebot.co.in`
+(10/7, "Free up monthly cash: review your October loan options") — plus
+a "debt relief/refinance" cluster of eleven domains
+(`scalemetricproleaddevelop.xyz`,
 `onlineprivacytoday.xyz`, `marketselectgroupbasiscommand.xyz`,
 `worthcorefirmbeaconshield.xyz`, `stakerefinedportalsignalvertex.xyz`,
 `aervloopcode.in` 9/25 — "Don't let creditors control your life",
@@ -162,14 +164,16 @@ relief/refinance" cluster of nine domains (`scalemetricproleaddevelop.xyz`,
 10/2 — "Cut your monthly payment: see your October refi breakdown",
 `bitrnodeplot.co.in` 10/4 — "Unlock Your Pre-Qualification" (National
 Debt Relief branding), `sparkeflow.co.in` 10/3 — "Unlock potential
-payment relief"). All 24 reported via Malwarebytes
+payment relief", `iongridgdock.co.in` 10/7 — "Trapped in Debt? Break the
+Pattern", `otpeastrand.in` 10/7 — "Take a second — this could be big").
+All 27 reported via Malwarebytes
 ScamGuard. (The "6-month" phrasing turned out to just be this
 mortgage-relief operator's subject line, not a separate cluster — merged
 in above rather than tracked on its own.) Catch-all search for these
 senders:
 
 ```
-{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:infocoretbot.co.in from:aerrloopload.co.in from:neonrnodebot.co.in from:smarttrwave.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in from:viralbespan.in from:bitrnodeplot.co.in from:sparkeflow.co.in}
+{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:infocoretbot.co.in from:aerrloopload.co.in from:neonrnodebot.co.in from:smarttrwave.in from:bitonodebot.co.in from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in from:viralbespan.in from:bitrnodeplot.co.in from:sparkeflow.co.in from:iongridgdock.co.in from:otpeastrand.in}
 ```
 
 (The home-improvement lead-gen cluster that used to be noted here was
