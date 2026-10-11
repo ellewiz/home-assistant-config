@@ -42,6 +42,33 @@ template:
         data:
           type: hourly
         response_variable: wx
+      # Next 7 evenings at 7 pm, graded like Fire Score Tonight (added 2026-10-11).
+      # NWS hourly reaches ~6.5 days, so 7 evenings is the ceiling.
+      # Matches the 19:00 hour by date prefix so DST changes don't break the lookup.
+      - variables:
+          fire_nights: >
+            {% set inside = states('sensor.living_room_airguard_coffee_table_temperature')|float(none) %}
+            {% set fc = wx['weather.kttn_daynight']['forecast'] if wx is defined and wx['weather.kttn_daynight'] is defined else [] %}
+            {% set ns = namespace(out=[]) %}
+            {% if inside is not none %}
+            {% for d in range(0, 8) %}
+              {% set day = now() + timedelta(days=d) %}
+              {% if not (d == 0 and now().hour >= 19) and ns.out|length < 7 %}
+                {% set f = fc | selectattr('datetime', 'search', '^' ~ day.strftime('%Y-%m-%d') ~ 'T19:') | list %}
+                {% if f|length > 0 %}
+                  {% set gap = inside - f[0].temperature|float %}
+                  {% set g = 3 if gap >= 40 else (2 if gap >= 25 else (1 if gap >= 15 else 0)) %}
+                  {% set g = [g - 1, 0]|max if f[0].wind_speed|float(0) > 15 else g %}
+                  {% set ns.out = ns.out + [{
+                       'date': day.strftime('%a %b ') ~ day.day,
+                       'grade': ['Poor', 'Marginal', 'Good', 'Great'][g],
+                       'temp': f[0].temperature,
+                       'wind': f[0].wind_speed}] %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {% endif %}
+            {{ ns.out }}
     sensor:
       - name: "Fire Score Tonight"
         unique_id: fire_score_tonight
@@ -68,3 +95,14 @@ template:
             {% set target = today_at('19:00') if now().hour < 19 else today_at('19:00') + timedelta(days=1) %}
             {% set f = wx['weather.kttn_daynight']['forecast'] | selectattr('datetime', 'ge', target.isoformat()) | list %}
             {{ f[0].wind_speed if f|length > 0 else none }}
+
+      - name: "Fire Score Outlook"
+        unique_id: fire_score_outlook
+        icon: mdi:calendar-star
+        availability: "{{ fire_nights is defined and fire_nights|length > 0 }}"
+        state: "{{ fire_nights | selectattr('grade', 'in', ['Good', 'Great']) | list | count }}"
+        attributes:
+          nights: "{{ fire_nights }}"
+          next_good: >
+            {% set g = fire_nights | selectattr('grade', 'in', ['Good', 'Great']) | list %}
+            {{ g[0].date if g|length > 0 else none }}
