@@ -61,12 +61,12 @@ instead.
   "Real Estate" filter.
 
 ### 2. Known low-quality marketing → Review-Delete — done, update as new ones show up
-- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in, nexusraklotp.in, vectviral.co.in, leadlshard.in, edhubglyph.in, solboostflow.in, boostorbit.in, arcgetkocore.co.in, netmcodegrid.co.in, gridbytefbot.co.in, bytevdockbot.in, scalecrest.in, gridipack.in, vporttool.in, arcbytetdrop.co.in, tefldcore.co.in, gridtroloop.co.in, gnodegate.team`
+- **From field:** `uphubroad.work, smartgudock.blog, bestwloom.live, paceleadc.live, glyphhflow.co.in, cvlabflux.in, nexusotdgh.co.in, trcelspire.in, mycelsmart.in, nexusraklotp.in, vectviral.co.in, leadlshard.in, edhubglyph.in, solboostflow.in, boostorbit.in, arcgetkocore.co.in, netmcodegrid.co.in, gridbytefbot.co.in, bytevdockbot.in, scalecrest.in, gridipack.in, vporttool.in, arcbytetdrop.co.in, tefldcore.co.in, gridtroloop.co.in, gnodegate.team, fgeffarch.link, funnerealm.link`
 - **Action:** Apply label "🗑️ Review-Delete", Skip Inbox
 - A recurring cluster of insurance/vehicle-protection marketing on throwaway
-  domains, first seen 8/2 and still showing up every few days as of 10/9
-  (26 domains caught so far — note the first non-`.in`/`.co.in`/etc TLD,
-  `gnodegate.team`, same template). Every one has come back **suspicious**
+  domains, first seen 8/2 and still showing up every few days as of 10/10
+  (28 domains caught so far, now across `.in`/`.co.in`/`.team`/`.link`
+  TLDs, same template each time). Every one has come back **suspicious**
   on a threat-intelligence check (one exception, `mycelsmart.in`, came back
   **unknown** but was treated the same way given the identical
   template/pattern) and has been marked Spam + reported via Malwarebytes.
@@ -155,7 +155,9 @@ shift alert: check your October mortgage terms"), `smarttrwave.in` (10/6,
 "A fresh seasonal look at your mortgage for October"), `bitonodebot.co.in`
 (10/7, "Free up monthly cash: review your October loan options"),
 `ionnlinkmode.team` (10/9, "A fresh perspective on your October
-mortgage") — plus
+mortgage"), `uplabspot.link` (10/10, "exclusive October rate review"),
+`purescale.link` (10/10, "Keep more cash each month with updated October
+rates") — plus
 a "debt relief/refinance" cluster of twelve domains
 (`scalemetricproleaddevelop.xyz`,
 `onlineprivacytoday.xyz`, `marketselectgroupbasiscommand.xyz`,
@@ -170,16 +172,16 @@ Debt Relief branding), `sparkeflow.co.in` 10/3 — "Unlock potential
 payment relief", `iongridgdock.co.in` 10/7 — "Trapped in Debt? Break the
 Pattern", `otpeastrand.in` 10/7 — "Take a second — this could be big",
 `ntechcode.team` 10/9 — "CONFIDENTIAL: Your Debt Settlement Analysis"
-(National Debt Relief branding again)). All 29 reported via Malwarebytes
+(National Debt Relief branding again)). All 33 reported via Malwarebytes
 ScamGuard. (The "6-month" phrasing turned out to just be this
 mortgage-relief operator's subject line, not a separate cluster — merged
-in above rather than tracked on its own. Note `.team` is now the second
-non-`.in`-family TLD seen, alongside the earlier `.cyou`/`.rest`/`.xyz`
-ones.) Catch-all search for these
+in above rather than tracked on its own. TLDs have diversified beyond
+`.in`/`.co.in` to `.cyou`/`.rest`/`.xyz`/`.team`/`.link` — same operators,
+same templates.) Catch-all search for these
 senders:
 
 ```
-{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:infocoretbot.co.in from:aerrloopload.co.in from:neonrnodebot.co.in from:smarttrwave.in from:bitonodebot.co.in from:ionnlinkmode.team from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in from:viralbespan.in from:bitrnodeplot.co.in from:sparkeflow.co.in from:iongridgdock.co.in from:otpeastrand.in from:ntechcode.team}
+{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:infocoretbot.co.in from:aerrloopload.co.in from:neonrnodebot.co.in from:smarttrwave.in from:bitonodebot.co.in from:ionnlinkmode.team from:uplabspot.link from:purescale.link from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in from:viralbespan.in from:bitrnodeplot.co.in from:sparkeflow.co.in from:iongridgdock.co.in from:otpeastrand.in from:ntechcode.team}
 ```
 
 (The home-improvement lead-gen cluster that used to be noted here was
