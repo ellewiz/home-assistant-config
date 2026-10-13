@@ -157,7 +157,8 @@ shift alert: check your October mortgage terms"), `smarttrwave.in` (10/6,
 `ionnlinkmode.team` (10/9, "A fresh perspective on your October
 mortgage"), `uplabspot.link` (10/10, "exclusive October rate review"),
 `purescale.link` (10/10, "Keep more cash each month with updated October
-rates") — plus
+rates"), `lumacorepro.fit` (10/11, "Approved list confirmation: review
+your October terms") — plus
 a "debt relief/refinance" cluster of twelve domains
 (`scalemetricproleaddevelop.xyz`,
 `onlineprivacytoday.xyz`, `marketselectgroupbasiscommand.xyz`,
@@ -172,16 +173,16 @@ Debt Relief branding), `sparkeflow.co.in` 10/3 — "Unlock potential
 payment relief", `iongridgdock.co.in` 10/7 — "Trapped in Debt? Break the
 Pattern", `otpeastrand.in` 10/7 — "Take a second — this could be big",
 `ntechcode.team` 10/9 — "CONFIDENTIAL: Your Debt Settlement Analysis"
-(National Debt Relief branding again)). All 33 reported via Malwarebytes
+(National Debt Relief branding again)). All 34 reported via Malwarebytes
 ScamGuard. (The "6-month" phrasing turned out to just be this
 mortgage-relief operator's subject line, not a separate cluster — merged
 in above rather than tracked on its own. TLDs have diversified beyond
-`.in`/`.co.in` to `.cyou`/`.rest`/`.xyz`/`.team`/`.link` — same operators,
-same templates.) Catch-all search for these
+`.in`/`.co.in` to `.cyou`/`.rest`/`.xyz`/`.team`/`.link`/`.fit` — same
+operators, same templates.) Catch-all search for these
 senders:
 
 ```
-{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:infocoretbot.co.in from:aerrloopload.co.in from:neonrnodebot.co.in from:smarttrwave.in from:bitonodebot.co.in from:ionnlinkmode.team from:uplabspot.link from:purescale.link from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in from:viralbespan.in from:bitrnodeplot.co.in from:sparkeflow.co.in from:iongridgdock.co.in from:otpeastrand.in from:ntechcode.team}
+{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:infocoretbot.co.in from:aerrloopload.co.in from:neonrnodebot.co.in from:smarttrwave.in from:bitonodebot.co.in from:ionnlinkmode.team from:uplabspot.link from:purescale.link from:lumacorepro.fit from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in from:viralbespan.in from:bitrnodeplot.co.in from:sparkeflow.co.in from:iongridgdock.co.in from:otpeastrand.in from:ntechcode.team}
 ```
 
 (The home-improvement lead-gen cluster that used to be noted here was
@@ -194,12 +195,14 @@ throwaway-domain shape as the other clusters, both pitching Medicare
 eligibility/enrollment. Two domains now — worth promoting to a proper
 Part 1 filter entry if a third shows up. Both marked Spam + reported.
 
-**Other reported scam, pattern unclear:**
+**Other reported scams, pattern unclear:**
 `service@netcoretmode.co.in` (10/2, "Turning 'Oh no' into 'It's okay'" —
-body had no real pitch text, just marketing-automation boilerplate).
-Same throwaway-domain shape as the other clusters but doesn't match an
-existing pitch category. Marked Spam + reported; noted here in case
-more domains in this vein show up.
+body had no real pitch text, just marketing-automation boilerplate) and
+`service@forktlink.fit` (10/11, "Helping protect your budget for 50
+years" — vague, could be life-insurance- or debt-relief-adjacent).
+Same throwaway-domain shape as the other clusters but neither matches an
+existing pitch category. Both marked Spam + reported; noted here in case
+more domains in either vein show up.
 
 ### Filter candidates identified but not yet added
 
