@@ -162,7 +162,10 @@ rates"), `lumacorepro.fit` (10/11, "Approved list confirmation: review
 your October terms"), `openrefklos.club` (10/12, "time-sensitive
 options" / "Monthly payment structure information enclosed"),
 `rypeddrop.space` (10/13, "Bright opportunities ahead: October rate
-report inside" / "Monthly payment structure information enclosed") — plus
+report inside" / "Monthly payment structure information enclosed"),
+`elmtloopdawn.fitness` (10/17, "Mortgage information to explore" —
+"APEX REALTY CAPITAL" branding this time, first `.fitness` TLD
+sighting) — plus
 a "debt relief/refinance" cluster of twelve domains
 (`scalemetricproleaddevelop.xyz`,
 `onlineprivacytoday.xyz`, `marketselectgroupbasiscommand.xyz`,
@@ -177,16 +180,16 @@ Debt Relief branding), `sparkeflow.co.in` 10/3 — "Unlock potential
 payment relief", `iongridgdock.co.in` 10/7 — "Trapped in Debt? Break the
 Pattern", `otpeastrand.in` 10/7 — "Take a second — this could be big",
 `ntechcode.team` 10/9 — "CONFIDENTIAL: Your Debt Settlement Analysis"
-(National Debt Relief branding again)). All 37 reported via Malwarebytes
+(National Debt Relief branding again)). All 38 reported via Malwarebytes
 ScamGuard. (The "6-month" phrasing turned out to just be this
 mortgage-relief operator's subject line, not a separate cluster — merged
 in above rather than tracked on its own. TLDs have diversified beyond
 `.in`/`.co.in` to `.cyou`/`.rest`/`.xyz`/`.team`/`.link`/`.fit`/`.club`/
-`.space` — same operators, same templates.) Catch-all search for these
-senders:
+`.space`/`.fitness` — same operators, same templates.) Catch-all search
+for these senders:
 
 ```
-{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:infocoretbot.co.in from:aerrloopload.co.in from:neonrnodebot.co.in from:smarttrwave.in from:bitonodebot.co.in from:ionnlinkmode.team from:uplabspot.link from:purescale.link from:lumacorepro.fit from:openrefklos.club from:rypeddrop.space from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in from:viralbespan.in from:bitrnodeplot.co.in from:sparkeflow.co.in from:iongridgdock.co.in from:otpeastrand.in from:ntechcode.team}
+{from:yourconcpway.cyou from:zenbflowlink.cyou from:gorainarmweb.rest from:aernport.in from:aerznodedock.co.in from:ztechplot.co.in from:bitclickbyte.in from:aerbyteiload.in from:infocoretbot.co.in from:aerrloopload.co.in from:neonrnodebot.co.in from:smarttrwave.in from:bitonodebot.co.in from:ionnlinkmode.team from:uplabspot.link from:purescale.link from:lumacorepro.fit from:openrefklos.club from:rypeddrop.space from:elmtloopdawn.fitness from:scalemetricproleaddevelop.xyz from:onlineprivacytoday.xyz from:marketselectgroupbasiscommand.xyz from:worthcorefirmbeaconshield.xyz from:stakerefinedportalsignalvertex.xyz from:aervloopcode.in from:aerbyteibyte.in from:ionenpovport.in from:aervloopflow.in from:viralbespan.in from:bitrnodeplot.co.in from:sparkeflow.co.in from:iongridgdock.co.in from:otpeastrand.in from:ntechcode.team}
 ```
 
 (The home-improvement lead-gen cluster that used to be noted here was
