@@ -58,3 +58,6 @@ project_*.md
 
 scripts/dose_*.yaml
 *.bak_*
+
+# HA IP ban list (attacker IPs, keep out of the public repo)
+ip_bans.yaml

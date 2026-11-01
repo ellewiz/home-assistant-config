@@ -1300,3 +1300,34 @@ Added 2026-09-16. Fires on input_boolean.in_bed on->off (wake-up), only if
 input_boolean.sonos_broadcast_check_failed is on. Deliberately deferred to
 morning rather than notifying at night while she's trying to sleep. Pushes
 one phone notification, then clears the flag.
+
+## Alert: Ting Voltage Stream Stale
+
+**Automation ID:** `alert_ting_voltage_stream_stale`
+
+Added 2026-10-26 after the Ting voltage stream sat frozen at 123.16 V from
+Oct 23 07:02 to Oct 26 ~16:46 (about 81 h) with no error logged, leaving
+"Alert: Ting Voltage Anomaly" blind. The cause was the Ting unit itself going
+offline in the dining room; moving it to the guest room fixed it.
+
+Detection lives in the UI template helper binary_sensor.ting_voltage_stream_stale
+(device_class problem): on when sensor.710b782e7_current_voltage is missing,
+non-numeric (unknown/unavailable), or its last_changed is older than 10 min.
+Uses last_changed, not last_reported: on Oct 23 the integration kept rewriting
+the same frozen value for ~11 h, so last_reported looked fresh. The stream runs
+at ~2 Hz with float precision, so an unchanged value for 10 min cannot happen
+on a live feed. now() makes the template re-render every minute, which is what
+makes this survive restarts: a feed that is dead at boot still trips it.
+
+Stale branch: sensor on for 5 min (~15 min after the last real reading), latch
+input_boolean.ting_voltage_stream_alerted off -> push, latch on.
+Restored branch: sensor off for 1 min, latch on -> push, latch off. The latch
+is a stored helper, so exactly one "back" push arrives even across a restart.
+Both pushes share tag ting_voltage_stream_stale so the second replaces the first.
+
+Deliberately: not vacation-gated (safety monitor, same as the fire alert), no
+speaker so the in_bed rule does not apply, interruption level left at default
+(a dead feed is not something to get up for at 3 a.m.).
+
+Not live-fire tested. The push text was sent once as a manual TEST push on
+2026-10-26; the stale/restored branches themselves have not fired.

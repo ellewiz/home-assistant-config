@@ -1428,19 +1428,19 @@
 - id: '1777633648574'
   alias: Power Outage / Restoration Alert
   triggers:
-  - entity_id: sensor.bedroom_power
+  - entity_id: switch.automation_timer
     for: 00:02:00
     id: hue_unavailable
-    platform: state
     to: unavailable
-  - entity_id: sensor.bedroom_power
+    trigger: state
+  - entity_id: switch.automation_timer
     from: unavailable
     id: hue_restored
-    platform: state
+    trigger: state
   - entity_id: sensor.fibaro_wall_plug_for_fridge_electric_consumption_w
     from: unavailable
     id: fridge_surge
-    platform: state
+    trigger: state
   conditions: []
   actions:
   - choose:
@@ -1676,10 +1676,18 @@
 - id: '1778498005512'
   alias: Update Rain Forecast 24h
   triggers:
-  - platform: time_pattern
-    minutes: '5'
-  - platform: homeassistant
-    event: start
+  - minutes: '5'
+    trigger: time_pattern
+  - event: start
+    trigger: homeassistant
+  conditions:
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: weather.kttn_daynight
+      state:
+      - unavailable
+      - unknown
   actions:
   - target:
       entity_id: weather.kttn_daynight
@@ -1708,10 +1716,18 @@
 - id: '1778537326845'
   alias: Update Mow Forecast Scores
   triggers:
-  - platform: time_pattern
-    hours: /3
-  - platform: homeassistant
-    event: start
+  - hours: /3
+    trigger: time_pattern
+  - event: start
+    trigger: homeassistant
+  conditions:
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: weather.kttn_daynight
+      state:
+      - unavailable
+      - unknown
   actions:
   - target:
       entity_id: weather.kttn_daynight
@@ -6504,6 +6520,13 @@
   - condition: state
     entity_id: calendar.vacation
     state: 'off'
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: weather.kttn_daynight
+      state:
+      - unavailable
+      - unknown
   actions:
   - action: weather.get_forecasts
     data:
@@ -6625,6 +6648,13 @@
   - condition: state
     entity_id: calendar.vacation
     state: 'off'
+  - condition: not
+    conditions:
+    - condition: state
+      entity_id: weather.kttn_daynight
+      state:
+      - unavailable
+      - unknown
   actions:
   - action: weather.get_forecasts
     data:
@@ -7430,3 +7460,142 @@
         bed.
       title: "\U0001F976 Close the bedroom windows tonight"
   mode: single
+- id: alert_ting_voltage_stream_stale
+  alias: 'Alert: Ting Voltage Stream Stale'
+  description: Pushes when the Ting voltage feed stops updating, and once more when
+    it comes back. Notes in automation_notes_archive.md.
+  triggers:
+  - entity_id: binary_sensor.ting_voltage_stream_stale
+    for: 00:05:00
+    id: stale
+    to: 'on'
+    trigger: state
+  - entity_id: binary_sensor.ting_voltage_stream_stale
+    for: 00:01:00
+    id: restored
+    to: 'off'
+    trigger: state
+  conditions: []
+  actions:
+  - choose:
+    - alias: Feed went stale — push once, set latch
+      conditions:
+      - condition: trigger
+        id: stale
+      - condition: state
+        entity_id: input_boolean.ting_voltage_stream_alerted
+        state: 'off'
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            tag: ting_voltage_stream_stale
+          message: '{% set s = states.sensor[''710b782e7_current_voltage''] %}No Ting
+            voltage data since {{ as_local(s.last_changed).strftime(''%a %-I:%M %p'')
+            if s and (s.state | float(none)) is not none else ''HA last started''
+            }}. The voltage alert can''t fire until it''s back. Check the Ting app;
+            if it says disconnected, replug the sensor.'
+          title: ⚠️ Ting voltage feed stale
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.ting_voltage_stream_alerted
+    - alias: Feed is back — push once, clear latch
+      conditions:
+      - condition: trigger
+        id: restored
+      - condition: state
+        entity_id: input_boolean.ting_voltage_stream_alerted
+        state: 'on'
+      sequence:
+      - action: notify.mobile_app_iphone
+        data:
+          data:
+            tag: ting_voltage_stream_stale
+          message: Ting voltage is updating again ({{ states('sensor.710b782e7_current_voltage')
+            | float(0) | round(1) }} V). The voltage alert is watching again.
+          title: ✅ Ting voltage feed is back
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.ting_voltage_stream_alerted
+  mode: single
+- id: oura_stale_ring_sync_reminder
+  alias: 'Oura: Stale ring sync reminder'
+  description: Nudges you to open Oura when the ring has not synced for 24+ hours.
+    Fires 24h after the last sync, or at the start of morning if that moment passed
+    overnight.
+  triggers:
+  - at:
+      entity_id: sensor.fitness_oura_ring_ring_last_sync
+      offset: '24:00:00'
+    id: sync_went_stale
+    trigger: time
+  - entity_id: group.morning
+    id: morning_started
+    to: 'on'
+    trigger: state
+  conditions:
+  - alias: Not on an extended trip
+    condition: state
+    entity_id: calendar.vacation
+    state: 'off'
+  - alias: Only during the morning window
+    condition: state
+    entity_id: group.morning
+    state: 'on'
+  - alias: Last sync value is usable
+    condition: not
+    conditions:
+    - condition: state
+      entity_id: sensor.fitness_oura_ring_ring_last_sync
+      state:
+      - unknown
+      - unavailable
+  - alias: Ring last synced more than 24h ago
+    condition: template
+    value_template: '{{ (now() - states(''sensor.fitness_oura_ring_ring_last_sync'')
+      | as_datetime) > timedelta(hours=24) }}'
+  actions:
+  - action: notify.mobile_app_iphone
+    alias: Nudge to open Oura
+    data:
+      data:
+        actions:
+        - action: URI
+          title: Open Oura
+          uri: oura://
+        push:
+          interruption-level: time-sensitive
+        tag: oura_sync_nudge
+        url: oura://
+      message: Your ring last synced {{ ((now() - states('sensor.fitness_oura_ring_ring_last_sync')
+        | as_datetime).total_seconds() / 3600) | round(0) | int }} hours ago. Tap
+        to open Oura and sync.
+      title: Oura has not synced
+  mode: single
+- id: security_log_failed_logins
+  alias: 'Security: Log failed login attempts'
+  description: Appends failed logins and IP bans to /config/login_attempts.log (git-ignored).
+  triggers:
+  - id: failed_login
+    notification_id: http-login
+    trigger: persistent_notification
+    update_type:
+    - added
+    - updated
+  - id: ip_ban
+    notification_id: ip-ban
+    trigger: persistent_notification
+    update_type:
+    - added
+    - updated
+  conditions: []
+  actions:
+  - action: notify.send_message
+    alias: Append to login_attempts.log
+    data:
+      message: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }} [{{ trigger.id }}] {{
+        trigger.notification.message | replace(''\n'', '' '') }}'
+    target:
+      entity_id: notify.file
+  max: 10
+  mode: queued

@@ -154,11 +154,11 @@ template:
           value: >-
             {%- set reporting = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('indexInfo','defined') | list -%}
             {%- set top = (reporting | sort(attribute='indexInfo.value', reverse=true))[0] if (reporting | count) > 0 else {} -%}
-            {{ top.indexInfo.value | default(0) | int(0) }}
+            {{ (top.indexInfo | default({})).value | default(0) | int(0) }}
           category: >-
             {%- set reporting = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('indexInfo','defined') | list -%}
             {%- set top = (reporting | sort(attribute='indexInfo.value', reverse=true))[0] if (reporting | count) > 0 else {} -%}
-            {{ top.indexInfo.category | default('n/a') }}
+            {{ (top.indexInfo | default({})).category | default('n/a') }}
           in_season: >-
             {%- set reporting = (state_attr('sensor.google_pollen_raw','plantInfo') | default([])) | selectattr('indexInfo','defined') | list -%}
             {%- set top = (reporting | sort(attribute='indexInfo.value', reverse=true))[0] if (reporting | count) > 0 else {} -%}
