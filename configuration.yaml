@@ -5,6 +5,9 @@ frontend:
 
 homeassistant:
   packages: !include_dir_named packages
+  # Lets the File integration write login_attempts.log into the config folder.
+  allowlist_external_dirs:
+    - /config
 
 # Quiet the Apple TV / HomePod boot-time handshake noise (pyatv companion
 # protocol timeouts logged at ERROR). Raised to critical so only the most
