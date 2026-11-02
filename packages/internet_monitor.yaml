@@ -4,7 +4,7 @@
 # the "Alert: Core Heartbeat (dead-man's switch)" automation) is an OUTBOUND
 # heartbeat, so it cannot tell "HA Core is dead" apart from "the internet is down."
 # Both look identical from the cloud (no ping arrives). On 2026-06-23 a 1:17 to
-# 1:58pm internet outage tripped a Healthchecks "Core DOWN" email while Core was
+# 1:58pm internet outage tripped a Healthchecks "Core DOWN" alert while Core was
 # perfectly healthy the entire time.
 #
 # HOW THIS DISAMBIGUATES IT:
@@ -17,8 +17,8 @@
 #      outage was long enough to have tripped Healthchecks (>= 15 min = Period 10m
 #      plus Grace 5m), pushes an after-the-fact "Core was fine" alibi to the iPhone.
 #
-# So a Healthchecks "Core DOWN" email followed by an HA alibi means it was just the
-# internet; a "Core DOWN" email followed by SILENCE means the box actually died.
+# So a Healthchecks "Core DOWN" alert followed by an HA alibi means it was just the
+# internet; a "Core DOWN" alert followed by SILENCE means the box actually died.
 # The recovery automation triggers only on a clean off -> on transition (never
 # unavailable -> on), so if Core itself had restarted (e.g. a power cut) no false
 # "Core stayed up" alibi is sent. See the core dead-man's switch notes.
@@ -83,7 +83,7 @@ automation:
       No notification here: during an outage HA cannot reach the push service.
       The companion "Internet: Restored (Core alibi)" sends the after-the-fact
       alert once connectivity returns. Together they disambiguate a Healthchecks
-      "Core DOWN" email (alert plus later alibi means internet; alert plus
+      "Core DOWN" alert (alert plus later alibi means internet; alert plus
       silence means the box died). See the core dead-man's switch.
     triggers:
       - trigger: state
@@ -114,7 +114,7 @@ automation:
       time, then, only if a fresh outage was actually logged (start newer than the
       previous end, so brief un-logged blips are ignored), sends the alibi. If the
       outage lasted >= 15 min (Healthchecks Period 10m plus Grace 5m, long enough
-      to have fired a "Core DOWN" email) it pushes a clear "Core was fine"
+      to have fired a "Core DOWN" alert) it pushes a clear "Core was fine"
       message; shorter outages are recorded silently. Pairs with the command_line
       sensor and helpers above and the core dead-man's switch.
     triggers:
@@ -148,5 +148,5 @@ automation:
                   message: >-
                     {% set s = state_attr('input_datetime.internet_outage_start','timestamp') %}
                     {% set mins = ((now().timestamp() - s) / 60) | round(0) %}
-                    Internet was down from {{ s | timestamp_custom('%-I:%M %p', true) }} to {{ now().strftime('%-I:%M %p') }} ({{ mins }} min). HA Core stayed online the whole time, so any Healthchecks "Core DOWN" email from that window was the internet, not a crash.
+                    Internet was down from {{ s | timestamp_custom('%-I:%M %p', true) }} to {{ now().strftime('%-I:%M %p') }} ({{ mins }} min). HA Core stayed online the whole time, so any Healthchecks "Core DOWN" alert from that window was the internet, not a crash.
     mode: single
