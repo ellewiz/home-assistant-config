@@ -1428,19 +1428,19 @@
 - id: '1777633648574'
   alias: Power Outage / Restoration Alert
   triggers:
-  - entity_id: switch.automation_timer
+  - entity_id: sensor.bedroom_power
     for: 00:02:00
     id: hue_unavailable
+    platform: state
     to: unavailable
-    trigger: state
-  - entity_id: switch.automation_timer
+  - entity_id: sensor.bedroom_power
     from: unavailable
     id: hue_restored
-    trigger: state
+    platform: state
   - entity_id: sensor.fibaro_wall_plug_for_fridge_electric_consumption_w
     from: unavailable
     id: fridge_surge
-    trigger: state
+    platform: state
   conditions: []
   actions:
   - choose:
@@ -1572,7 +1572,7 @@
   triggers:
   - entity_id: calendar.master_calendar
     event: end
-    offset: '-1:0:0'
+    offset: '-1:05:00'
     trigger: calendar
   conditions:
   - condition: state
@@ -6545,9 +6545,8 @@
         in c or ''pouring'' in c or ''hail'' in c %}{% set ns.storm = true %}{% endif
         %}{% endif %}{% endfor %}{% if ns.night | length == 0 %}{{ 0 }}{% else %}{%
         set precips = ns.night | map(attribute=''precipitation_probability'') | list
-        %}{% set max_precip = precips | max %}{% set cold_low = ns.night | map(attribute=''temperature'')
-        | list | min %}{% set storm = ns.storm or max_precip >= 70 or cold_low < 45
-        %}{% if storm %}{{ 0 }}{% else %}{% set temps = ns.night | map(attribute=''temperature'')
+        %}{% set max_precip = precips | max %}{% set storm = ns.storm or max_precip
+        >= 70 %}{% if storm %}{{ 0 }}{% else %}{% set temps = ns.night | map(attribute=''temperature'')
         | list %}{% set dews = ns.night | map(attribute=''dew_point'') | list %}{%
         set winds = ns.night | map(attribute=''wind_speed'') | list %}{% set low =
         temps | min %}{% set max_dew = dews | max %}{% set max_wind = winds | max
@@ -6591,15 +6590,13 @@
         %}{% endif %}{% endfor %}{% if ns.night | length == 0 %}No overnight forecast
         yet — check back closer to bedtime.{% else %}{% set precips = ns.night | map(attribute=''precipitation_probability'')
         | list %}{% set max_precip = precips | max %}{% set storm = ns.storm or max_precip
-        >= 70 %}{% set cold_low = ns.night | map(attribute=''temperature'') | list
-        | min %}{% if storm %}Storms or heavy rain expected overnight ({{ max_precip
-        }}% chance) — keep them closed.{% elif cold_low < 45 %}Too cold: overnight
-        low {{ cold_low }}°F is under 45°F, keep the windows closed.{% else %}{% set
-        temps = ns.night | map(attribute=''temperature'') | list %}{% set dews = ns.night
-        | map(attribute=''dew_point'') | list %}{% set winds = ns.night | map(attribute=''wind_speed'')
-        | list %}{% set low = temps | min %}{% set max_dew = dews | max %}{% set max_wind
-        = winds | max %}{% set setpoint = state_attr(''climate.bedroom_ac'',''temperature'')
-        | float(72) %}{% set diff = setpoint - low %}{% set g_avail = states(''sensor.google_pollen_weed'')
+        >= 70 %}{% if storm %}Storms or heavy rain expected overnight ({{ max_precip
+        }}% chance) — keep them closed.{% else %}{% set temps = ns.night | map(attribute=''temperature'')
+        | list %}{% set dews = ns.night | map(attribute=''dew_point'') | list %}{%
+        set winds = ns.night | map(attribute=''wind_speed'') | list %}{% set low =
+        temps | min %}{% set max_dew = dews | max %}{% set max_wind = winds | max
+        %}{% set setpoint = state_attr(''climate.bedroom_ac'',''temperature'') | float(72)
+        %}{% set diff = setpoint - low %}{% set g_avail = states(''sensor.google_pollen_weed'')
         not in [''unknown'',''unavailable'',''none''] %}{% if g_avail %}{% set gw
         = states(''sensor.google_pollen_weed'')|float(0) %}{% set gt = states(''sensor.google_pollen_tree'')|float(0)
         %}{% set gg = states(''sensor.google_pollen_grass'')|float(0) %}{% set worst
@@ -7575,30 +7572,3 @@
         to open Oura and sync.
       title: Oura has not synced
   mode: single
-- id: security_log_failed_logins
-  alias: 'Security: Log failed login attempts'
-  description: Appends failed logins and IP bans to /config/login_attempts.log (git-ignored).
-  triggers:
-  - id: failed_login
-    notification_id: http-login
-    trigger: persistent_notification
-    update_type:
-    - added
-    - updated
-  - id: ip_ban
-    notification_id: ip-ban
-    trigger: persistent_notification
-    update_type:
-    - added
-    - updated
-  conditions: []
-  actions:
-  - action: notify.send_message
-    alias: Append to login_attempts.log
-    data:
-      message: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }} [{{ trigger.id }}] {{
-        trigger.notification.message | replace(''\n'', '' '') }}'
-    target:
-      entity_id: notify.file
-  max: 10
-  mode: queued
