@@ -135,9 +135,9 @@ commute_time_announcer:
                   # "Commute is 0 minutes. Leave by unknown."
                   message: >
                     The time is {{ now().strftime('%I:%M %p').lstrip('0') }}.
-                    {%- if mins_until_leave > 0 and mins_until_leave <= 60 and waze_min > 0 and leave_by_display != 'unknown' %}
+                    {%- if mins_until_leave > 0 and mins_until_leave <= 65 and waze_min > 0 and leave_by_display != 'unknown' %}
                       Commute is {{ 'about ' if state_attr('sensor.commute_leave_by', 'source') == 'fallback' else '' }}{{ waze_min }} minute{{ 's' if waze_min != 1 else '' }}. Leave by {{ leave_by_display }}.
-                    {%- elif leave_by in ['unknown', 'unavailable'] and mins_until_leave > 0 and mins_until_leave <= 60 and leave_by_display != 'unknown' %}
+                    {%- elif leave_by in ['unknown', 'unavailable'] and mins_until_leave > 0 and mins_until_leave <= 65 and leave_by_display != 'unknown' %}
                       Leave by {{ leave_by_display }}.
                     {%- elif mins_until_leave <= 0 %}
                       Time to leave!
