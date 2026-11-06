@@ -619,7 +619,7 @@
     data: {}
   mode: single
 - id: '1758763117719'
-  alias: Living Room — Ambient Manager (Lux On/Off) (v3)
+  alias: Living Room — Ambient Manager (Lux On/Off) (v4, Guest Quiet Hours)
   triggers:
   - id: lux_below_on
     entity_id: sensor.living_room_illuminance_smoothed
@@ -654,6 +654,14 @@
     - conditions:
       - condition: trigger
         id: lux_below_on
+      - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
+        condition: not
+        conditions:
+        - condition: state
+          entity_id: input_boolean.guests
+          state: 'on'
+        - condition: time
+          before: 08:00:00
       sequence:
       - alias: Brightness depends on whether anyone is home
         choose:
@@ -746,6 +754,14 @@
       - condition: state
         entity_id: light.living_room_lights
         state: 'off'
+      - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
+        condition: not
+        conditions:
+        - condition: state
+          entity_id: input_boolean.guests
+          state: 'on'
+        - condition: time
+          before: 08:00:00
       sequence:
       - alias: Brightness depends on whether anyone is home
         choose:
@@ -838,7 +854,8 @@
   mode: restart
   max_exceeded: silent
 - id: '1763032936247'
-  alias: Living Room — Morning Lights (v4, Lux + Presence + Already-On Guard)
+  alias: Living Room — Morning Lights (v6, Lux + Presence + Already-On Guard + Guest
+    Quiet Hours)
   triggers:
   - entity_id: binary_sensor.hue_motion_sensor_4_motion
     from: 'off'
@@ -849,10 +866,21 @@
     entity_id: group.morning
     state: 'on'
   actions:
-  - alias: Always clear Adaptive Lighting sleep mode on first morning motion
-    action: switch.turn_off
-    target:
-      entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+  - alias: Clear Adaptive Lighting sleep mode on first morning motion (held until
+      08:00 while guests is on; Late-Night Sleep Dim releases it at 08:00)
+    if:
+    - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
+      condition: not
+      conditions:
+      - condition: state
+        entity_id: input_boolean.guests
+        state: 'on'
+      - condition: time
+        before: 08:00:00
+    then:
+    - action: switch.turn_off
+      target:
+        entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
   - alias: Relight only if the room is actually dark
     choose:
     - conditions:
@@ -872,6 +900,14 @@
         state: 'off'
         alias: Only relight if the group is actually OFF (anti re-fire guard, added
           v4)
+      - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
+        condition: not
+        conditions:
+        - condition: state
+          entity_id: input_boolean.guests
+          state: 'on'
+        - condition: time
+          before: 08:00:00
       sequence:
       - action: light.turn_on
         target:
@@ -1115,10 +1151,9 @@
       push below. Only Sonos-platform entities belong in players.
     data:
       message: It's time to turn on the car!
-      players:
-      - media_player.bedroom_frame
-      - media_player.living_room_arc
-      - media_player.bathroom
+      players: '{{ [''media_player.bedroom_frame'', ''media_player.bathroom''] if
+        is_state(''input_boolean.guests'', ''on'') else [''media_player.bedroom_frame'',
+        ''media_player.living_room_arc'', ''media_player.bathroom''] }}'
       restore: true
       ungroup: true
       volume: 0.7
@@ -1428,19 +1463,19 @@
 - id: '1777633648574'
   alias: Power Outage / Restoration Alert
   triggers:
-  - entity_id: sensor.bedroom_power
+  - entity_id: switch.automation_timer
     for: 00:02:00
     id: hue_unavailable
-    platform: state
     to: unavailable
-  - entity_id: sensor.bedroom_power
+    trigger: state
+  - entity_id: switch.automation_timer
     from: unavailable
     id: hue_restored
-    platform: state
+    trigger: state
   - entity_id: sensor.fibaro_wall_plug_for_fridge_electric_consumption_w
     from: unavailable
     id: fridge_surge
-    platform: state
+    trigger: state
   conditions: []
   actions:
   - choose:
@@ -1591,11 +1626,10 @@
     data:
       until_ts: '{{ leave_by_ts }}'
       person_entity: person.lara_wiz
-      players:
-      - media_player.living_room_arc
-      - media_player.basement
-      - media_player.bedroom_frame
-      - media_player.bathroom
+      players: '{{ [''media_player.basement'', ''media_player.bedroom_frame'', ''media_player.bathroom'']
+        if is_state(''input_boolean.guests'', ''on'') else [''media_player.living_room_arc'',
+        ''media_player.basement'', ''media_player.bedroom_frame'', ''media_player.bathroom'']
+        }}'
   mode: single
 - id: '1777940949832'
   alias: "\U0001F985 Eagles Score - Flash Green"
@@ -2773,7 +2807,7 @@
         }}"{% endif %}.
   mode: single
 - id: living_room_late_night_sleep_dim
-  alias: Living Room — Late-Night Sleep Dim (v2)
+  alias: Living Room — Late-Night Sleep Dim (v3, Guest Hold Until 08:00)
   triggers:
   - at: '21:00:00'
     id: night_start_work
@@ -2787,6 +2821,9 @@
   - trigger: homeassistant
     event: start
     id: restart_check
+  - trigger: time
+    at: 08:00:00
+    id: night_end_guest_hold
   conditions: []
   actions:
   - choose:
@@ -2829,10 +2866,27 @@
           entity_id: switch.adaptive_lighting_living_room_lights
           sleep_brightness: 10
           sleep_color_temp: 2200
-    - alias: Release sleep-dim at 05:30 (always, so daytime AL resumes)
+    - alias: Release sleep-dim at 05:30 (held until 08:00 while guests is on)
       conditions:
       - condition: trigger
         id: night_end
+      - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
+        condition: not
+        conditions:
+        - condition: state
+          entity_id: input_boolean.guests
+          state: 'on'
+        - condition: time
+          before: 08:00:00
+      sequence:
+      - action: switch.turn_off
+        target:
+          entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+    - alias: Release sleep-dim at 08:00 (the held release when guests was on; harmless
+        if already off)
+      conditions:
+      - condition: trigger
+        id: night_end_guest_hold
       sequence:
       - action: switch.turn_off
         target:
@@ -5548,7 +5602,7 @@
   mode: single
   max_exceeded: silent
 - id: living_room_energize_morning_trial
-  alias: Living Room — Energize Morning Trial (v2)
+  alias: Living Room — Energize Morning Trial (v3, Guest Quiet Hours)
   triggers:
   - at: 06:00:00
     id: window_open
@@ -5572,6 +5626,14 @@
       conditions:
       - condition: trigger
         id: window_open
+      - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
+        condition: not
+        conditions:
+        - condition: state
+          entity_id: input_boolean.guests
+          state: 'on'
+        - condition: time
+          before: 08:00:00
       sequence:
       - action: switch.turn_off
         alias: AL must be OFF or it overwrites Energize within 90 seconds
@@ -5602,6 +5664,14 @@
       - condition: state
         entity_id: person.lara_wiz
         state: home
+      - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
+        condition: not
+        conditions:
+        - condition: state
+          entity_id: input_boolean.guests
+          state: 'on'
+        - condition: time
+          before: 08:00:00
       sequence:
       - alias: Let the bulbs finish reporting their turn-on state first
         delay:
@@ -6296,11 +6366,10 @@
         as the parent
       data:
         person_entity: person.lara_wiz
-        players:
-        - media_player.living_room_arc
-        - media_player.basement
-        - media_player.bedroom_frame
-        - media_player.bathroom
+        players: '{{ [''media_player.basement'', ''media_player.bedroom_frame'', ''media_player.bathroom'']
+          if is_state(''input_boolean.guests'', ''on'') else [''media_player.living_room_arc'',
+          ''media_player.basement'', ''media_player.bedroom_frame'', ''media_player.bathroom'']
+          }}'
         until_ts: '{{ as_timestamp(today_at(states(''sensor.commute_leave_by'')))
           }}'
     - action: notify.mobile_app_iphone
@@ -6545,8 +6614,9 @@
         in c or ''pouring'' in c or ''hail'' in c %}{% set ns.storm = true %}{% endif
         %}{% endif %}{% endfor %}{% if ns.night | length == 0 %}{{ 0 }}{% else %}{%
         set precips = ns.night | map(attribute=''precipitation_probability'') | list
-        %}{% set max_precip = precips | max %}{% set storm = ns.storm or max_precip
-        >= 70 %}{% if storm %}{{ 0 }}{% else %}{% set temps = ns.night | map(attribute=''temperature'')
+        %}{% set max_precip = precips | max %}{% set cold_low = ns.night | map(attribute=''temperature'')
+        | list | min %}{% set storm = ns.storm or max_precip >= 70 or cold_low < 45
+        %}{% if storm %}{{ 0 }}{% else %}{% set temps = ns.night | map(attribute=''temperature'')
         | list %}{% set dews = ns.night | map(attribute=''dew_point'') | list %}{%
         set winds = ns.night | map(attribute=''wind_speed'') | list %}{% set low =
         temps | min %}{% set max_dew = dews | max %}{% set max_wind = winds | max
@@ -6590,13 +6660,15 @@
         %}{% endif %}{% endfor %}{% if ns.night | length == 0 %}No overnight forecast
         yet — check back closer to bedtime.{% else %}{% set precips = ns.night | map(attribute=''precipitation_probability'')
         | list %}{% set max_precip = precips | max %}{% set storm = ns.storm or max_precip
-        >= 70 %}{% if storm %}Storms or heavy rain expected overnight ({{ max_precip
-        }}% chance) — keep them closed.{% else %}{% set temps = ns.night | map(attribute=''temperature'')
-        | list %}{% set dews = ns.night | map(attribute=''dew_point'') | list %}{%
-        set winds = ns.night | map(attribute=''wind_speed'') | list %}{% set low =
-        temps | min %}{% set max_dew = dews | max %}{% set max_wind = winds | max
-        %}{% set setpoint = state_attr(''climate.bedroom_ac'',''temperature'') | float(72)
-        %}{% set diff = setpoint - low %}{% set g_avail = states(''sensor.google_pollen_weed'')
+        >= 70 %}{% set cold_low = ns.night | map(attribute=''temperature'') | list
+        | min %}{% if storm %}Storms or heavy rain expected overnight ({{ max_precip
+        }}% chance) — keep them closed.{% elif cold_low < 45 %}Too cold: overnight
+        low {{ cold_low }}°F is under 45°F, keep the windows closed.{% else %}{% set
+        temps = ns.night | map(attribute=''temperature'') | list %}{% set dews = ns.night
+        | map(attribute=''dew_point'') | list %}{% set winds = ns.night | map(attribute=''wind_speed'')
+        | list %}{% set low = temps | min %}{% set max_dew = dews | max %}{% set max_wind
+        = winds | max %}{% set setpoint = state_attr(''climate.bedroom_ac'',''temperature'')
+        | float(72) %}{% set diff = setpoint - low %}{% set g_avail = states(''sensor.google_pollen_weed'')
         not in [''unknown'',''unavailable'',''none''] %}{% if g_avail %}{% set gw
         = states(''sensor.google_pollen_weed'')|float(0) %}{% set gt = states(''sensor.google_pollen_tree'')|float(0)
         %}{% set gg = states(''sensor.google_pollen_grass'')|float(0) %}{% set worst
@@ -7572,3 +7644,30 @@
         to open Oura and sync.
       title: Oura has not synced
   mode: single
+- id: security_log_failed_logins
+  alias: 'Security: Log failed login attempts'
+  description: Appends failed logins and IP bans to /config/login_attempts.log (git-ignored).
+  triggers:
+  - id: failed_login
+    notification_id: http-login
+    trigger: persistent_notification
+    update_type:
+    - added
+    - updated
+  - id: ip_ban
+    notification_id: ip-ban
+    trigger: persistent_notification
+    update_type:
+    - added
+    - updated
+  conditions: []
+  actions:
+  - action: notify.send_message
+    alias: Append to login_attempts.log
+    data:
+      message: '{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }} [{{ trigger.id }}] {{
+        trigger.notification.message | replace(''\n'', '' '') }}'
+    target:
+      entity_id: notify.file
+  max: 10
+  mode: queued
