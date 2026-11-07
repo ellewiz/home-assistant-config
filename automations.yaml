@@ -2914,7 +2914,7 @@
           notification_id: lr_sleep_dim_selfheal
   mode: single
 - id: bedroom_heat_alert_v2
-  alias: Bedroom — Heat Alert (v8, Gate Matches the 76F Daytime Hold)
+  alias: Bedroom — Heat Alert (v9, Also Checks at Wake-Up)
   triggers:
   - above: 75
     entity_id: sensor.temp_in_bedroom
@@ -2928,6 +2928,11 @@
     - unavailable
     to: home
     trigger: state
+  - trigger: state
+    entity_id: input_boolean.in_bed
+    from: 'on'
+    to: 'off'
+    id: woke_up
   conditions:
   - condition: state
     entity_id: calendar.vacation
@@ -2953,8 +2958,17 @@
   actions:
   - choose:
     - conditions:
-      - condition: trigger
-        id: sustained_warm
+      - condition: or
+        conditions:
+        - condition: trigger
+          id: sustained_warm
+        - condition: and
+          conditions:
+          - condition: trigger
+            id: woke_up
+          - condition: numeric_state
+            entity_id: sensor.temp_in_bedroom
+            above: 75
       - condition: not
         conditions:
         - condition: zone
@@ -7671,3 +7685,48 @@
       entity_id: notify.file
   max: 10
   mode: queued
+- id: alert_dead_automations_scripts
+  alias: 'Alert: Dead Automations or Scripts (v1)'
+  description: After you get up, pushes a warning if any automation or script failed
+    to load (state unavailable). Waits 60s so a reload blip does not trigger it.
+  triggers:
+  - entity_id: input_boolean.in_bed
+    from: 'on'
+    id: after_wake
+    to: 'off'
+    trigger: state
+  conditions:
+  - after: 04:00:00
+    before: '12:00:00'
+    condition: time
+  actions:
+  - alias: Let any reload settle before looking
+    delay:
+      seconds: 60
+  - alias: Collect anything that failed to load
+    variables:
+      dead_automations: '{{ states.automation | selectattr(''state'', ''eq'', ''unavailable'')
+        | map(attribute=''name'') | list }}'
+      dead_scripts: '{{ states.script | selectattr(''state'', ''eq'', ''unavailable'')
+        | map(attribute=''name'') | list }}'
+      problems: '{{ dead_automations + dead_scripts }}'
+  - alias: Only speak up when something is actually dead
+    if:
+    - condition: template
+      value_template: '{{ problems | count > 0 }}'
+    then:
+    - action: persistent_notification.create
+      alias: Persistent notification with the full list
+      data:
+        message: '{% if dead_automations %}Automations: {{ dead_automations | join('',
+          '') }}. {% endif %}{% if dead_scripts %}Scripts: {{ dead_scripts | join('',
+          '') }}.{% endif %}'
+        notification_id: alert_dead_automations_scripts
+        title: 'Dead automations or scripts: {{ problems | count }}'
+    - action: notify.mobile_app_iphone
+      alias: Push to iPhone
+      data:
+        message: '{{ problems | join('', '') }}'
+        title: ⚠️ {{ problems | count }} automation(s) or script(s) failed to load
+  max_exceeded: silent
+  mode: single

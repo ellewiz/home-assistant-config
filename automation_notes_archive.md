@@ -1331,3 +1331,24 @@ speaker so the in_bed rule does not apply, interruption level left at default
 
 Not live-fire tested. The push text was sent once as a manual TEST push on
 2026-10-26; the stale/restored branches themselves have not fired.
+
+## Guest quiet hours (2026-11-06)
+Applies to: Living Room — Energize Morning Trial (v3), Living Room — Morning Lights (v5), Living Room — Ambient Manager (v4).
+Added one condition, `not (input_boolean.guests on AND time before 08:00)`, to the automatic turn-on paths so a guest sleeping in the living room is not woken by lights.
+- Energize: `window_open` (06:00) and `lights_on` branches gated. The 10:00 handback and the HA-start backstop stay ungated.
+- Morning Lights: relight branch gated. The AL sleep-mode clear stays unconditional.
+- Ambient Manager: `lux_below_on` and the `early_morning_ended` dark-relight branches gated. Auto-off branches, `presence_arrived` and `person_arrived_home` untouched.
+Note: a time condition with only `before` is true 00:00 to 08:00, so on guest days automatic LR turn-ons are quiet from midnight, not just from early morning.
+`input_boolean.guests` is set by "Guests: Calendar-Driven Toggle" from calendar.guests (first use: "Jody visiting", Nov 7 11:00 to Nov 8 17:00).
+
+## Guest mode, second pass (2026-11-06)
+- Living Room — Late-Night Sleep Dim (v3, Guest Hold Until 08:00): the 05:30 release is skipped while guests is on and it is before 08:00. New 08:00 trigger (`night_end_guest_hold`) releases sleep mode instead (harmless if already off).
+- Living Room — Morning Lights (v6): the first-motion sleep-mode clear is gated the same way, so the 08:00 release owns it on guest days.
+- Commute: Morning announcer with Waze (v2), Commute: Resume announcer after restart, Heat the car: `players` is now a template that leaves out `media_player.living_room_arc` while guests is on.
+- Not gated, by choice (Nov 6): TV off weekends 23:00, leave-home automations (lights off, stop all speakers, AC away eco, away-dim).
+- Wake alarm family plays on bedroom_frame only, so it needed nothing.
+
+
+## Bedroom — Heat Alert (v9, Also Checks at Wake-Up) (id: bedroom_heat_alert_v2)
+
+2026-11-07: added a third trigger, `woke_up` (input_boolean.in_bed on -> off). The first alert branch now runs on `sustained_warm` OR (`woke_up` AND bedroom above 75F). Reason: the 75F numeric_state trigger is edge-only and the in_bed gate blocks it overnight, so a room that warmed while asleep and stayed hot never alerted after waking. All existing gates unchanged (vacation, 3h re-alert, not at work, AC setpoint below 76F). Wake-up path pushes and cools with boost, same as the daytime path. Chosen by Lara.
