@@ -1,0 +1,15 @@
+---
+# CI lint config. Deliberately lenient: it exists to catch syntax errors, not style.
+extends: relaxed
+
+rules:
+  line-length: disable
+  document-start: disable
+  truthy: disable
+  comments: disable
+  comments-indentation: disable
+  empty-lines: disable
+  new-line-at-end-of-file: disable
+  indentation:
+    spaces: consistent
+    indent-sequences: consistent
