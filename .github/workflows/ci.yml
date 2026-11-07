@@ -1,0 +1,51 @@
+---
+name: Home Assistant CI
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+jobs:
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out configuration
+        uses: actions/checkout@v4
+      # HA pads automations.yaml with NUL bytes. HA itself parses it, but
+      # yamllint's reader rejects them, so strip them in the CI checkout only.
+      - name: Strip NUL padding
+        run: |
+          find . -name '*.yaml' -not -path './.git/*' | while read -r f; do
+            tr -d '\000' < "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
+      - name: Run yamllint
+        uses: frenck/action-yamllint@v1
+
+  home-assistant:
+    name: Home Assistant config check
+    needs: [yamllint]
+    runs-on: ubuntu-latest
+    # Advisory: custom_components/ and secrets.yaml are gitignored, so this
+    # check can fail on things that are fine on the real box.
+    continue-on-error: true
+    steps:
+      - name: Check out configuration
+        uses: actions/checkout@v4
+      - name: Strip NUL padding
+        run: |
+          find . -name '*.yaml' -not -path './.git/*' | while read -r f; do
+            tr -d '\000' < "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
+      - name: Build placeholder secrets from every !secret reference
+        run: |
+          grep -rhoE '!secret [A-Za-z0-9_]+' --include='*.yaml' . \
+            | awk '{print $2": ci-placeholder"}' | sort -u > secrets.yaml
+      - name: Run Home Assistant configuration check
+        uses: frenck/action-home-assistant@v1
+        with:
+          path: "."
+          secrets: ./secrets.yaml
+          version: "stable"
