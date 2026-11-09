@@ -655,13 +655,13 @@
       - condition: trigger
         id: lux_below_on
       - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
-        condition: not
+        condition: or
         conditions:
         - condition: state
           entity_id: input_boolean.guests
-          state: 'on'
+          state: 'off'
         - condition: time
-          before: 08:00:00
+          after: 08:00:00
       sequence:
       - alias: Brightness depends on whether anyone is home
         choose:
@@ -755,13 +755,13 @@
         entity_id: light.living_room_lights
         state: 'off'
       - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
-        condition: not
+        condition: or
         conditions:
         - condition: state
           entity_id: input_boolean.guests
-          state: 'on'
+          state: 'off'
         - condition: time
-          before: 08:00:00
+          after: 08:00:00
       sequence:
       - alias: Brightness depends on whether anyone is home
         choose:
@@ -870,13 +870,13 @@
       08:00 while guests is on; Late-Night Sleep Dim releases it at 08:00)
     if:
     - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
-      condition: not
+      condition: or
       conditions:
       - condition: state
         entity_id: input_boolean.guests
-        state: 'on'
+        state: 'off'
       - condition: time
-        before: 08:00:00
+        after: 08:00:00
     then:
     - action: switch.turn_off
       target:
@@ -901,13 +901,13 @@
         alias: Only relight if the group is actually OFF (anti re-fire guard, added
           v4)
       - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
-        condition: not
+        condition: or
         conditions:
         - condition: state
           entity_id: input_boolean.guests
-          state: 'on'
+          state: 'off'
         - condition: time
-          before: 08:00:00
+          after: 08:00:00
       sequence:
       - action: light.turn_on
         target:
@@ -1632,10 +1632,10 @@
         }}'
   mode: single
 - id: '1777940949832'
-  alias: "\U0001F985 Eagles Score - Flash Green"
+  alias: "\U0001F985 Eagles Score - Flash Green (v2)"
   triggers:
-  - entity_id: sensor.philadelphia_eagles
-    attribute: team_score
+  - attribute: team_score
+    entity_id: sensor.philadelphia_eagles
     trigger: state
   conditions:
   - condition: state
@@ -1648,27 +1648,44 @@
   - condition: state
     entity_id: person.lara_wiz
     state: home
-  - condition: template
-    alias: 'Cooldown: skip a second score inside 60s (TD + extra point fires this
+  - alias: 'Cooldown: skip a second score inside 60s (TD + extra point fires this
       twice)'
+    condition: template
     value_template: '{{ state_attr(''automation.eagles_score_flash_green'', ''last_triggered'')
       is none or (now() - state_attr(''automation.eagles_score_flash_green'', ''last_triggered'')).total_seconds()
       > 60 }}'
   actions:
-  - alias: Flash living room + kitchen LIFX strip Kelly Green (snapshot + restore
+  - alias: Record which living room lamps are on before the flash
+    variables:
+      _lamps:
+      - light.living_room_corner
+      - light.torchiere
+      - light.next_to_couch
+      _was_on: '{{ _lamps | select(''is_state'', ''on'') | list }}'
+  - action: script.alert_light_flash
+    alias: Flash living room + kitchen LIFX strip Kelly Green (snapshot + restore
       via shared script)
-    action: script.alert_light_flash
     data:
-      targets:
-      - light.living_room_lights
-      - light.undercabinet_lights
+      pulses: 5
       rgb_color:
       - 76
       - 187
       - 23
-      pulses: 5
+      targets:
+      - light.living_room_lights
+      - light.undercabinet_lights
   - alias: Resume Adaptive Lighting after snapshot restore (skip next_to_couch if
       a movie/game dim is active there)
+    else:
+    - action: adaptive_lighting.set_manual_control
+      alias: 'ATV is active: only release the two lamps, leave next_to_couch pinned
+        to its movie dim'
+      data:
+        entity_id: switch.adaptive_lighting_living_room_lights
+        lights:
+        - light.living_room_corner
+        - light.torchiere
+        manual_control: false
     if:
     - condition: not
       conditions:
@@ -1683,18 +1700,45 @@
       data:
         entity_id: switch.adaptive_lighting_living_room_lights
         manual_control: false
-    else:
-    - action: adaptive_lighting.set_manual_control
-      data:
-        entity_id: switch.adaptive_lighting_living_room_lights
-        manual_control: false
-        lights:
-        - light.living_room_corner
-        - light.torchiere
-      alias: 'ATV is active: only release the two lamps, leave next_to_couch pinned
-        to its movie dim'
-  mode: single
+  - alias: Let the Adaptive Lighting release settle
+    delay: 00:00:03
+  - alias: Re-sync each lamp to its pre-flash on/off state (brightness left to Adaptive
+      Lighting)
+    repeat:
+      for_each:
+      - light.living_room_corner
+      - light.torchiere
+      - light.next_to_couch
+      sequence:
+      - variables:
+          _atv_dim: '{{ repeat.item == ''light.next_to_couch'' and is_state(''media_player.living_room_4k_2'',
+            [''playing'', ''buffering'', ''paused'']) }}'
+          _should_be_on: '{{ repeat.item in _was_on }}'
+      - choose:
+        - alias: 'Was on, now off: relight (Adaptive Lighting sets brightness)'
+          conditions:
+          - condition: template
+            value_template: '{{ _should_be_on and not _atv_dim and is_state(repeat.item,
+              ''off'') }}'
+          sequence:
+          - action: light.turn_on
+            data:
+              transition: 1
+            target:
+              entity_id: '{{ repeat.item }}'
+        - alias: 'Was off, now on: turn back off'
+          conditions:
+          - condition: template
+            value_template: '{{ not _should_be_on and not _atv_dim and is_state(repeat.item,
+              ''on'') }}'
+          sequence:
+          - action: light.turn_off
+            data:
+              transition: 1
+            target:
+              entity_id: '{{ repeat.item }}'
   max_exceeded: silent
+  mode: single
 - id: '1778432571562'
   alias: Pollen Alert Level — Daily Reset
   triggers:
@@ -2871,13 +2915,13 @@
       - condition: trigger
         id: night_end
       - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
-        condition: not
+        condition: or
         conditions:
         - condition: state
           entity_id: input_boolean.guests
-          state: 'on'
+          state: 'off'
         - condition: time
-          before: 08:00:00
+          after: 08:00:00
       sequence:
       - action: switch.turn_off
         target:
@@ -3379,61 +3423,6 @@
       message: Tap to sync last night's sleep to the report.
       title: Good morning, open Oura
   mode: single
-- id: living_room_lights_off_while_in_bed
-  alias: Living Room — Lights Off While In Bed (v1)
-  triggers:
-  - entity_id: input_boolean.in_bed
-    for: 00:30:00
-    id: in_bed_settled
-    to: 'on'
-    trigger: state
-  - id: overnight_sweep
-    minutes: /10
-    trigger: time_pattern
-  conditions:
-  - alias: Only while she is in bed
-    condition: state
-    entity_id: input_boolean.in_bed
-    state: 'on'
-  - alias: in_bed on for >30 min — protects the bedtime script's intentional random
-      10-25 min delay before its own LR off
-    condition: template
-    value_template: '{% set e = states.input_boolean.in_bed %}
-
-      {{ e is not none and (now() - e.last_changed).total_seconds() > 1800 }}'
-  - alias: Something has left the living room lit
-    condition: state
-    entity_id: light.living_room_lights
-    state: 'on'
-  - alias: No motion — never turn the lights off on top of someone
-    condition: state
-    entity_id: binary_sensor.hue_motion_sensor_4_motion
-    state: 'off'
-  - alias: No presence either (SNZB-06P) — covers sitting still on the couch
-    condition: state
-    entity_id: binary_sensor.living_room_presence
-    state: 'off'
-  - alias: Don't kill a room a guest may be using
-    condition: state
-    entity_id: input_boolean.guests
-    state: 'off'
-  actions:
-  - action: light.turn_off
-    alias: Turn the living room back off
-    data:
-      transition: 1
-    target:
-      entity_id: light.living_room_lights
-  - action: logbook.log
-    alias: Log the catch so overnight burns stay auditable
-    data:
-      entity_id: light.living_room_lights
-      message: 'Turned the living room off — in_bed on for {{ ((now() - states.input_boolean.in_bed.last_changed).total_seconds()
-        / 60) | round(0) | int }} min, room empty, smoothed {{ states(''sensor.living_room_illuminance_smoothed'')
-        }} lx (trigger: {{ trigger.id }}).'
-      name: LR In-Bed Safety Net
-  max_exceeded: silent
-  mode: single
 - id: living_room_off_at_scheduled_time
   alias: Living Room — Scheduled Off (Bedtime Wind-Down) (v1)
   triggers:
@@ -3521,56 +3510,6 @@
       - media_player.bathroom
       - media_player.basement
   mode: single
-- id: living_room_late_night_off_no_bedtime
-  alias: Living Room — Late-Night Off (No-Bedtime Fallback) (v1)
-  triggers:
-  - trigger: time_pattern
-    minutes: /15
-    id: late_night_sweep
-  conditions:
-  - alias: Late-night window only — past any real bedtime, before the morning relight
-    condition: time
-    after: 02:00:00
-    before: 05:00:00
-  - alias: Something has left the living room lit
-    condition: state
-    entity_id: light.living_room_lights
-    state: 'on'
-  - alias: in_bed OFF only — when in_bed is on the In-Bed Safety Net owns this, and
-      its 30-min dwell protects the bedtime script's random gap
-    condition: state
-    entity_id: input_boolean.in_bed
-    state: 'off'
-  - alias: No motion — never turn the lights off on top of someone
-    condition: state
-    entity_id: binary_sensor.hue_motion_sensor_4_motion
-    state: 'off'
-  - alias: No presence either (SNZB-06P) — covers sitting still on the couch
-    condition: state
-    entity_id: binary_sensor.living_room_presence
-    state: 'off'
-  - alias: Don't kill a room a guest may be using
-    condition: state
-    entity_id: input_boolean.guests
-    state: 'off'
-  actions:
-  - alias: Turn the living room off
-    action: light.turn_off
-    target:
-      entity_id: light.living_room_lights
-    data:
-      transition: 1
-  - alias: Log the catch so no-bedtime burns stay auditable
-    action: logbook.log
-    data:
-      name: LR Late-Night Fallback
-      entity_id: light.living_room_lights
-      message: Turned the living room off — no bedtime ritual tonight (in_bed off
-        for {{ ((now() - states.input_boolean.in_bed.last_changed).total_seconds()
-        / 3600) | round(1) }} h), room empty, smoothed {{ states('sensor.living_room_illuminance_smoothed')
-        }} lx.
-  mode: single
-  max_exceeded: silent
 - id: '1786035663980'
   alias: 'Guests: Calendar-Driven Toggle'
   triggers:
@@ -5616,7 +5555,7 @@
   mode: single
   max_exceeded: silent
 - id: living_room_energize_morning_trial
-  alias: Living Room — Energize Morning Trial (v3, Guest Quiet Hours)
+  alias: Living Room — Energize Morning Trial (v4, Guest Morning Catch-Up)
   triggers:
   - at: 06:00:00
     id: window_open
@@ -5632,6 +5571,9 @@
   - event: start
     id: ha_start
     trigger: homeassistant
+  - trigger: time
+    at: 08:00:00
+    id: window_guest_catchup
   conditions: []
   actions:
   - choose:
@@ -5641,13 +5583,13 @@
       - condition: trigger
         id: window_open
       - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
-        condition: not
+        condition: or
         conditions:
         - condition: state
           entity_id: input_boolean.guests
-          state: 'on'
+          state: 'off'
         - condition: time
-          before: 08:00:00
+          after: 08:00:00
       sequence:
       - action: switch.turn_off
         alias: AL must be OFF or it overwrites Energize within 90 seconds
@@ -5668,6 +5610,34 @@
             transition: 5
           target:
             entity_id: light.living_room_lights
+    - alias: '08:00 — guest-morning catch-up: the 06:00 step was skipped, so AL is
+        still on; take it out of the way and apply Energize if the lamps are on'
+      conditions:
+      - condition: trigger
+        id: window_guest_catchup
+      - condition: state
+        entity_id: switch.adaptive_lighting_living_room_lights
+        state: 'on'
+      - condition: state
+        entity_id: person.lara_wiz
+        state: home
+      sequence:
+      - action: switch.turn_off
+        alias: AL must be OFF or it overwrites Energize within 90 seconds
+        target:
+          entity_id: switch.adaptive_lighting_living_room_lights
+      - if:
+        - condition: state
+          entity_id: light.living_room_lights
+          state: 'on'
+        then:
+        - action: light.turn_on
+          data:
+            brightness: 255
+            color_temp_kelvin: 6410
+            transition: 5
+          target:
+            entity_id: light.living_room_lights
     - alias: Lamps came on inside the window — apply Energize
       conditions:
       - condition: trigger
@@ -5679,13 +5649,13 @@
         entity_id: person.lara_wiz
         state: home
       - alias: 'Guest quiet hours: skip while guests is on and it is before 08:00'
-        condition: not
+        condition: or
         conditions:
         - condition: state
           entity_id: input_boolean.guests
-          state: 'on'
+          state: 'off'
         - condition: time
-          before: 08:00:00
+          after: 08:00:00
       sequence:
       - alias: Let the bulbs finish reporting their turn-on state first
         delay:
@@ -7728,5 +7698,110 @@
       data:
         message: '{{ problems | join('', '') }}'
         title: ⚠️ {{ problems | count }} automation(s) or script(s) failed to load
+  max_exceeded: silent
+  mode: single
+- id: living_room_sleep_dim_values_self_heal
+  alias: Living Room — Sleep Dim Values Self-Heal (v1)
+  description: Re-applies the 10% / 2200K sleep level whenever sleep mode turns on
+    or HA starts with it on (a restart resets AL's sleep level to 1% / 1000K).
+  triggers:
+  - entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+    id: sleep_mode_on
+    to: 'on'
+    trigger: state
+  - event: start
+    id: ha_start
+    trigger: homeassistant
+  conditions:
+  - condition: state
+    entity_id: switch.adaptive_lighting_sleep_mode_living_room_lights
+    state: 'on'
+  actions:
+  - action: adaptive_lighting.change_switch_settings
+    alias: Re-apply the sleep level
+    data:
+      entity_id: switch.adaptive_lighting_living_room_lights
+      sleep_brightness: 10
+      sleep_color_temp: 2200
+  max_exceeded: silent
+  mode: single
+- id: living_room_overnight_off_sweep
+  alias: Living Room — Overnight Off Sweep (v1)
+  description: 'Safety net: turns the living room off if left lit overnight with no
+    motion or presence and no guests. Covers in-bed (30 min dwell) and no-bedtime
+    (02:00 to 05:00).'
+  triggers:
+  - entity_id: input_boolean.in_bed
+    for: 00:30:00
+    id: in_bed_settled
+    to: 'on'
+    trigger: state
+  - id: overnight_sweep
+    minutes: /10
+    trigger: time_pattern
+  conditions:
+  - alias: Something has left the living room lit
+    condition: state
+    entity_id: light.living_room_lights
+    state: 'on'
+  - alias: No motion, never turn the lights off on top of someone
+    condition: state
+    entity_id: binary_sensor.hue_motion_sensor_4_motion
+    state: 'off'
+  - alias: No presence either (SNZB-06P), covers sitting still on the couch
+    condition: state
+    entity_id: binary_sensor.living_room_presence
+    state: 'off'
+  - alias: Do not kill a room a guest may be using
+    condition: state
+    entity_id: input_boolean.guests
+    state: 'off'
+  actions:
+  - choose:
+    - alias: 'In bed for over 30 min: the in-bed safety net'
+      conditions:
+      - condition: state
+        entity_id: input_boolean.in_bed
+        for: 00:30:00
+        state: 'on'
+      sequence:
+      - action: light.turn_off
+        alias: Turn the living room back off
+        data:
+          transition: 1
+        target:
+          entity_id: light.living_room_lights
+      - action: logbook.log
+        alias: Log the catch so overnight burns stay auditable
+        data:
+          entity_id: light.living_room_lights
+          message: 'Turned the living room off, in_bed on for {{ ((now() - states.input_boolean.in_bed.last_changed).total_seconds()
+            / 60) | round(0) | int }} min, room empty, smoothed {{ states(''sensor.living_room_illuminance_smoothed'')
+            }} lx (trigger: {{ trigger.id }}).'
+          name: LR In-Bed Safety Net
+    - alias: 'Not in bed, 02:00 to 05:00: the no-bedtime fallback'
+      conditions:
+      - condition: state
+        entity_id: input_boolean.in_bed
+        state: 'off'
+      - after: 02:00:00
+        before: 05:00:00
+        condition: time
+      sequence:
+      - action: light.turn_off
+        alias: Turn the living room off
+        data:
+          transition: 1
+        target:
+          entity_id: light.living_room_lights
+      - action: logbook.log
+        alias: Log the catch so no-bedtime burns stay auditable
+        data:
+          entity_id: light.living_room_lights
+          message: Turned the living room off, no bedtime ritual tonight (in_bed off
+            for {{ ((now() - states.input_boolean.in_bed.last_changed).total_seconds()
+            / 3600) | round(1) }} h), room empty, smoothed {{ states('sensor.living_room_illuminance_smoothed')
+            }} lx.
+          name: LR Late-Night Fallback
   max_exceeded: silent
   mode: single
