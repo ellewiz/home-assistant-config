@@ -61,3 +61,5 @@ scripts/dose_*.yaml
 
 # HA IP ban list (attacker IPs, keep out of the public repo)
 ip_bans.yaml
+
+Claude outputs/
