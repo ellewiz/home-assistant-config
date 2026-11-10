@@ -4,6 +4,8 @@ House conventions for authoring Home Assistant automations and scripts in this c
 Derived from the existing `automations.yaml`. When writing or editing an automation,
 follow these so new work matches what's already here. Examples cite real automations.
 
+**Enforced by `tools/check.sh`** (CI and the pre-commit hook): section 1 (no new legacy `platform:` triggers), section 4 (description length), section 13 (`scripts.yaml` must stay empty), plus the private-file and secret rules for this public repo. Run `sh tools/check.sh` before committing.
+
 ---
 
 ## 1. Schema: use the modern (plural) keys

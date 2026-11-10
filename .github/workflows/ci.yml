@@ -8,6 +8,15 @@ on:
     branches: [master]
 
 jobs:
+  guardrails:
+    name: guardrails
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out configuration
+        uses: actions/checkout@v4
+      - name: Run guardrails (private files, secrets, scripts.yaml, ratchets)
+        run: sh tools/check.sh
+
   yamllint:
     name: yamllint
     runs-on: ubuntu-latest
