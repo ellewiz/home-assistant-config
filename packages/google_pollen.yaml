@@ -8,7 +8,8 @@
 # bucket also read moderate) — see project_window_score.md.
 #
 # HOW: Native `rest:` platform, ONE request/day to Google's Pollen API
-# (pollen.googleapis.com/v1/forecast:lookup) for Ewing NJ (0.0/-0.0).
+# (pollen.googleapis.com/v1/forecast:lookup) for zone.home. The full URL with
+# the coordinates lives in secrets.yaml (google_pollen_url), not in this file.
 # Auth via the X-Goog-Api-Key HEADER, not a URL query param, so the key never
 # lands in a URL or a log line — see secrets.yaml (google_pollen_api_key).
 # Pollen doesn't move hour to hour, so this polls once/day (86400s), not
@@ -38,7 +39,7 @@
 # See project memory: project_window_score.md, project_air_quality_openmeteo.md.
 
 rest:
-  - resource: "https://pollen.googleapis.com/v1/forecast:lookup?location.longitude=-0.0&location.latitude=0.0&days=1"
+  - resource: !secret google_pollen_url
     headers:
       X-Goog-Api-Key: !secret google_pollen_api_key
     scan_interval: 86400

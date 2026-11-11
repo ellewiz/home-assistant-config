@@ -17,7 +17,7 @@
 #   2. WAKE TRIGGER. What actually got her up, in her own terms: no alarm / woke
 #      before the music / woke to the music / woke to the "beep". The Sonos Wake
 #      Alarm (automation.testing_alarm_automation) plays a Lofi music ramp starting
-#      20 min before the calendar wake time, then escalates the classic
+#      15 min before the calendar wake time, then escalates the classic
 #      alarm-clock.mp3 "beep" AT the wake time if she is still in bed. We do NOT
 #      edit that automation. Whether an alarm was actually SCHEDULED for today is
 #      read straight from master_calendar at get-up (a morning "Wake up" event,
@@ -27,8 +27,8 @@
 #      music"). A tiny mirror automation still stamps the scheduled music-start
 #      time; the capture then classifies from get-up time: no calendar alarm = No
 #      alarm (labelled workday vs free morning); alarm scheduled but up before
-#      music-start = before music; up within the 20-min ramp = music; still in bed
-#      20 min after music start = the beep.
+#      music-start = before music; up within the 15-min ramp = music; still in bed
+#      15 min after music start = the beep.
 #
 #   3. OVERNIGHT BED-EXITS. Middle-of-the-night get-ups, to overlay on sleep data.
 #      The Hue bedroom motion sensor reads no motion while she lies in bed and fires
@@ -551,19 +551,19 @@ automation:
     alias: "Wake Trigger: Mark Alarm Armed"
     description: >-
       Non-invasive mirror of the Sonos Wake Alarm's arm gate. Fires on the SAME
-      calendar trigger (20 min before a master_calendar "Wake up" event) and, when
+      calendar trigger (15 min before a master_calendar "Wake up" event) and, when
       the alarm would actually arm (inside 04:30-08:00, workday on, vacation off,
       summary contains "wake up"), stamps input_boolean.wake_alarm_set on and
       input_datetime.wake_alarm_armed_time = now. armed_time is the scheduled start
-      of the Lofi music ramp; the classic-alarm "beep" escalation begins 20 min
-      later (10 volume steps x 2 min). "Sleep Wake: Capture ..." reads these at wake
+      of the Lofi music ramp; the classic-alarm "beep" escalation begins 15 min
+      later (10 volume steps x 90 s). "Sleep Wake: Capture ..." reads these at wake
       to classify before-music / music / beep. Does NOT touch
       automation.testing_alarm_automation. Cleared nightly at bedtime.
     triggers:
       - trigger: calendar
         entity_id: calendar.master_calendar
         event: start
-        offset: "-0:20:00"
+        offset: "-0:15:00"
         id: wake_up_time
     conditions:
       - condition: time
@@ -775,7 +775,7 @@ automation:
       "Wake up" event, workday on, vacation off), so it stays correct even when she
       is up before the mirror arms. Codes: no alarm (0, labelled "workday" vs "free
       morning" in the text), woke before the music (1), woke to the music ramp (2),
-      or woke to the classic beep (3 = still in bed 20 min after music start).
+      or woke to the classic beep (3 = still in bed 15 min after music start).
       Snapshots the overnight bed-exit count and out-of-bed minutes into the stable
       *_lastnight holders so reports read one value per night. Also closes the
       overnight temperature trajectory (books the final Riemann segment, computes
@@ -876,7 +876,7 @@ automation:
               {%- endif %}
             {%- endfor %}
             {%- set alarm_scheduled = ns.found and workday and is_state('calendar.vacation','off') %}
-            {%- if not alarm_scheduled %}0{% elif armed and now_ts >= (armed_ts + 1200) %}3{% elif armed and now_ts >= armed_ts %}2{% else %}1{% endif %}
+            {%- if not alarm_scheduled %}0{% elif armed and now_ts >= (armed_ts + 900) %}3{% elif armed and now_ts >= armed_ts %}2{% else %}1{% endif %}
       - action: input_number.set_value
         target:
           entity_id: input_number.bedroom_wake_trigger_code

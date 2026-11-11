@@ -8,8 +8,10 @@
 #
 # HOW: Home Assistant's native `rest:` platform pulls ONE request from the
 # Open-Meteo Air Quality API (free, no API key, non-commercial use) every 30 min
-# and fans it out into the sensors below. Coordinates are zone.home (Ewing NJ,
-# 0.0 / -0.0). The API's pollen fields are Europe-only, so they are NOT
+# and fans it out into the sensors below. Coordinates are zone.home; the full
+# request URLs live in secrets.yaml (open_meteo_air_quality_url,
+# open_meteo_forecast_url) so the location stays out of this public file.
+# The API's pollen fields are Europe-only, so they are NOT
 # requested here — Kleenex already covers US pollen. The global CAMS model
 # supplies US AQI + concentrations worldwide, which is what we use.
 #
@@ -38,7 +40,7 @@
 # particulates), mirroring how it already uses the Kleenex pollen forecast.
 
 rest:
-  - resource: "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=0.0&longitude=-0.0&current=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,dust,uv_index&hourly=us_aqi&forecast_days=4&timezone=America%2FNew_York"
+  - resource: !secret open_meteo_air_quality_url
     scan_interval: 1800
     sensor:
       - name: "Air Quality US AQI"
@@ -50,62 +52,62 @@ rest:
         json_attributes_path: "$.current"
         json_attributes:
           - time
-        availability: "{{ value_json.current.us_aqi is defined and value_json.current.us_aqi is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.us_aqi is defined and value_json.current.us_aqi is not none }}"
       - name: "Air Quality PM2.5"
         unique_id: air_quality_pm2_5
         value_template: "{{ value_json.current.pm2_5 | float(0) | round(1) }}"
         unit_of_measurement: "µg/m³"
         device_class: pm25
         state_class: measurement
-        availability: "{{ value_json.current.pm2_5 is defined and value_json.current.pm2_5 is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.pm2_5 is defined and value_json.current.pm2_5 is not none }}"
       - name: "Air Quality PM10"
         unique_id: air_quality_pm10
         value_template: "{{ value_json.current.pm10 | float(0) | round(1) }}"
         unit_of_measurement: "µg/m³"
         device_class: pm10
         state_class: measurement
-        availability: "{{ value_json.current.pm10 is defined and value_json.current.pm10 is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.pm10 is defined and value_json.current.pm10 is not none }}"
       - name: "Air Quality Ozone"
         unique_id: air_quality_ozone
         value_template: "{{ value_json.current.ozone | float(0) | round(1) }}"
         unit_of_measurement: "µg/m³"
         device_class: ozone
         state_class: measurement
-        availability: "{{ value_json.current.ozone is defined and value_json.current.ozone is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.ozone is defined and value_json.current.ozone is not none }}"
       - name: "Air Quality Nitrogen Dioxide"
         unique_id: air_quality_nitrogen_dioxide
         value_template: "{{ value_json.current.nitrogen_dioxide | float(0) | round(1) }}"
         unit_of_measurement: "µg/m³"
         device_class: nitrogen_dioxide
         state_class: measurement
-        availability: "{{ value_json.current.nitrogen_dioxide is defined and value_json.current.nitrogen_dioxide is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.nitrogen_dioxide is defined and value_json.current.nitrogen_dioxide is not none }}"
       - name: "Air Quality Sulphur Dioxide"
         unique_id: air_quality_sulphur_dioxide
         value_template: "{{ value_json.current.sulphur_dioxide | float(0) | round(1) }}"
         unit_of_measurement: "µg/m³"
         device_class: sulphur_dioxide
         state_class: measurement
-        availability: "{{ value_json.current.sulphur_dioxide is defined and value_json.current.sulphur_dioxide is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.sulphur_dioxide is defined and value_json.current.sulphur_dioxide is not none }}"
       - name: "Air Quality Carbon Monoxide"
         unique_id: air_quality_carbon_monoxide
         value_template: "{{ value_json.current.carbon_monoxide | float(0) | round(1) }}"
         unit_of_measurement: "µg/m³"
         state_class: measurement
         icon: mdi:molecule-co
-        availability: "{{ value_json.current.carbon_monoxide is defined and value_json.current.carbon_monoxide is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.carbon_monoxide is defined and value_json.current.carbon_monoxide is not none }}"
       - name: "Air Quality Dust"
         unique_id: air_quality_dust
         value_template: "{{ value_json.current.dust | float(0) | round(1) }}"
         unit_of_measurement: "µg/m³"
         state_class: measurement
         icon: mdi:weather-dust
-        availability: "{{ value_json.current.dust is defined and value_json.current.dust is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.dust is defined and value_json.current.dust is not none }}"
       - name: "Air Quality UV Index"
         unique_id: air_quality_uv_index
         value_template: "{{ value_json.current.uv_index | float(0) | round(1) }}"
         state_class: measurement
         icon: mdi:sun-wireless
-        availability: "{{ value_json.current.uv_index is defined and value_json.current.uv_index is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.uv_index is defined and value_json.current.uv_index is not none }}"
       # Hourly US-AQI forecast (next 4 days) pulled from the SAME request via &hourly=.
       # Plumbing sensor: the two arrays (time, us_aqi) ride as attributes and are
       # aggregated to a per-day daytime peak by sensor.air_quality_daily_forecast below,
@@ -118,7 +120,7 @@ rest:
         json_attributes:
           - time
           - us_aqi
-        availability: "{{ value_json.hourly is defined and value_json.hourly.us_aqi is defined }}"
+        availability: "{{ value_json is defined and value_json.hourly is defined and value_json.hourly.us_aqi is defined }}"
 
   # ---------------------------------------------------------------------------
   # DAYLIGHT / SOLAR RADIATION  (added 2026-08-17)
@@ -153,7 +155,7 @@ rest:
   # scan_interval 900 rather than the 1800 above: cloud cover moves faster
   # than AQI does.
   # ---------------------------------------------------------------------------
-  - resource: "https://api.open-meteo.com/v1/forecast?latitude=0.0&longitude=-0.0&current=shortwave_radiation,direct_radiation,diffuse_radiation,cloud_cover&timezone=America%2FNew_York"
+  - resource: !secret open_meteo_forecast_url
     scan_interval: 900
     sensor:
       - name: "Daylight Shortwave Radiation"
@@ -163,7 +165,7 @@ rest:
         device_class: irradiance
         state_class: measurement
         icon: mdi:solar-power-variant
-        availability: "{{ value_json.current.shortwave_radiation is defined and value_json.current.shortwave_radiation is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.shortwave_radiation is defined and value_json.current.shortwave_radiation is not none }}"
 
       - name: "Daylight Direct Radiation"
         unique_id: daylight_direct_radiation
@@ -172,7 +174,7 @@ rest:
         device_class: irradiance
         state_class: measurement
         icon: mdi:weather-sunny
-        availability: "{{ value_json.current.direct_radiation is defined and value_json.current.direct_radiation is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.direct_radiation is defined and value_json.current.direct_radiation is not none }}"
 
       - name: "Daylight Diffuse Radiation"
         unique_id: daylight_diffuse_radiation
@@ -181,7 +183,7 @@ rest:
         device_class: irradiance
         state_class: measurement
         icon: mdi:weather-hazy
-        availability: "{{ value_json.current.diffuse_radiation is defined and value_json.current.diffuse_radiation is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.diffuse_radiation is defined and value_json.current.diffuse_radiation is not none }}"
 
       - name: "Daylight Cloud Cover"
         unique_id: daylight_cloud_cover
@@ -189,7 +191,7 @@ rest:
         unit_of_measurement: "%"
         state_class: measurement
         icon: mdi:cloud-percent
-        availability: "{{ value_json.current.cloud_cover is defined and value_json.current.cloud_cover is not none }}"
+        availability: "{{ value_json is defined and value_json.current is defined and value_json.current.cloud_cover is defined and value_json.current.cloud_cover is not none }}"
 
 
 # Derived plain-language band from the US AQI number. Used on the dashboard and

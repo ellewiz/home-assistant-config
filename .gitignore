@@ -63,3 +63,9 @@ scripts/dose_*.yaml
 ip_bans.yaml
 
 Claude outputs/
+
+# Automation history and rationale (narrative notes, kept local only as of 2026-11-11)
+automation_notes_archive.md
+
+# Private-terms list read by tools/check.sh (the list itself is private)
+tools/private-terms.txt

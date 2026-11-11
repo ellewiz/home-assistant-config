@@ -29,17 +29,18 @@ sonos_say:
         _volume: "{{ volume | default(none) }}"
         _restore: "{{ restore | default(true) }}"
         _ungroup: "{{ ungroup | default(true) }}"
-        # Capture BEFORE any unjoin so grouped playback is detected and restored.
-        _was_playing: "{{ is_state(_player, 'playing') }}"
 
     # Snapshot FIRST — before the unjoin — and WITH group topology so
     # sonos.restore can rebuild the group and resume the queue. 2026-06-08:
     # matched the fix made to sonos_broadcast. Previously the unjoin ran first
     # and the snapshot captured a torn-apart solo state, so grouped music came
     # back paused on a stale queue position instead of resuming.
+    # 2026-11-11: snapshot whenever restore is on, not only when something was
+    # playing. An idle speaker used to skip the snapshot but still get the
+    # volume_set below, so it stayed at the announcement volume afterwards.
     - if:
         - condition: template
-          value_template: "{{ _restore and _was_playing }}"
+          value_template: "{{ _restore }}"
       then:
         - service: sonos.snapshot
           target: { entity_id: "{{ _player }}" }
@@ -75,10 +76,10 @@ sonos_say:
     - delay:
         seconds: "{{ ((message | length) / 12) | round(0, 'ceil') + 2 }}"
 
-    # Restore (optional, only if we had something playing)
+    # Restore (optional). Puts back the group, queue and volume captured above.
     - if:
         - condition: template
-          value_template: "{{ _restore and _was_playing }}"
+          value_template: "{{ _restore }}"
       then:
         - service: sonos.restore
           target: { entity_id: "{{ _player }}" }

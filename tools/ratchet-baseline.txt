@@ -1,7 +1,10 @@
 # Ratchets for automations.yaml (read by tools/check.sh).
 # These counts may go down, never up. Lower a number when you remove legacy usage.
-legacy_platform_triggers=50
+legacy_platform_triggers=45
 device_id_uses=8
 # Longest allowed single description: line, including indentation and the key.
 # The longest one today is 108 characters.
 description_max_chars=200
+# Automations whose WHOLE description (all folded lines together) exceeds description_max_chars.
+# There were 9 on 2026-11-11. Shorten one, then lower this number.
+long_descriptions=9

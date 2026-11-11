@@ -570,10 +570,13 @@
   actions:
   - alias: Let presence settle in case we left together
     delay: 00:00:45
-  - alias: Only continue if Johnny and I are NOT in the same zone
+  - alias: Only continue if Johnny and I are NOT together (different zones, or both
+      not_home and more than 0.6 mi apart)
     condition: template
-    value_template: "{{ states('person.johnny') not in ['unknown', 'unavailable']\n
-      \  and states('person.johnny') != states('person.lara_wiz') }}"
+    value_template: '{% set j = states(''person.johnny'') %}{% set l = states(''person.lara_wiz'')
+      %}{% set d = distance(''person.johnny'', ''person.lara_wiz'') %}{{ j not in
+      [''unknown'', ''unavailable''] and (j != l or (j == ''not_home'' and d is not
+      none and d > 0.6)) }}'
   - alias: Ping iPhone — Johnny is out without me
     action: notify.mobile_app_iphone
     data:
@@ -1086,9 +1089,15 @@
               entity_id: media_player.bedroom_frame
           - delay: 00:00:12
           until:
-          - condition: state
-            entity_id: input_boolean.in_bed
-            state: 'off'
+          - condition: or
+            conditions:
+            - condition: state
+              entity_id: input_boolean.in_bed
+              state: 'off'
+            - alias: 'Safety cap: stop after 150 passes (about 30 min) even if in_bed
+                never flips off'
+              condition: template
+              value_template: '{{ repeat.index >= 150 }}'
       - action: light.turn_on
         alias: Phase 3 — Gentle light fade-in once up
         data:
@@ -1552,14 +1561,22 @@
   - entity_id: input_boolean.in_bed
     to: 'on'
     trigger: state
-  conditions:
-  - condition: state
-    entity_id: input_boolean.workday_tomorrow
-    state: 'on'
+  conditions: []
   actions:
   - variables:
       _target_date: '{{ (now() if now().hour < 8 else now() + timedelta(days=1)).strftime(''%Y-%m-%d'')
         }}'
+  - alias: Ask Workday about the target date itself (workday_tomorrow has already
+      rolled over after 00:05)
+    action: workday.check_date
+    target:
+      entity_id: binary_sensor.workday
+    data:
+      check_date: '{{ _target_date }}'
+    response_variable: target_workday
+  - alias: Stop unless the target date is a workday
+    condition: template
+    value_template: '{{ target_workday[''binary_sensor.workday''][''workday''] }}'
   - action: calendar.get_events
     target:
       entity_id: calendar.master_calendar
@@ -2478,126 +2495,6 @@
   mode: queued
   max: 10
   max_exceeded: silent
-- id: meds_log_dose_from_button
-  alias: 'Meds: Log dose from Orb button'
-  triggers:
-  - trigger: event
-    event_type: zha_event
-    id: med_a
-    event_data:
-      device_ieee: a4:c1:38:10:9e:56:ff:ff
-      endpoint_id: 1
-      cluster_id: 64530
-      command: single
-  - trigger: event
-    event_type: zha_event
-    id: med_b
-    event_data:
-      device_ieee: a4:c1:38:10:9e:56:ff:ff
-      endpoint_id: 2
-      cluster_id: 64530
-      command: single
-  - trigger: event
-    event_type: zha_event
-    id: med_c
-    event_data:
-      device_ieee: a4:c1:38:10:9e:56:ff:ff
-      endpoint_id: 3
-      cluster_id: 64530
-      command: single
-  - trigger: event
-    event_type: zha_event
-    id: med_d
-    event_data:
-      device_ieee: a4:c1:38:10:9e:56:ff:ff
-      endpoint_id: 4
-      cluster_id: 64530
-      command: single
-  - trigger: event
-    event_type: zha_event
-    id: med_a_med_b_combo
-    event_data:
-      device_ieee: a4:c1:38:10:9e:56:ff:ff
-      endpoint_id: 1
-      cluster_id: 64530
-      command: double
-  actions:
-  - alias: Increment durable counter, then check dashboard flag via Health Tags script
-    choose:
-    - alias: med_a + med_b combo (Button 1 double-press)
-      conditions:
-      - condition: trigger
-        id: med_a_med_b_combo
-      sequence:
-      - action: counter.increment
-        target:
-          entity_id: counter.med_med_a_doses
-      - action: counter.increment
-        target:
-          entity_id: counter.med_med_b_doses
-      - action: script.log_med_a
-      - action: script.log_med_b
-    - alias: med_a (Button 1)
-      conditions:
-      - condition: trigger
-        id: med_a
-      sequence:
-      - action: counter.increment
-        target:
-          entity_id: counter.med_med_a_doses
-      - action: script.log_med_a
-    - alias: med_b (Button 2)
-      conditions:
-      - condition: trigger
-        id: med_b
-      sequence:
-      - action: counter.increment
-        target:
-          entity_id: counter.med_med_b_doses
-      - action: script.log_med_b
-    - alias: med_c (Button 3)
-      conditions:
-      - condition: trigger
-        id: med_c
-      sequence:
-      - action: counter.increment
-        target:
-          entity_id: counter.med_med_c_doses
-      - action: script.log_med_c
-    - alias: med_d (Button 4) — no Health Tags flag (weekly med), keeps last-taken
-        + counter
-      conditions:
-      - condition: trigger
-        id: med_d
-      sequence:
-      - action: counter.increment
-        target:
-          entity_id: counter.med_med_d_doses
-      - action: input_datetime.set_datetime
-        target:
-          entity_id: input_datetime.med_med_d_last_taken
-        data:
-          timestamp: '{{ now().timestamp() }}'
-      - action: logbook.log
-        data:
-          name: Health Log
-          message: med_d taken
-          entity_id: input_datetime.med_med_d_last_taken
-  - alias: Push iPhone notification that opens Apple Health
-    action: notify.mobile_app_iphone
-    data:
-      title: "\U0001F48A Med logged"
-      message: '{{ med_label }} logged at {{ now().strftime(''%-I:%M %p'') }}. Tap
-        to open Health.'
-      data:
-        url: x-apple-health://
-        push:
-          interruption-level: active
-  mode: queued
-  max: 10
-  variables:
-    med_label: '{% set m = {''med_a'':''med_a'',''med_b'':''med_b'',''med_c'':''med_c'',''med_d'':''med_d'',''med_a_med_b_combo'':''med_a
-      + med_b''} %}{{ m.get(trigger.id, ''Medication'') }}'
 - id: commute_airplay_interrupted_alert
   alias: 'Commute: Alert if announcement interrupts AirPlay music'
   mode: single
@@ -2677,123 +2574,6 @@
         not a new fault.
       title: Alarm fallback fired
   mode: single
-- id: meds_med_c_tv_nudge
-  alias: 'Meds — med_c: TV nudge until logged'
-  triggers:
-  - at: '20:10:00'
-    id: evening_check
-    trigger: time
-  conditions:
-  - condition: state
-    entity_id: input_boolean.guests
-    state: 'off'
-  - condition: state
-    entity_id: calendar.vacation
-    state: 'off'
-  - condition: state
-    entity_id: input_boolean.med_c_taken
-    state: 'off'
-  actions:
-  - alias: If away at 8:10, wait for return + living-room presence, then settle 10
-      min
-    choose:
-    - alias: Away path
-      conditions:
-      - condition: not
-        conditions:
-        - condition: state
-          entity_id: person.lara_wiz
-          state: home
-      sequence:
-      - alias: Wait until home AND living-room presence detected
-        wait_template: '{{ is_state(''person.lara_wiz'', ''home'') and is_state(''binary_sensor.living_room_presence'',
-          ''on'') }}'
-      - alias: Settle 10 minutes after arriving in the living room
-        delay: 00:10:00
-  - alias: Re-gate after any waiting (logged during the wait? guests arrived? left
-      again?)
-    condition: state
-    entity_id: input_boolean.med_c_taken
-    state: 'off'
-  - condition: state
-    entity_id: input_boolean.guests
-    state: 'off'
-  - condition: state
-    entity_id: person.lara_wiz
-    state: home
-  - alias: Capture which player is actively playing (for pause + later resume)
-    variables:
-      tv_player: '{% if is_state(''calendar.tv'', ''off'') and states(''media_player.living_room_4k_2'')
-        in [''playing'', ''buffering''] %}media_player.living_room_4k_2{% else %}none{%
-        endif %}'
-  - alias: Snapshot the living-room lights so we can restore them exactly (skipped
-      implicitly if TV Event is active, since we won't brighten below)
-    action: scene.create
-    data:
-      scene_id: med_c_nudge_restore
-      snapshot_entities:
-      - light.living_room_corner
-      - light.torchiere
-      - light.next_to_couch
-  - alias: Pause the TV if something is actively playing
-    if:
-    - condition: template
-      value_template: '{{ tv_player != ''none'' }}'
-    then:
-    - action: media_player.media_pause
-      target:
-        entity_id: '{{ tv_player }}'
-  - alias: Brighten the living-room lights to 70% (skip during an active TV Event
-      so we don't stomp the movie scene)
-    if:
-    - condition: state
-      entity_id: calendar.tv
-      state: 'off'
-    then:
-    - action: light.turn_on
-      target:
-        entity_id: light.living_room_lights
-      data:
-        brightness_pct: 70
-        transition: 2
-  - alias: Tell Lara a dose is due (gentler wording if a TV Event is active)
-    action: notify.mobile_app_iphone
-    data:
-      title: "\U0001F48A med_c"
-      message: '{% if is_state(''calendar.tv'', ''off'') %}TV paused and lights up
-        until you log tonight''s dose.{% else %}Reminder: log tonight''s med_c
-        dose when you get a chance.{% endif %}'
-  - alias: Hold until the dose is logged (no timeout, per Lara)
-    wait_for_trigger:
-    - trigger: state
-      entity_id: input_boolean.med_c_taken
-      to: 'on'
-  - alias: Restore the living-room lights exactly as they were
-    action: scene.turn_on
-    target:
-      entity_id: scene.med_c_nudge_restore
-    data:
-      transition: 2
-  - alias: Hand the lights back to Adaptive Lighting
-    action: adaptive_lighting.set_manual_control
-    data:
-      entity_id: switch.adaptive_lighting_living_room_lights
-      lights:
-      - light.living_room_corner
-      - light.torchiere
-      - light.next_to_couch
-      manual_control: false
-  - alias: Resume the player we paused
-    if:
-    - condition: template
-      value_template: '{{ tv_player != ''none'' }}'
-    then:
-    - alias: Grace period so Lara is back in the room before audio resumes
-      delay: 00:00:15
-    - action: media_player.media_play
-      target:
-        entity_id: '{{ tv_player }}'
-  mode: restart
 - id: living_room_tv_event_lighting_backstop
   alias: Living Room — TV Event Lighting Backstop (Arrive-Home Re-fire)
   triggers:
@@ -3186,9 +2966,15 @@
   - alias: Phase 1 — Escalating classic alarm on native Sonos until out of bed
     repeat:
       until:
-      - condition: state
-        entity_id: input_boolean.in_bed
-        state: 'off'
+      - condition: or
+        conditions:
+        - condition: state
+          entity_id: input_boolean.in_bed
+          state: 'off'
+        - alias: 'Safety cap: stop after 150 passes (about 30 min) even if in_bed
+            never flips off'
+          condition: template
+          value_template: '{{ repeat.index >= 150 }}'
       sequence:
       - alias: Raise volume each pass (0.40 to 0.70 cap)
         action: media_player.volume_set
@@ -3231,80 +3017,6 @@
           interruption-level: '{{ trigger.json.level | default(''active'', true) }}'
     action: notify.mobile_app_iphone
   mode: queued
-- id: '1783880933653'
-  alias: 'Location: Log vet visit on arrival'
-  triggers:
-  - platform: state
-    entity_id: device_tracker.iphone
-    to: Vet
-    for: 00:01:00
-  conditions:
-  - condition: template
-    value_template: '{{ this.attributes.last_triggered is none or (now() - this.attributes.last_triggered).total_seconds()
-      > 10800 }}'
-  actions:
-  - target:
-      entity_id: counter.vet_visits
-    action: counter.increment
-  - target:
-      entity_id: input_datetime.vet_last_visit
-    data:
-      timestamp: '{{ now().timestamp() }}'
-    action: input_datetime.set_datetime
-  - data:
-      name: Pet Log
-      message: Vet visit
-      entity_id: input_datetime.vet_last_visit
-    action: logbook.log
-  - data:
-      title: "\U0001F43E Vet visit logged"
-      message: Logged at {{ now().strftime('%-I:%M %p') }}.
-      data:
-        push:
-          interruption-level: passive
-    action: notify.mobile_app_iphone
-  mode: single
-- id: meds_med_c_nudge_restore_failsafe
-  alias: 'Meds — med_c: Nudge Restore Failsafe'
-  triggers:
-  - entity_id: input_boolean.med_c_taken
-    from: 'off'
-    to: 'on'
-    trigger: state
-  conditions:
-  - condition: time
-    after: '19:30:00'
-    before: 04:00:00
-  - condition: template
-    alias: Main nudge automation not mid-run (it handles its own restore)
-    value_template: '{{ state_attr(''automation.meds_med_c_tv_nudge_until_logged'',
-      ''current'') | int(0) == 0 }}'
-  - condition: state
-    entity_id: calendar.tv
-    state: 'off'
-    alias: Skip while a TV Event is actively running (don't stomp the movie scene/lighting)
-  actions:
-  - alias: Re-apply light snapshot if it survived (skip after restart)
-    if:
-    - condition: template
-      value_template: '{{ states(''scene.med_c_nudge_restore'') not in [''unknown'',
-        ''unavailable''] }}'
-    then:
-    - action: scene.turn_on
-      target:
-        entity_id: scene.med_c_nudge_restore
-      data:
-        transition: 2
-  - alias: Hand the lights back to Adaptive Lighting
-    action: adaptive_lighting.set_manual_control
-    data:
-      entity_id: switch.adaptive_lighting_living_room_lights
-      lights:
-      - light.living_room_corner
-      - light.torchiere
-      - light.next_to_couch
-      manual_control: false
-  mode: single
 - id: tv_event_nightly_reconcile
   alias: TV Event — Nightly Reconcile
   triggers:
@@ -3323,80 +3035,6 @@
     target:
       entity_id: switch.adaptive_lighting_living_room_lights
   mode: single
-- id: '1784118690598'
-  alias: 'Meds: Mirror dashboard dose log to counter'
-  triggers:
-  - platform: state
-    id: med_a
-    entity_id: input_boolean.med_a_taken
-    from: 'off'
-    to: 'on'
-  - platform: state
-    id: med_b
-    entity_id: input_boolean.med_b_taken
-    from: 'off'
-    to: 'on'
-  - platform: state
-    id: med_c
-    entity_id: input_boolean.med_c_taken
-    from: 'off'
-    to: 'on'
-  actions:
-  - alias: Let any Orb-button counter increment land first
-    delay:
-      seconds: 3
-  - alias: Mirror to the matching counter only if the button didn't already do it
-    choose:
-    - alias: med_a
-      conditions:
-      - condition: trigger
-        id: med_a
-      - condition: template
-        value_template: '{{ (as_timestamp(now()) - as_timestamp(states.counter.med_med_a_doses.last_changed))
-          > 30 }}'
-      sequence:
-      - action: counter.increment
-        target:
-          entity_id: counter.med_med_a_doses
-      - action: logbook.log
-        data:
-          name: Health Log
-          message: med_a taken (dashboard log, counter mirrored)
-          entity_id: input_boolean.med_a_taken
-    - alias: med_b
-      conditions:
-      - condition: trigger
-        id: med_b
-      - condition: template
-        value_template: '{{ (as_timestamp(now()) - as_timestamp(states.counter.med_med_b_doses.last_changed))
-          > 30 }}'
-      sequence:
-      - action: counter.increment
-        target:
-          entity_id: counter.med_med_b_doses
-      - action: logbook.log
-        data:
-          name: Health Log
-          message: med_b taken (dashboard log, counter mirrored)
-          entity_id: input_boolean.med_b_taken
-    - alias: med_c
-      conditions:
-      - condition: trigger
-        id: med_c
-      - condition: template
-        value_template: '{{ (as_timestamp(now()) - as_timestamp(states.counter.med_med_c_doses.last_changed))
-          > 30 }}'
-      sequence:
-      - action: counter.increment
-        target:
-          entity_id: counter.med_med_c_doses
-      - action: logbook.log
-        data:
-          name: Health Log
-          message: med_c taken (dashboard log, counter mirrored)
-          entity_id: input_boolean.med_c_taken
-  mode: parallel
-  max: 5
 - id: '1784689256636'
   alias: Oura Sync Nudge on Wake (in_bed off)
   triggers:
@@ -4939,92 +4577,6 @@
       message: WFH day — holding at 74F for all-day occupancy.
       name: Living Room AC
   mode: single
-- id: '1786622040291'
-  alias: 'Location: Log the plaza Visit (Groomer vs Salon, Heuristic)'
-  triggers:
-  - entity_id: device_tracker.iphone
-    for: 00:01:00
-    platform: state
-    to: the plaza
-  conditions:
-  - condition: template
-    value_template: '{{ this.attributes.last_triggered is none or (now() - this.attributes.last_triggered).total_seconds()
-      > 10800 }}'
-  actions:
-  - choose:
-    - conditions:
-      - condition: template
-        value_template: '{{ states(''person.johnny'') == ''the plaza'' }}'
-      sequence:
-      - action: counter.increment
-        target:
-          entity_id: counter.hair_salon_visits
-      - action: input_datetime.set_datetime
-        data:
-          timestamp: '{{ now().timestamp() }}'
-        target:
-          entity_id: input_datetime.hair_salon_last_visit
-      - action: logbook.log
-        data:
-          entity_id: input_datetime.hair_salon_last_visit
-          message: Hair salon visit — Johnny came along.
-          name: Personal Log
-      - action: notify.mobile_app_iphone
-        data:
-          data:
-            push:
-              interruption-level: passive
-          message: Logged at {{ now().strftime('%-I:%M %p') }}. Johnny tagged along.
-          title: "\U0001F487 Hair salon visit logged"
-    - conditions:
-      - condition: template
-        value_template: '{{ states(''person.johnny'') != ''the plaza'' and is_state(''binary_sensor.johnny_tracker_battery_charging'',
-          ''on'') }}'
-      sequence:
-      - action: counter.increment
-        target:
-          entity_id: counter.groomer_visits
-      - action: input_datetime.set_datetime
-        data:
-          timestamp: '{{ now().timestamp() }}'
-        target:
-          entity_id: input_datetime.groomer_last_visit
-      - action: logbook.log
-        data:
-          entity_id: input_datetime.groomer_last_visit
-          message: 'Groomer visit (heuristic: Johnny not with you, tracker charging).'
-          name: Pet Log
-      - action: notify.mobile_app_iphone
-        data:
-          data:
-            push:
-              interruption-level: passive
-          message: Logged at {{ now().strftime('%-I:%M %p') }} — Johnny not with you
-            + tracker charging. Collar's at {{ states('sensor.johnny_tracker_battery')
-            }}% right now. Correct me if that's wrong.
-          title: "\U0001F43E Groomer visit logged (best guess)"
-    default:
-    - action: counter.increment
-      target:
-        entity_id: counter.hair_salon_visits
-    - action: input_datetime.set_datetime
-      data:
-        timestamp: '{{ now().timestamp() }}'
-      target:
-        entity_id: input_datetime.hair_salon_last_visit
-    - action: logbook.log
-      data:
-        entity_id: input_datetime.hair_salon_last_visit
-        message: Hair salon visit — solo, Johnny stayed home.
-        name: Personal Log
-    - action: notify.mobile_app_iphone
-      data:
-        data:
-          push:
-            interruption-level: passive
-        message: Logged at {{ now().strftime('%-I:%M %p') }}. Solo trip.
-        title: "\U0001F487 Hair salon visit logged"
-  mode: single
 - id: '1786623005090'
   alias: Johnny's Collar — 80% Charge Nudge (v1)
   triggers:
@@ -5897,48 +5449,6 @@
     target:
       entity_id: input_datetime.presence_last_arrival_today
   mode: single
-- id: '1787464850803'
-  alias: 'Sleep: Arm the bed window (dose log, or 20:10 fallback)'
-  triggers:
-  - entity_id: input_boolean.med_c_taken
-    id: dose_logged
-    note: The preferred anchor - real dose time.
-    to: 'on'
-    trigger: state
-  - at: '20:10:00'
-    id: fallback_clock
-    note: Backstop for the night she takes it but never presses the button.
-    trigger: time
-  conditions:
-  - alias: Arm on the dose log, or at 20:10 only if it is still unlogged
-    condition: or
-    conditions:
-    - condition: trigger
-      id: dose_logged
-    - condition: and
-      conditions:
-      - condition: trigger
-        id: fallback_clock
-      - condition: state
-        entity_id: input_boolean.med_c_taken
-        state: 'off'
-  actions:
-  - action: input_datetime.set_datetime
-    alias: Stamp the bed window 75 minutes out
-    data:
-      datetime: '{{ (now() + timedelta(minutes=75)).strftime(''%Y-%m-%d %H:%M:%S'')
-        }}'
-    target:
-      entity_id: input_datetime.bed_window_at
-  - action: logbook.log
-    alias: Record WHICH path armed it, so the record is countable later
-    data:
-      entity_id: input_datetime.bed_window_at
-      message: Bed window armed via {{ 'dose log' if trigger.id == 'dose_logged' else
-        '20:10 fallback (dose not logged)' }}, opens {{ (now() + timedelta(minutes=75)).strftime('%H:%M')
-        }}
-      name: Sleep Log
-  mode: single
 - id: '1787464878651'
   alias: 'Sleep: Bed-window nudge (v2, Fri/Sat hard)'
   triggers:
@@ -6003,6 +5513,12 @@
       - light.living_room_corner
       - light.torchiere
       - light.next_to_couch
+  - alias: Decide up front whether THIS run is going to pause the TV (hard tier, and
+      something is actually playing)
+    variables:
+      we_paused_tv: '{{ (now() - timedelta(hours=6)).strftime(''%a'') | lower in [''fri'',
+        ''sat''] and states(''media_player.living_room_4k_2'') in [''playing'', ''buffering'']
+        }}'
   - alias: Tier the nudge by which EVENING it is
     choose:
     - alias: HARD TIER - Fri or Sat evening, where 59 percent of couch nights live
@@ -6101,6 +5617,9 @@
         name: Sleep Log
     - alias: Resume only if WE paused it - the soft tier never does
       if:
+      - alias: This run paused it (not her)
+        condition: template
+        value_template: '{{ we_paused_tv }}'
       - condition: state
         entity_id: media_player.living_room_4k_2
         state: paused
