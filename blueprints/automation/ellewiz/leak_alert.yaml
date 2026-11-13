@@ -21,6 +21,11 @@ blueprint:
           entity:
             domain: light
 
+# Bind the input so the notify template below can read it (an !input is not
+# visible inside a template on its own).
+variables:
+  notify_device: !input notify_device
+
 trigger:
   - platform: state
     entity_id: !input leak_sensor

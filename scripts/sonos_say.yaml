@@ -30,6 +30,24 @@ sonos_say:
         _restore: "{{ restore | default(true) }}"
         _ungroup: "{{ ungroup | default(true) }}"
 
+    # NON-SONOS GUARD, added 2026-11-11 (same reason as sonos_broadcast's):
+    # media_player.unjoin hard-errors on a non-Sonos entity and aborts the
+    # CALLING automation. Stop here instead, and leave a logbook trace. Only
+    # enforced when the Sonos registry actually reports entities, so a Sonos
+    # integration mid-reload cannot silence every announcement.
+    - if:
+        - condition: template
+          value_template: >-
+            {{ (integration_entities('sonos') | length) > 0
+               and _player not in integration_entities('sonos') }}
+      then:
+        - action: logbook.log
+          data:
+            name: Sonos — Say
+            message: "skipped, {{ _player }} is not a Sonos player. Fix the calling automation's player."
+            domain: script
+        - stop: Player is not a Sonos entity
+
     # Snapshot FIRST — before the unjoin — and WITH group topology so
     # sonos.restore can rebuild the group and resume the queue. 2026-06-08:
     # matched the fix made to sonos_broadcast. Previously the unjoin ran first

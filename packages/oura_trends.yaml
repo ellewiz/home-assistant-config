@@ -124,7 +124,10 @@ template:
             {% elif g >= w %}grass
             {% else %}weeds{% endif %}
           level: >
-            {% set total = states('sensor.total_pollen_index') | int(0) %}
+            {# 2026-11-11: sum the inputs here; reading this sensor's own state lagged one update behind #}
+            {% set total = states('sensor.kleenex_pollen_radar_ewing_trees') | int(0)
+                         + states('sensor.kleenex_pollen_radar_ewing_grass') | int(0)
+                         + states('sensor.kleenex_pollen_radar_ewing_weeds') | int(0) %}
             {% if total >= 100 %}high
             {% elif total >= 50 %}moderate
             {% elif total >= 1 %}low

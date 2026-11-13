@@ -78,4 +78,4 @@ shut_down_bedtime:
         entity_id: input_datetime.living_room_off_at
       data:
         datetime: >-
-          {{ (now() + timedelta(minutes = range(10, 25) | random | int)).strftime('%Y-%m-%d %H:%M:%S') }}
+          {{ (now() + timedelta(minutes = range(10, 26) | random | int)).strftime('%Y-%m-%d %H:%M:%S') }}

@@ -4,6 +4,16 @@
   - trigger: state
     entity_id: input_boolean.in_bed
     to: 'on'
+  conditions:
+  - alias: Skip when the temperature sensor has no reading, so the previous value
+      stays instead of a made-up one
+    condition: not
+    conditions:
+    - condition: state
+      entity_id: sensor.hue_motion_sensor_2_temperature
+      state:
+      - unavailable
+      - unknown
   actions:
   - action: input_number.set_value
     target:
@@ -145,7 +155,7 @@
   - condition: not
     conditions:
     - condition: state
-      entity_id: binary_sensor.bedroom_hue_bedroom_motion_sensor_bedroom_room_bright
+      entity_id: binary_sensor.bedroom_room_bright_slider
       state: 'on'
       for: 00:00:05
   - alias: Stand down when the wake path owns this motion event
@@ -1190,30 +1200,30 @@
   triggers:
   - entity_id:
     - media_player.living_room_4k_2
+    id: atv_active
+    platform: state
     to:
     - playing
     - buffering
     - paused
-    id: atv_active
-    platform: state
   - entity_id:
     - media_player.living_room_4k_2
-    to: idle
     id: atv_blind
     platform: state
-  - entity_id:
+    to: idle
+  - attribute: app_id
+    entity_id:
     - media_player.living_room_4k_2
-    attribute: app_id
-    to: ''
     id: atv_blind_attr
     platform: state
+    to: ''
   - event: sunset
-    offset: 00:01:00
     id: sunset
+    offset: 00:01:00
     platform: sun
   conditions:
-  - condition: sun
-    after: sunset
+  - after: sunset
+    condition: sun
   - condition: state
     entity_id: light.next_to_couch
     state: 'on'
@@ -1225,11 +1235,11 @@
         id: atv_active
       sequence:
       - action: light.turn_on
-        target:
-          entity_id: light.next_to_couch
         data:
           brightness_pct: 20
           transition: 2
+        target:
+          entity_id: light.next_to_couch
     - alias: Blind-app fingerprint (Frndly / home screen)
       conditions:
       - condition: trigger
@@ -1240,22 +1250,22 @@
         entity_id: media_player.living_room_4k_2
         state: idle
       - condition: state
-        entity_id: media_player.55_tcl_roku_tv
+        entity_id: media_player.living_room_65_roku_plus_series_4k_tv
         state: 'on'
-      - condition: state
-        entity_id: media_player.55_tcl_roku_tv
-        attribute: source
+      - attribute: source
+        condition: state
+        entity_id: media_player.living_room_65_roku_plus_series_4k_tv
         state: Apple TV
       - condition: template
         value_template: '{{ (state_attr(''media_player.living_room_4k_2'', ''app_id'')
           or '''') == '''' }}'
       sequence:
       - action: light.turn_on
-        target:
-          entity_id: light.next_to_couch
         data:
           brightness_pct: 20
           transition: 2
+        target:
+          entity_id: light.next_to_couch
     - alias: Sunset while already watching
       conditions:
       - condition: trigger
@@ -1274,22 +1284,22 @@
             entity_id: media_player.living_room_4k_2
             state: idle
           - condition: state
-            entity_id: media_player.55_tcl_roku_tv
+            entity_id: media_player.living_room_65_roku_plus_series_4k_tv
             state: 'on'
-          - condition: state
-            entity_id: media_player.55_tcl_roku_tv
-            attribute: source
+          - attribute: source
+            condition: state
+            entity_id: media_player.living_room_65_roku_plus_series_4k_tv
             state: Apple TV
           - condition: template
             value_template: '{{ (state_attr(''media_player.living_room_4k_2'', ''app_id'')
               or '''') == '''' }}'
       sequence:
       - action: light.turn_on
-        target:
-          entity_id: light.next_to_couch
         data:
           brightness_pct: 20
           transition: 2
+        target:
+          entity_id: light.next_to_couch
   mode: restart
   trace:
     stored_traces: 25
@@ -1298,26 +1308,34 @@
   triggers:
   - entity_id:
     - media_player.living_room_4k_2
-    to: idle
     id: atv_idle
     platform: state
+    to: idle
   - entity_id:
     - media_player.living_room_4k_2
-    to: 'off'
     id: atv_off
     platform: state
+    to: 'off'
+  - entity_id:
+    - media_player.living_room_65_roku_plus_series_4k_tv
+    from: 'on'
+    id: roku_off
+    platform: state
+    to: 'off'
   conditions:
-  - condition: sun
-    after: sunset
+  - after: sunset
+    condition: sun
   actions:
   - choose:
-    - alias: ATV off — always restore
+    - alias: ATV or Roku off — always restore
       conditions:
       - condition: trigger
-        id: atv_off
+        id:
+        - atv_off
+        - roku_off
       sequence:
-      - alias: Hand the lamp back to Adaptive Lighting (clears manual_control)
-        action: adaptive_lighting.set_manual_control
+      - action: adaptive_lighting.set_manual_control
+        alias: Hand the lamp back to Adaptive Lighting (clears manual_control)
         data:
           entity_id: switch.adaptive_lighting_living_room_lights
           lights:
@@ -1329,11 +1347,12 @@
         id: atv_idle
       - condition: template
         value_template: '{{ (trigger.to_state.attributes.get(''app_id'') or '''')
-          != '''' or states(''media_player.55_tcl_roku_tv'') != ''on'' or (state_attr(''media_player.55_tcl_roku_tv'',
+          != '''' or states(''media_player.living_room_65_roku_plus_series_4k_tv'')
+          != ''on'' or (state_attr(''media_player.living_room_65_roku_plus_series_4k_tv'',
           ''source'') or '''') != ''Apple TV'' }}'
       sequence:
-      - alias: Hand the lamp back to Adaptive Lighting (clears manual_control)
-        action: adaptive_lighting.set_manual_control
+      - action: adaptive_lighting.set_manual_control
+        alias: Hand the lamp back to Adaptive Lighting (clears manual_control)
         data:
           entity_id: switch.adaptive_lighting_living_room_lights
           lights:
@@ -2267,7 +2286,7 @@
         data:
           title: ⚠️ Zigbee Flapping
           message: '{{ states(''counter.zigbee_flap_events'') }} Hue bulb dropouts
-            in the past hour (latest: {{ trigger.to_state.attributes.friendly_name
+            since the top of the hour (latest: {{ trigger.to_state.attributes.friendly_name
             | default(trigger.entity_id) }}). Interference is still active — bulbs
             may miss commands.'
       - action: input_boolean.turn_on
@@ -2300,19 +2319,19 @@
 - id: movie_lamp_observer_snapshot_log
   alias: Living Room — Movie Lamp Observer
   triggers:
-  - event_type: automation_triggered
-    event_data:
+  - event_data:
       entity_id: automation.living_room_movie_lamp_dimmer
+    event_type: automation_triggered
     id: dimmer_fired
     platform: event
-  - event_type: automation_triggered
-    event_data:
+  - event_data:
       entity_id: automation.living_room_movie_lamp_restore
+    event_type: automation_triggered
     id: restore_fired
     platform: event
-  - platform: time_pattern
+  - id: periodic_sample
     minutes: /5
-    id: periodic_sample
+    platform: time_pattern
   conditions: []
   actions:
   - choose:
@@ -2321,19 +2340,20 @@
       - condition: template
         value_template: '{{ trigger.id in [''dimmer_fired'', ''restore_fired''] }}'
       sequence:
-      - alias: Write snapshot of decision inputs to logbook
-        action: logbook.log
+      - action: logbook.log
+        alias: Write snapshot of decision inputs to logbook
         data:
-          name: Movie Lamp Observer
           entity_id: light.next_to_couch
           message: '{{ trigger.event.data.name }} fired | ATV: {{ states(''media_player.living_room_4k_2'')
             }} (app: {{ state_attr(''media_player.living_room_4k_2'', ''app_id'')
             or ''none'' }}) | TV plug: {{ states(''sensor.living_room_tv_current_consumption'')
-            }} W | Roku: {{ states(''media_player.55_tcl_roku_tv'') }}/{{ state_attr(''media_player.55_tcl_roku_tv'',
+            }} W | Roku: {{ states(''media_player.living_room_65_roku_plus_series_4k_tv'')
+            }}/{{ state_attr(''media_player.living_room_65_roku_plus_series_4k_tv'',
             ''source'') or ''n/a'' }} | Arc: {{ states(''media_player.living_room_arc'')
             }} | Lamp before: {{ states(''light.next_to_couch'') }}{% if is_state(''light.next_to_couch'',
             ''on'') %} @ {{ ((state_attr(''light.next_to_couch'', ''brightness'')
             or 0) / 2.55) | round }}%{% endif %}'
+          name: Movie Lamp Observer
     - alias: Periodic brightness sample during movie-dim window
       conditions:
       - condition: template
@@ -2348,21 +2368,22 @@
         value_template: '{{ ''light.next_to_couch'' in (state_attr(''switch.adaptive_lighting_living_room_lights'',
           ''manual_control'') or []) }}'
       sequence:
-      - alias: Write periodic brightness sample to logbook
-        action: logbook.log
+      - action: logbook.log
+        alias: Write periodic brightness sample to logbook
         data:
-          name: Movie Lamp Observer
           entity_id: light.next_to_couch
           message: 'Periodic dim sample | Lamp: {{ states(''light.next_to_couch'')
             }}{% if is_state(''light.next_to_couch'', ''on'') %} @ {{ ((state_attr(''light.next_to_couch'',
             ''brightness'') or 0) / 2.55) | round }}%{% endif %} | ATV: {{ states(''media_player.living_room_4k_2'')
             }} (app: {{ state_attr(''media_player.living_room_4k_2'', ''app_id'')
             or ''none'' }}) | TV plug: {{ states(''sensor.living_room_tv_current_consumption'')
-            }} W | Roku: {{ states(''media_player.55_tcl_roku_tv'') }}/{{ state_attr(''media_player.55_tcl_roku_tv'',
+            }} W | Roku: {{ states(''media_player.living_room_65_roku_plus_series_4k_tv'')
+            }}/{{ state_attr(''media_player.living_room_65_roku_plus_series_4k_tv'',
             ''source'') or ''n/a'' }} | Arc: {{ states(''media_player.living_room_arc'')
             }}'
-  mode: queued
+          name: Movie Lamp Observer
   max: 10
+  mode: queued
 - id: '1781031863269'
   alias: Living Room — Corner Lamp Dropout Logger
   triggers:
@@ -2999,24 +3020,6 @@
     data:
       transition: 300
   mode: restart
-- id: '1783476373361'
-  alias: Mac Samba Monitor Alert (webhook)
-  triggers:
-  - platform: webhook
-    webhook_id: mac_samba_monitor_9f3a7c2e5b8d1
-    local_only: true
-    allowed_methods:
-    - POST
-  actions:
-  - data:
-      title: '{{ trigger.json.title | default(''Samba share'', true) }}'
-      message: '{{ trigger.json.message | default(''Samba share status change on Mac'',
-        true) }}'
-      data:
-        push:
-          interruption-level: '{{ trigger.json.level | default(''active'', true) }}'
-    action: notify.mobile_app_iphone
-  mode: queued
 - id: tv_event_nightly_reconcile
   alias: TV Event — Nightly Reconcile
   triggers:
@@ -3877,15 +3880,25 @@
               entity_id: climate.bedroom_ac
           - delay:
               seconds: 3
-        - action: climate.set_preset_mode
-          alias: Mild eco setback, set LAST so it sticks
-          data:
-            preset_mode: eco
-          target:
-            entity_id: '{{ [''climate.living_room_ac''] if is_state(''input_boolean.bedroom_windows_open'',''on'')
+        - alias: Mild eco setback, set LAST so it sticks (skips a unit that is unreachable)
+          if:
+          - alias: At least one of the target units is reachable
+            condition: template
+            value_template: '{{ ([''climate.living_room_ac''] if is_state(''input_boolean.bedroom_windows_open'',''on'')
               or (is_state(''climate.bedroom_ac'',''off'') and (state_attr(''weather.kttn_daynight'',''temperature'')
-              | float(99)) < 65) else [''climate.bedroom_ac'',''climate.living_room_ac'']
-              }}'
+              | float(99)) < 65) else [''climate.bedroom_ac'',''climate.living_room_ac''])
+              | reject(''is_state'',''unavailable'') | reject(''is_state'',''unknown'')
+              | list | count > 0 }}'
+          then:
+          - action: climate.set_preset_mode
+            data:
+              preset_mode: eco
+            target:
+              entity_id: '{{ ([''climate.living_room_ac''] if is_state(''input_boolean.bedroom_windows_open'',''on'')
+                or (is_state(''climate.bedroom_ac'',''off'') and (state_attr(''weather.kttn_daynight'',''temperature'')
+                | float(99)) < 65) else [''climate.bedroom_ac'',''climate.living_room_ac''])
+                | reject(''is_state'',''unavailable'') | reject(''is_state'',''unknown'')
+                | list }}'
       - action: logbook.log
         alias: Log the setback depth actually chosen — reads the SAME entity the branch
           did, so it can never disagree again
@@ -3916,13 +3929,22 @@
             }}'
           lr_restore: '{{ states(''input_number.lr_ac_pre_away_temp'') | float(0)
             }}'
-      - action: climate.set_preset_mode
-        alias: Restore the everyday eco preset on both units
-        data:
-          preset_mode: eco
-        target:
-          entity_id: '{{ [''climate.living_room_ac''] if is_state(''input_boolean.bedroom_windows_open'',''on'')
-            else [''climate.bedroom_ac'',''climate.living_room_ac''] }}'
+      - alias: Restore the everyday eco preset on both units (skips a unit that is
+          unreachable)
+        if:
+        - alias: At least one of the target units is reachable
+          condition: template
+          value_template: '{{ ([''climate.living_room_ac''] if is_state(''input_boolean.bedroom_windows_open'',''on'')
+            else [''climate.bedroom_ac'',''climate.living_room_ac'']) | reject(''is_state'',''unavailable'')
+            | reject(''is_state'',''unknown'') | list | count > 0 }}'
+        then:
+        - action: climate.set_preset_mode
+          data:
+            preset_mode: eco
+          target:
+            entity_id: '{{ ([''climate.living_room_ac''] if is_state(''input_boolean.bedroom_windows_open'',''on'')
+              else [''climate.bedroom_ac'',''climate.living_room_ac'']) | reject(''is_state'',''unavailable'')
+              | reject(''is_state'',''unknown'') | list }}'
       - delay:
           seconds: 3
       - alias: Bedroom — put the exact pre-away target back, then clear the marker
@@ -4429,15 +4451,16 @@
       data:
         title: ⚠️ WFH flag not set
         message: Today's wake event "{{ trigger.calendar_event.summary }}" has a description
-          of "{{ trigger.calendar_event.description | default('') | trim or '(blank)'
-          }}", which says neither WFH nor office. The flag stays OFF, so the house
-          will treat today as an office day. Edit the calendar entry if that is wrong.
+          of "{{ trigger.calendar_event.description | default('', true) | trim or
+          '(blank)' }}", which says neither WFH nor office. The flag stays OFF, so
+          the house will treat today as an office day. Edit the calendar entry if
+          that is wrong.
     - action: logbook.log
       data:
         entity_id: input_boolean.wfh_today
         message: NOT SET — "{{ trigger.calendar_event.summary }}" description "{{
-          trigger.calendar_event.description | default('') | trim or '(blank)' }}"
-          matched neither WFH nor office. Flag left at its 4am default of OFF.
+          trigger.calendar_event.description | default('', true) | trim or '(blank)'
+          }}" matched neither WFH nor office. Flag left at its 4am default of OFF.
         name: WFH Today
   mode: single
 - id: '1786621049944'
@@ -6200,6 +6223,11 @@
       - condition: trigger
         id:
         - evening_notify
+      - alias: Skip the push when the overnight low is under 45°F (score is 0 for
+          cold, nothing to decide)
+        condition: template
+        value_template: '{{ not states(''input_text.window_score_reason'').startswith(''Too
+          cold'') }}'
       sequence:
       - action: notify.mobile_app_iphone
         data:
@@ -6709,7 +6737,7 @@
   - action: homeassistant.reload_config_entry
     alias: Reload the Sonos integration (the fix)
     data:
-      entry_id: 893af2796f94a940a4deacdc419ecba0
+      entry_id: '{{ config_entry_id(''media_player.bedroom_frame'') }}'
   - alias: Give entities a moment to repopulate after reload
     delay: 00:00:10
   - action: sonos.snapshot
@@ -7323,4 +7351,43 @@
             }} lx.
           name: LR Late-Night Fallback
   max_exceeded: silent
+  mode: single
+- id: sleep_bed_window_nudge_restore_failsafe
+  alias: 'Sleep: Bed-window nudge restore failsafe (v1)'
+  description: After a restart, if the bed window opened in the last 35 min, hands
+    the living room lamps back to Adaptive Lighting (the nudge's own restore step
+    was lost with the restart).
+  triggers:
+  - event: start
+    id: ha_start
+    trigger: homeassistant
+  conditions:
+  - alias: 'A nudge could still have been holding: the bed window opened within the
+      last 35 minutes'
+    condition: template
+    value_template: '{% set ts = state_attr(''input_datetime.bed_window_at'', ''timestamp'')
+      %}{{ ts is not none and 0 <= (now().timestamp() - ts) <= 2100 }}'
+  - alias: Skip while a TV Event is running, it owns the lamps
+    condition: state
+    entity_id: calendar.tv
+    state: 'off'
+  actions:
+  - alias: Let Adaptive Lighting finish loading after the restart
+    delay: 00:01:00
+  - action: adaptive_lighting.set_manual_control
+    alias: Hand the lamps back to Adaptive Lighting (clears the 70 percent pin)
+    data:
+      entity_id: switch.adaptive_lighting_living_room_lights
+      lights:
+      - light.living_room_corner
+      - light.torchiere
+      - light.next_to_couch
+      manual_control: false
+  - action: logbook.log
+    alias: Log it so the recovery is auditable
+    data:
+      entity_id: input_datetime.bed_window_at
+      message: 'Bed-window nudge failsafe: restart inside the hold window, lamps handed
+        back to Adaptive Lighting. The TV was left as it was.'
+      name: Sleep Log
   mode: single

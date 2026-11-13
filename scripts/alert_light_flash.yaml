@@ -3,12 +3,13 @@ alert_light_flash:
   description: >
     Brief attention flash on a light (default green double-pulse) that snapshots
     the light's current state with scene.create and restores it afterward, so it
-    never leaves the lights changed. Fire-and-forget safe (mode: restart,
-    max_exceeded: silent). Built 2026-06-08 so the morning commute announcer can
+    never leaves the lights changed. Fire-and-forget safe (mode: single,
+    max_exceeded: silent; a call arriving mid-flash is dropped, so the snapshot
+    can never capture the flash itself - changed from restart 2026-11-11). Built 2026-06-08 so the morning commute announcer can
     be SEEN over a running hair dryer without raising TTS volume loud enough to
     startle Johnny. The bedroom has no Adaptive Lighting, so no manual-control
     reset is needed here (unlike the living room).
-  mode: restart
+  mode: single
   max_exceeded: silent
   fields:
     targets:

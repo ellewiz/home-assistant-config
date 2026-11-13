@@ -87,7 +87,7 @@ commute_time_announcer:
                 {% if lb not in ['unknown', 'unavailable'] %}
                   {{ ((as_timestamp(today_at(lb)) - now().timestamp()) / 60) | round | int }}
                 {% else %}
-                  {{ ((until_ts - now().timestamp()) / 60) | round | int }}
+                  {{ (((until_ts | float(0)) - now().timestamp()) / 60) | round | int }}
                 {% endif %}
               leave_by_display: >
                 {% set lb = states('sensor.commute_leave_by') %}
