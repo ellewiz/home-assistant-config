@@ -154,9 +154,14 @@ commute_time_announcer:
                   # deliberately held at 0.75 to avoid startling Johnny; she's accepted
                   # the louder bedroom announcement). (HomePod support removed 2026-06-14
                   # — pyatv/miniaudio TTS never worked on py3.14.) Tweak to taste.
+                  # 2026-11-17: downstairs speakers added at Lara's request. She was in
+                  # the kitchen and could not hear the Arc at its 0.34 resting volume
+                  # (basement rests at 0.50). Arc 0.55, basement 0.60 — restored after.
                   volume_map:
                     media_player.bedroom_frame: 0.90
                     media_player.bathroom: 0.75
+                    media_player.living_room_arc: 0.55
+                    media_player.basement: 0.60
 
           # Debounce — don't double-fire within the same minute
           - delay: "00:01:00"
