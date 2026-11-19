@@ -157,11 +157,15 @@ commute_time_announcer:
                   # 2026-11-17: downstairs speakers added at Lara's request. She was in
                   # the kitchen and could not hear the Arc at its 0.34 resting volume
                   # (basement rests at 0.50). Arc 0.55, basement 0.60 — restored after.
+                  # 2026-11-18: Arc still only audible in the living room at 0.55, so
+                  # raised to 0.75; dining room added at 0.65 to cover the kitchen (the
+                  # kitchen has no Sonos, and the MiniPod does not play well with TTS).
                   volume_map:
                     media_player.bedroom_frame: 0.90
                     media_player.bathroom: 0.75
-                    media_player.living_room_arc: 0.55
+                    media_player.living_room_arc: 0.75
                     media_player.basement: 0.60
+                    media_player.dining_room: 0.65
 
           # Debounce — don't double-fire within the same minute
           - delay: "00:01:00"

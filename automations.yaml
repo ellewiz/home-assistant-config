@@ -1664,8 +1664,8 @@
       person_entity: person.lara_wiz
       players: '{{ [''media_player.basement'', ''media_player.bedroom_frame'', ''media_player.bathroom'']
         if is_state(''input_boolean.guests'', ''on'') else [''media_player.living_room_arc'',
-        ''media_player.basement'', ''media_player.bedroom_frame'', ''media_player.bathroom'']
-        }}'
+        ''media_player.dining_room'', ''media_player.basement'', ''media_player.bedroom_frame'',
+        ''media_player.bathroom''] }}'
   mode: single
 - id: '1777940949832'
   alias: "\U0001F985 Eagles Score - Flash Green (v2)"
@@ -5894,8 +5894,8 @@
         person_entity: person.lara_wiz
         players: '{{ [''media_player.basement'', ''media_player.bedroom_frame'', ''media_player.bathroom'']
           if is_state(''input_boolean.guests'', ''on'') else [''media_player.living_room_arc'',
-          ''media_player.basement'', ''media_player.bedroom_frame'', ''media_player.bathroom'']
-          }}'
+          ''media_player.dining_room'', ''media_player.basement'', ''media_player.bedroom_frame'',
+          ''media_player.bathroom''] }}'
         until_ts: '{{ as_timestamp(today_at(states(''sensor.commute_leave_by'')))
           }}'
     - action: notify.mobile_app_iphone
