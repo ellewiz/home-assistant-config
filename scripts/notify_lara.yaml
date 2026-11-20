@@ -9,13 +9,15 @@ notify_lara:
 
     TO ADD OR REMOVE A DEVICE: add or delete a step in the sequence. That is the
     whole point of this script - one edit here instead of hunting through every
-    automation. Available services as of 2026-08-10:
-    notify.mobile_app_iphone /
-    notify.mobile_app_lara_s_15_macbook_air /
-    notify.mobile_app_laras_ipad_mini /
-    notify.mobile_app_laras_mini_ipad.
-    Note the MacBook is mobile_app_lara_s_15_macbook_air, NOT
-    mobile_app_macbook_air.
+    automation. Check the live service list with the notify.* services in
+    Developer Tools before adding a step. Current targets: iPhone
+    (notify.mobile_app_iphone) and MacBook Air (notify.mobile_app_macbook_air).
+    The MacBook was re-registered in Oct 2026, so its service name changed; the
+    earlier registration is gone, so do not target the old name.
+
+    The iPhone step is sent as an iOS critical alert (sound past the silent
+    switch and Focus), set Nov 20 2026 for every caller. Needs Critical Alerts
+    allowed for the Home Assistant app in iOS Settings > Notifications.
 
     Carries no gating of its own, so callers keep their own vacation / in_bed
     conditions. mode parallel so two alerts firing close together (washer and
@@ -41,13 +43,19 @@ notify_lara:
       selector:
         text:
   sequence:
-    - alias: iPhone
+    - alias: iPhone (critical alert, plays sound past the silent switch and Focus)
       action: notify.mobile_app_iphone
       data:
         title: "{{ title }}"
         message: "{{ message }}"
+        data:
+          push:
+            sound:
+              name: default
+              critical: 1
+              volume: 1.0
     - alias: MacBook Air
-      action: notify.mobile_app_lara_s_15_macbook_air
+      action: notify.mobile_app_macbook_air
       data:
         title: "{{ title }}"
         message: "{{ message }}"
